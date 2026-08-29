@@ -93,6 +93,21 @@ test("builds pinned and running items without a separator", () => {
   assert.equal(items[1].id, "b")
 })
 
+test("desktop id resolution avoids substring app collisions", () => {
+  const entries = [
+    { id: "com.example.Code", name: "Code" },
+    { id: "com.example.Codex", name: "Codex" },
+    { id: "com.microsoft.VSCode", name: "Visual Studio Code", startupWmClass: "code" },
+    { id: "WhatsApp", name: "WhatsApp" }
+  ]
+  assert.equal(model.resolveDesktopId("com.example.Codex", entries), "com.example.Codex")
+  assert.equal(model.resolveDesktopId("codex-preview", entries), "com.example.Codex")
+  assert.notEqual(model.resolveDesktopId("codex-preview", entries), "com.example.Code")
+  assert.equal(model.resolveDesktopId("code", entries), "com.microsoft.VSCode")
+  assert.equal(model.resolveDesktopId("chrome-web.whatsapp.com__-Default", entries), "WhatsApp")
+  assert.equal(model.resolveDesktopId("unknown-app", entries), "unknown-app")
+})
+
 test("write guard ignores matching content", () => {
   model.resetWrittenGuard()
   model.markWritten("hello")
@@ -216,15 +231,18 @@ test("insertionIndexFor picks the nearest slot", () => {
   assert.equal(model.insertionIndexFor(9999, flow, opts), 3)
 })
 
-test("settings parse and serialize autoHide", () => {
+test("settings parse and serialize autoHide and dock output", () => {
   assert.equal(model.parseSettings('{"autoHide":true}', { autoHide: false }).autoHide, true)
   assert.equal(model.parseSettings('{"autoHide":false}', { autoHide: true }).autoHide, false)
   assert.equal(model.parseSettings('', { autoHide: true }).autoHide, true)
   assert.equal(model.parseSettings('not json', { autoHide: false }).autoHide, false)
   assert.equal(model.parseSettings('{}', { autoHide: true }).autoHide, true)
-  const s = model.serializeSettings({ autoHide: false })
+  assert.equal(model.parseSettings('{"screenName":"DP-2"}', { autoHide: true }).screenName, "DP-2")
+  assert.equal(model.parseSettings('', { autoHide: true, screenName: "eDP-1" }).screenName, "eDP-1")
+  const s = model.serializeSettings({ autoHide: false, screenName: "DP-2" })
   const parsed = JSON.parse(s)
   assert.equal(parsed.autoHide, false)
+  assert.equal(parsed.screenName, "DP-2")
   assert.equal(parsed.version, 1)
   assert.equal(model.parseSettings(s, { autoHide: true }).autoHide, false)
   assert.equal(model.serializeSettings({ autoHide: true }).includes('"autoHide": true'), true)

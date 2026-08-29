@@ -49,6 +49,19 @@ Item {
   property bool dockReady: false
   // Shelf auto-hide. Enabled by default; persisted in dock-settings.json.
   property bool autoHide: true
+  property string preferredScreenName: ""
+  readonly property var dockScreen: {
+    var screens = Quickshell.screens
+    if (!screens || screens.length === 0)
+      return null
+    if (root.preferredScreenName) {
+      for (var i = 0; i < screens.length; i++) {
+        if (String(screens[i].name || "") === root.preferredScreenName)
+          return screens[i]
+      }
+    }
+    return screens[0]
+  }
   // Short linear reveal timing for the Raster shelf.
   property int hideDelay: 1000
   property int showDelay: 100
@@ -74,8 +87,6 @@ Item {
   property string hoveredItemId: ""
   property var tooltipItem: null
   property real tooltipCenterX: 0
-  property string pendingFocusTarget: ""
-  property string pendingCursorPosition: ""
   property var customIcons: ({})
   property int customIconRevision: 0
   property var nativeIconCache: ({})
@@ -88,6 +99,9 @@ Item {
   property string helperPath: manifest && manifest.__sourceDir
     ? String(manifest.__sourceDir) + "/components/dock/scripts/omarchy-dock-icon"
     : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.alumina/components/dock/scripts/omarchy-dock-icon"
+  property string focusHelperPath: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir) + "/components/dock/scripts/focus-window"
+    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.alumina/components/dock/scripts/focus-window"
 
   // Layout & drag state. The Repeater model (dockItems) is the stable identity
   // list of ids, replaced only when the id set changes; reorders go through
@@ -131,10 +145,25 @@ Item {
       root.saveSettings()
     }
     function getAutoHide(): bool { return root.autoHide }
+    function setScreen(name: string): bool {
+      var requested = String(name || "").slice(0, 160)
+      for (var i = 0; i < Quickshell.screens.length; i++) {
+        if (String(Quickshell.screens[i].name || "") === requested) {
+          root.preferredScreenName = requested
+          root.saveSettings()
+          return true
+        }
+      }
+      return false
+    }
+    function getScreen(): string { return root.dockScreen ? String(root.dockScreen.name || "") : "" }
   }
 
   function saveSettings() {
-    var content = DockModel.serializeSettings({ autoHide: root.autoHide })
+    var content = DockModel.serializeSettings({
+      autoHide: root.autoHide,
+      screenName: root.preferredScreenName
+    })
     root.settingsWriteUntil = Date.now() + 2000
     DockModel.markSettingsWritten(content)
     settingsWriter.path = root.tempSettingsPath
@@ -193,6 +222,13 @@ Item {
     maybeScheduleHide()
   }
 
+  onDockScreenChanged: {
+    if (root.settingsLoaded && !root.preferredScreenName && root.dockScreen) {
+      root.preferredScreenName = String(root.dockScreen.name || "")
+      root.saveSettings()
+    }
+  }
+
   onDockHoveredChanged: {
     if (root.dockHovered) {
       hideTimer.stop()
@@ -240,15 +276,7 @@ Item {
 
   function desktopIdForWindow(window) {
     var raw = String(window.appId || window.desktopId || window.className || window.initialClass || "").replace(/\.desktop$/, "")
-    var lower = raw.toLowerCase()
-    for (var i = 0; i < root.appEntries.length; i++) {
-      var entry = root.appEntries[i] || {}
-      var id = String(entry.id || "").replace(/\.desktop$/, "")
-      var name = String(entry.name || "").toLowerCase()
-      if (id && id.toLowerCase() === lower) return id
-      if (name && lower.indexOf(name) !== -1) return id
-    }
-    return raw
+    return DockModel.resolveDesktopId(raw, root.appEntries)
   }
 
   function hyprlandWindowFor(window) {
@@ -305,9 +333,10 @@ Item {
     // going through Toplevel.activate(), which can warp the pointer.
     var normalized = String(address)
     if (normalized.indexOf("0x") !== 0) normalized = "0x" + normalized
-    root.pendingFocusTarget = "address:" + normalized
-    restoreCursorWarps.stop()
-    if (!cursorCaptureProcess.running) cursorCaptureProcess.running = true
+    if (!/^0x[0-9a-fA-F]+$/.test(normalized) || focusWindowProcess.running)
+      return false
+    focusWindowProcess.command = ["bash", root.focusHelperPath, normalized]
+    focusWindowProcess.running = true
     return true
   }
 
@@ -447,7 +476,7 @@ Item {
   function notifyConflict() {
     if (conflictNotice.running) return
     conflictNotice.running = true
-    Quickshell.execDetached(["omarchy-shell", "notify", "Alumina Dock is disabled because rosakodu.dock is enabled"])
+    Quickshell.execDetached(["omarchy-shell", "notify", "Paper Jam Dock is disabled because rosakodu.dock is enabled"])
   }
 
   function handleClick(item) {
@@ -575,41 +604,8 @@ Item {
       root.shell.appLibrary.launch(id, label)
   }
 
-  Timer {
-    id: restoreCursorWarps
-    interval: 80
-    onTriggered: {
-      var match = String(root.pendingCursorPosition).match(/(-?\d+)\s*,\s*(-?\d+)/)
-      if (match)
-        Hyprland.dispatch("hl.dsp.cursor.move({ x = " + match[1] + ", y = " + match[2] + " })")
-      root.pendingCursorPosition = ""
-      Quickshell.execDetached(["hyprctl", "eval", "hl.config({ cursor = { no_warps = false } })"])
-    }
-  }
-
   Process {
-    id: cursorCaptureProcess
-    command: ["hyprctl", "cursorpos"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        root.pendingCursorPosition = text.trim()
-        if (!focusNoWarpProcess.running) focusNoWarpProcess.running = true
-      }
-    }
-  }
-
-  Process {
-    id: focusNoWarpProcess
-    command: ["hyprctl", "eval", "hl.config({ cursor = { no_warps = true } })"]
-    onExited: {
-      if (!root.pendingFocusTarget) return
-      var target = root.pendingFocusTarget
-      root.pendingFocusTarget = ""
-      Hyprland.dispatch("hl.dsp.focus({ window = \"" + target + "\" })")
-      Qt.callLater(function() { Hyprland.dispatch("hl.dsp.window.bring_to_top()") })
-      restoreCursorWarps.restart()
-    }
+    id: focusWindowProcess
   }
 
   function savePinned() {
@@ -664,7 +660,7 @@ Item {
       var values = ToplevelManager.toplevels.values
       for (var i = values.length - 1; i >= 0; i--) {
         var window = values[i]
-        var windowId = String(window.appId || window.desktopId || window.className || "").replace(/\.desktop$/, "")
+        var windowId = root.desktopIdForWindow(window)
         if (windowId === id && typeof window.close === "function") { window.close(); return }
       }
     } catch (error) {}
@@ -901,7 +897,7 @@ Item {
     var proc = captureProcess.createObject(root, {
       jobAddress: job.address,
       jobBatch: root.currentThumbBatch,
-      command: ["bash", "-c", root.thumbnailCommand(job)]
+      command: ["timeout", "--kill-after=1s", "3s", "bash", "-c", root.thumbnailCommand(job)]
     })
     proc.running = true
   }
@@ -912,8 +908,8 @@ Item {
     root.inFlightAddrs[info.address] = true
     var proc = captureProcess.createObject(root, {
       jobAddress: info.address,
-      jobBatch: "",
-      command: ["bash", "-c", root.thumbnailCommand(info)]
+      jobBatch: -1,
+      command: ["timeout", "--kill-after=1s", "3s", "bash", "-c", root.thumbnailCommand(info)]
     })
     proc.running = true
   }
@@ -1151,13 +1147,22 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: {
-      var parsed = DockModel.parseSettings(text(), { autoHide: true })
+      var parsed = DockModel.parseSettings(text(), {
+        autoHide: true,
+        screenName: root.preferredScreenName
+      })
       if (!root.settingsLoaded) {
         root.settingsLoaded = true
         root.autoHide = parsed.autoHide
+        root.preferredScreenName = parsed.screenName
       } else {
         if (!DockModel.shouldReprocessSettings(text())) return
         root.autoHide = parsed.autoHide
+        root.preferredScreenName = parsed.screenName
+      }
+      if (!root.preferredScreenName && root.dockScreen) {
+        root.preferredScreenName = String(root.dockScreen.name || "")
+        root.saveSettings()
       }
       // If auto-hide is turned off, ensure the dock is fully revealed.
       if (!root.autoHide) root.autoHidden = false
@@ -1169,6 +1174,10 @@ Item {
     onLoadFailed: {
       root.settingsLoaded = true
       root.autoHide = true
+      if (root.dockScreen) {
+        root.preferredScreenName = String(root.dockScreen.name || "")
+        root.saveSettings()
+      }
     }
   }
 
@@ -1188,7 +1197,7 @@ Item {
     Process {
       id: self
       required property string jobAddress
-      required property string jobBatch
+      required property int jobBatch
       onExited: function(exitCode) {
         if (exitCode === 0) root.thumbCache[self.jobAddress] = true
         if (self.jobBatch === root.currentThumbBatch) {
@@ -1287,15 +1296,6 @@ Item {
     // fade would add a visible fade-in. Disable compositor animation for
     // both layer namespaces so the HUD pops in instantly.
     if (!layerRuleProcess.running) layerRuleProcess.running = true
-    // Register the app-switcher keybinds so the HUD works out of the box.
-    // Config-file binds load before this runtime eval, so a user's own bind
-    // for the same combo takes precedence.
-    if (!altTabBindProcess.running) altTabBindProcess.running = true
-    // The shell applies the config-file binds (tiling.lua etc.) AFTER this
-    // Component.onCompleted eval, clobbering our ALT+TAB takeover. Re-apply
-    // the eval on a short retry window until the config binds have landed;
-    // the eval is idempotent (unbind then bind).
-    altTabBindRetry.start()
     Qt.callLater(function() { root.dockReady = true })
   }
 
@@ -1304,31 +1304,10 @@ Item {
     command: ["hyprctl", "eval", "hl.layer_rule({ match = { namespace = \"alumina-dock-alt-tab\" }, no_anim = true, animation = \"none\" })"]
   }
 
-  Timer {
-    id: altTabBindRetry
-    interval: 1500
-    repeat: true
-    property int attempts: 0
-    onTriggered: {
-      altTabBindRetry.attempts++
-      if (altTabBindRetry.attempts > 8) altTabBindRetry.stop()
-      else if (!altTabBindProcess.running) altTabBindProcess.running = true
-    }
-  }
-
-  Process {
-    id: altTabBindProcess
-    // Take over the default Omarchy ALT+TAB window cycling so the Raster
-    // app switcher is the primary alt-tab. The defaults bind ALT+TAB twice
-    // (cycle + bring-to-top), so both must be unbound first. ALT+GRAVE stays
-    // as the dedicated fallback combo.
-    command: ["hyprctl", "eval", "hl.unbind(\"ALT + TAB\") hl.unbind(\"ALT + SHIFT + TAB\") hl.unbind(\"ALT + GRAVE\") hl.unbind(\"ALT + SHIFT + GRAVE\") o.bind(\"ALT + TAB\", \"App switcher next\", \"omarchy-shell -q regionallyfamous.alumina.dock altTabNext\") o.bind(\"ALT + SHIFT + TAB\", \"App switcher prev\", \"omarchy-shell -q regionallyfamous.alumina.dock altTabPrev\") o.bind(\"ALT + GRAVE\", \"App switcher next\", \"omarchy-shell -q regionallyfamous.alumina.dock altTabNext\") o.bind(\"ALT + SHIFT + GRAVE\", \"App switcher prev\", \"omarchy-shell -q regionallyfamous.alumina.dock altTabPrev\")"]
-  }
-
   PanelWindow {
     id: dockWindow
     visible: !root.conflictDetected && root.enabled
-    screen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
+    screen: root.dockScreen
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Top
@@ -1558,6 +1537,7 @@ Item {
 
   DockMenu {
     id: dockMenu
+    screen: root.dockScreen
     autoHideEnabled: root.autoHide
     onActionTriggered: function(actionName, selectedItem) { root.menuAction(actionName, selectedItem) }
     onOpenedChanged: if (!opened) root.menuOpen = false
@@ -1565,6 +1545,7 @@ Item {
 
   IconPickerPanel {
     id: iconPicker
+    screen: root.dockScreen
     shell: root.shell
     customIcons: root.customIcons
     iconSourceFor: function(id) { return root.iconSourceFor(id) }
@@ -1595,6 +1576,7 @@ Item {
   // far above the dock surface without touching the dock's layout or model.
   WindowPreviewPanel {
     id: previewPanel
+    screen: root.dockScreen
     previewVisible: root.previewVisible && !root.floatingId && !root.menuOpen
     windowList: root.previewWindows
     centerX: root.previewCenterX
@@ -1608,6 +1590,7 @@ Item {
 
   AltTabPanel {
     id: altTab
+    screen: root.dockScreen
     iconSourceFor: function(app) { return root.iconSourceFor(app.id) }
     onActivated: function(appId, appName) { root.activateApp(appId, appName) }
   }
@@ -1623,7 +1606,7 @@ Item {
   PanelWindow {
     id: dockSpacerWindow
     visible: !root.conflictDetected && root.enabled && !root.autoHide
-    screen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
+    screen: root.dockScreen
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Background
@@ -1643,7 +1626,7 @@ Item {
   PanelWindow {
     id: edgeHotZone
     visible: !root.conflictDetected && root.enabled && root.autoHide && root.dockReady
-    screen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
+    screen: root.dockScreen
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Top
@@ -1681,7 +1664,7 @@ Item {
   PanelWindow {
     id: dragGhostWindow
     visible: root.ghostSource !== ""
-    screen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
+    screen: root.dockScreen
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay

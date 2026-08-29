@@ -1,15 +1,28 @@
 #!/bin/bash
 
-set -euo pipefail
+set -Eeuo pipefail
 
 PLUGIN_ID="io.github.regionallyfamous.alumina"
-THEME_NAME="alumina-raster"
+PRODUCT_NAME="Paper Jam ’84"
+THEME_NAME="paper-jam-84"
 LOCAL_INSTALL=0
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+STATE_DIR="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID"
+STATE_FILE="$STATE_DIR/install-state.json"
+SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
+THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
+PLUGIN_TARGET="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
+
+PLUGIN_OWNED=0
+THEME_OWNED=0
+SETTINGS_CHANGED=0
+PLUGIN_STAGE=""
+THEME_STAGE=""
 
 fail() {
-  echo "alumina setup: $*" >&2
-  exit 1
+  echo "paper-jam setup: $*" >&2
+  return 1
 }
 
 usage() {
@@ -34,57 +47,171 @@ done
 
 command -v omarchy >/dev/null || fail "Omarchy is required"
 command -v jq >/dev/null || fail "jq is required"
+[[ -f $SCRIPT_DIR/manifest.json ]] || fail "manifest.json is missing"
+[[ -d $SCRIPT_DIR/themes/$THEME_NAME ]] || fail "theme $THEME_NAME is missing"
+jq -e --arg id "$PLUGIN_ID" --arg name "$PRODUCT_NAME" '
+  .id == $id and .name == $name and (.version | type == "string")
+' "$SCRIPT_DIR/manifest.json" >/dev/null || fail "manifest identity does not match this release"
+
+[[ ! -e $STATE_FILE ]] || fail "an install-state record already exists; run bash uninstall before reinstalling"
+[[ ! -e $PLUGIN_TARGET ]] || fail "plugin target already exists: $PLUGIN_TARGET"
+[[ ! -e $THEME_TARGET ]] || fail "theme target already exists: $THEME_TARGET"
+plugin_list=$(omarchy plugin list --json) || fail "could not inspect installed plugins"
+jq -e 'type == "array"' <<<"$plugin_list" >/dev/null || fail "Omarchy returned an invalid plugin list"
+if jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)' <<<"$plugin_list" >/dev/null; then
+  fail "plugin $PLUGIN_ID is already registered"
+fi
+conflicts=$(jq -r '[
+  .[] |
+  select(
+    .enabled == true and
+    (
+      .id == "henri.desktop-icons" or
+      .id == "crmne.active-window" or
+      .id == "expose.window-overview" or
+      .id == "rosakodu.dock"
+    )
+  ) |
+  .id
+] | join(", ")' <<<"$plugin_list")
+[[ -z $conflicts ]] || fail "disable conflicting standalone plugins before setup: $conflicts"
+
+PREVIOUS_THEME=""
+if [[ -f $THEME_STATE ]]; then
+  PREVIOUS_THEME=$(<"$THEME_STATE")
+fi
+PREVIOUS_BAR_POSITION=$(jq -r '.bar.position // "top"' "$SHELL_CONFIG" 2>/dev/null || echo top)
+PREVIOUS_BAR_TRANSPARENT=$(jq -r '.bar.transparent // false' "$SHELL_CONFIG" 2>/dev/null || echo false)
+
+write_state() {
+  local temporary="$STATE_FILE.tmp"
+  mkdir -p "$STATE_DIR"
+  jq -n \
+    --arg product "$PRODUCT_NAME" \
+    --arg pluginId "$PLUGIN_ID" \
+    --arg theme "$THEME_NAME" \
+    --arg pluginOwned "$PLUGIN_OWNED" \
+    --arg themeOwned "$THEME_OWNED" \
+    --arg previousTheme "$PREVIOUS_THEME" \
+    --arg previousBarPosition "$PREVIOUS_BAR_POSITION" \
+    --argjson previousBarTransparent "$PREVIOUS_BAR_TRANSPARENT" \
+    '{
+      schemaVersion: 1,
+      product: $product,
+      pluginId: $pluginId,
+      theme: $theme,
+      pluginOwned: ($pluginOwned == "1"),
+      themeOwned: ($themeOwned == "1"),
+      previous: {
+        theme: $previousTheme,
+        barPosition: $previousBarPosition,
+        barTransparent: $previousBarTransparent
+      }
+    }' >"$temporary"
+  mv "$temporary" "$STATE_FILE"
+}
+
+restore_previous_settings() {
+  local current_theme current_position current_transparent
+  current_theme=""
+  if [[ -f $THEME_STATE ]]; then
+    current_theme=$(<"$THEME_STATE")
+  fi
+  current_position=$(jq -r '.bar.position // "top"' "$SHELL_CONFIG" 2>/dev/null || echo top)
+  current_transparent=$(jq -r '.bar.transparent // false' "$SHELL_CONFIG" 2>/dev/null || echo false)
+
+  if [[ $current_theme == "$THEME_NAME" && -n $PREVIOUS_THEME ]]; then
+    omarchy theme set "$PREVIOUS_THEME" >/dev/null 2>&1 || true
+  fi
+  if [[ $current_position == "top" && $PREVIOUS_BAR_POSITION != "top" ]]; then
+    omarchy bar position "$PREVIOUS_BAR_POSITION" >/dev/null 2>&1 || true
+  fi
+  if [[ $current_transparent == "false" && $PREVIOUS_BAR_TRANSPARENT != "false" ]]; then
+    omarchy bar transparent "$PREVIOUS_BAR_TRANSPARENT" >/dev/null 2>&1 || true
+  fi
+}
+
+rollback() {
+  local status=$?
+  trap - ERR INT TERM
+  set +e
+  if (( SETTINGS_CHANGED )); then
+    restore_previous_settings
+  fi
+  if (( PLUGIN_OWNED )); then
+    omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
+    omarchy plugin remove "$PLUGIN_ID" --yes >/dev/null 2>&1 || true
+    [[ ! -e $PLUGIN_TARGET ]] || rm -rf "$PLUGIN_TARGET"
+  fi
+  if (( THEME_OWNED )); then
+    omarchy theme remove "$THEME_NAME" >/dev/null 2>&1 || true
+    [[ ! -e $THEME_TARGET ]] || rm -rf "$THEME_TARGET"
+  fi
+  [[ -z $PLUGIN_STAGE || ! -e $PLUGIN_STAGE ]] || rm -rf "$PLUGIN_STAGE"
+  [[ -z $THEME_STAGE || ! -e $THEME_STAGE ]] || rm -rf "$THEME_STAGE"
+  rm -f "$STATE_FILE" "$STATE_FILE.tmp"
+  rmdir "$STATE_DIR" 2>/dev/null || true
+  echo "paper-jam setup rolled back after an error" >&2
+  exit "$status"
+}
+trap rollback ERR INT TERM
 
 install_local_plugin() {
   local plugins_dir="$HOME/.config/omarchy/plugins"
-  local target="$plugins_dir/$PLUGIN_ID"
-
-  if [[ -e $target ]]; then
-    fail "plugin is already installed at $target"
-  else
-    mkdir -p "$plugins_dir" "$target"
-    cp -R "$SCRIPT_DIR/." "$target/"
-    omarchy plugin validate "$target"
-    omarchy-shell shell rescanPlugins >/dev/null
-  fi
+  mkdir -p "$plugins_dir"
+  PLUGIN_STAGE=$(mktemp -d "$plugins_dir/.paper-jam-plugin.XXXXXX")
+  mkdir -p "$PLUGIN_STAGE/components"
+  cp "$SCRIPT_DIR/manifest.json" "$SCRIPT_DIR/Experience.qml" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$PLUGIN_STAGE/"
+  cp -R "$SCRIPT_DIR/components/active-window" "$SCRIPT_DIR/components/desktop" "$SCRIPT_DIR/components/dock" "$SCRIPT_DIR/components/overview" "$PLUGIN_STAGE/components/"
+  rm -rf "$PLUGIN_STAGE/components/desktop/tests" "$PLUGIN_STAGE/components/dock/tests"
+  find "$PLUGIN_STAGE" -type d -name __pycache__ -prune -exec rm -rf {} +
+  find "$PLUGIN_STAGE" -type f \( -name '*.pyc' -o -name '.DS_Store' \) -delete
+  omarchy plugin validate "$PLUGIN_STAGE"
+  PLUGIN_OWNED=1
+  write_state
+  mv "$PLUGIN_STAGE" "$PLUGIN_TARGET"
+  PLUGIN_STAGE=""
+  omarchy-shell shell rescanPlugins >/dev/null
 }
 
 install_remote_plugin() {
-  local repo_url
+  local repo_url current_branch default_branch installed_manifest
   repo_url=$(git -C "$SCRIPT_DIR" config --get remote.origin.url 2>/dev/null || true)
   [[ -n $repo_url ]] || fail "no Git origin found; publish/clone the repository or use --local"
+  current_branch=$(git -C "$SCRIPT_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  default_branch=$(git -C "$SCRIPT_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  default_branch=${default_branch#origin/}
+  [[ -n $current_branch && -n $default_branch && $current_branch == "$default_branch" ]] || fail "remote setup requires the checked-out release to be origin's default branch; use --local for this checkout"
 
-  if omarchy plugin list --json | jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)' >/dev/null; then
-    echo "Plugin $PLUGIN_ID is already installed; leaving its checkout unchanged."
-  else
-    omarchy plugin add "$repo_url" --yes
-  fi
+  PLUGIN_OWNED=1
+  write_state
+  omarchy plugin add "$repo_url" --yes
+  installed_manifest="$PLUGIN_TARGET/manifest.json"
+  jq -e --arg id "$PLUGIN_ID" --arg name "$PRODUCT_NAME" '.id == $id and .name == $name' "$installed_manifest" >/dev/null || fail "installed plugin identity does not match this release"
 }
 
 install_local_theme() {
-  local target="$HOME/.config/omarchy/themes/$THEME_NAME"
-
-  if [[ -e $target ]]; then
-    echo "Theme $THEME_NAME is already installed; leaving it unchanged."
-  else
-    mkdir -p "$HOME/.config/omarchy/themes"
-    cp -R "$SCRIPT_DIR/themes/$THEME_NAME" "$target"
-  fi
+  local themes_dir="$HOME/.config/omarchy/themes"
+  mkdir -p "$themes_dir"
+  THEME_STAGE=$(mktemp -d "$themes_dir/.paper-jam-theme.XXXXXX")
+  cp -R "$SCRIPT_DIR/themes/$THEME_NAME/." "$THEME_STAGE/"
+  THEME_OWNED=1
+  write_state
+  mv "$THEME_STAGE" "$THEME_TARGET"
+  THEME_STAGE=""
 }
 
 install_remote_theme() {
   local repo_url
-  local target="$HOME/.config/omarchy/themes/$THEME_NAME"
   repo_url=$(git -C "$SCRIPT_DIR" config --get remote.origin.url 2>/dev/null || true)
   [[ -n $repo_url ]] || fail "no Git origin found; publish/clone the repository or use --local"
-
-  if [[ -e $target ]]; then
-    echo "Theme $THEME_NAME is already installed; leaving it unchanged."
-  else
-    omarchy theme install "$repo_url#$THEME_NAME"
-  fi
+  THEME_OWNED=1
+  write_state
+  omarchy theme install "$repo_url#$THEME_NAME"
+  [[ -e $THEME_TARGET ]] || fail "theme install did not create $THEME_TARGET"
 }
 
+write_state
 if (( LOCAL_INSTALL )); then
   install_local_plugin
   install_local_theme
@@ -93,19 +220,25 @@ else
   install_remote_theme
 fi
 
-mkdir -p "$HOME/Desktop"
-if command -v xdg-user-dirs-update >/dev/null; then
-  xdg-user-dirs-update --set DESKTOP "$HOME/Desktop"
-else
-  echo "xdg-user-dirs-update is unavailable; ~/Desktop exists, but XDG_DESKTOP_DIR was not changed." >&2
+desktop_dir="$HOME/Desktop"
+if command -v xdg-user-dir >/dev/null; then
+  configured_desktop=$(xdg-user-dir DESKTOP 2>/dev/null || true)
+  if [[ $configured_desktop == /* && $configured_desktop != "$HOME" ]]; then
+    desktop_dir="$configured_desktop"
+  fi
 fi
+mkdir -p "$desktop_dir"
 
+SETTINGS_CHANGED=1
 omarchy plugin enable "$PLUGIN_ID" --section left --after omarchy.menu
 omarchy bar position top
 omarchy bar transparent false
 omarchy theme set "$THEME_NAME"
+write_state
+
+trap - ERR INT TERM
 
 echo
-echo "Alumina Raster is active with $THEME_NAME."
+echo "$PRODUCT_NAME is active with the $THEME_NAME theme."
 echo "Move the pointer to the top-left corner for the window overview."
-echo "Optional trackpad and persistent overview bindings are documented in README.md."
+echo "Optional persistent app-switcher and overview bindings are documented in README.md."

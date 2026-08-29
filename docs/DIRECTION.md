@@ -1,8 +1,8 @@
-# Alumina Raster direction contract
+# Paper Jam ’84 direction contract
 
 ## Product sentence
 
-Alumina Raster turns Omarchy into a Bitmap Workbench: select the noun, act second, and move expressive one-bit objects across an illustrated electronic worktable while modern applications remain recognizable and usable.
+Paper Jam ’84 turns Omarchy into a Bitmap Workbench: select the noun, act second, and move expressive one-bit objects across an illustrated electronic worktable while modern applications remain recognizable and usable.
 
 ## Thesis
 
@@ -25,14 +25,14 @@ This edition applies the original Macintosh interface method rather than reprodu
 - Generic folder, document, archive, link, launcher-fallback, and Trash objects use expressive raster mini-illustrations reduced from one original ImageGen atlas. Real image thumbnails and recognizable application icons are preserved rather than thresholded.
 - The overview is a contact sheet of stable paper preview bodies. Keyboard selection inverts only the title rail; the actually active window receives a double outer rule.
 - The top rail names the active application first. A distinct window or document title is secondary context, never a fake global menu.
-- The dock remains a modern Alumina launch shelf translated into the Raster system. It is not presented as historical Macintosh behavior.
+- The dock remains a modern Paper Jam launch shelf translated into this bitmap workbench system. It is not presented as historical Macintosh behavior.
 - Hyprland windows use square two-pixel borders with no blur, shadow, rounding, or opacity effects.
 
 ## Palette and typography
 
 Application and dialog paper is `#f4f4f0`, carbon is `#171716`, the desktop ground averages around `#b9b9b4`, and muted inactive text is `#50504c`. Paper-on-carbon ownership rails exceed 16:1 contrast; carbon against the desktop ground exceeds 9:1.
 
-The shell uses Omarchy's existing legible type system. Weight, title case, grouping, and inversion create hierarchy. Alumina Raster does not imitate Chicago, Geneva, or other proprietary period typography.
+The shell uses Omarchy's existing legible type system. Weight, title case, grouping, and inversion create hierarchy. Paper Jam does not imitate Chicago, Geneva, or other proprietary period typography.
 
 ## Wallpaper law
 
@@ -46,7 +46,7 @@ The artwork contains no Apple marks, copied desktop tiles, historical devices, t
 - Dock reveal may translate vertically once; it does not magnify, bounce, or spring.
 - Overview entry uses a short linear opacity or position change without blur or overshoot.
 - Active-application rail changes use a short linear width transition.
-- Reduced-motion mode makes shell transitions effectively immediate.
+- Paper Jam keeps motion brief and linear. Omarchy does not currently expose a host-level reduced-motion signal to plugins, so honoring one remains an explicit integration follow-up rather than a claimed feature.
 
 ## Provenance guardrails
 
@@ -68,7 +68,7 @@ The artwork contains no Apple marks, copied desktop tiles, historical devices, t
 - Unavailable plugin-menu actions remain visible and dimmed in stable positions.
 - Desktop labels remain legible over every supported wallpaper crop.
 - The wallpaper's icon lane, central field, and dock zone remain usable under 16:9, 16:10, 21:9, and 4:3 cover crops, with no moire or edge shimmer at 100%, 125%, or 200% scaling.
-- Disabling the plugin restores the stock shell without deleting desktop files or Alumina state.
+- Disabling the plugin restores the stock shell without deleting desktop files or compatibility state.
 
 ## Non-goals
 

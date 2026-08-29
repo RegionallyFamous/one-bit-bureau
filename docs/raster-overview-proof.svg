@@ -13,7 +13,7 @@
     <text x="592" y="34" text-anchor="end" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="12">WS 1</text>
     <rect x="18" y="62" width="584" height="194" fill="#f4f4f0" stroke="#171716"/>
     <g font-family="DejaVu Sans Mono, monospace" font-size="13">
-      <text x="36" y="96" fill="#171716">$ omarchy theme set alumina-raster</text>
+      <text x="36" y="96" fill="#171716">$ omarchy theme set paper-jam-84</text>
       <text x="36" y="132" fill="#205a34">PASS  selected title rail is inverted</text>
       <text x="36" y="164" fill="#1a4775">PASS  preview body remains paper</text>
     </g>
@@ -56,6 +56,6 @@
   <g transform="translate(548 806)" font-family="DejaVu Sans, sans-serif" font-size="12">
     <rect width="92" height="32" fill="#171716"/><text x="46" y="21" text-anchor="middle" fill="#f4f4f0">WS 1</text>
     <rect x="94" width="92" height="32" fill="#f4f4f0" stroke="#171716" stroke-width="2"/><text x="140" y="21" text-anchor="middle" fill="#171716">WS 2</text>
-    <text x="212" y="21" fill="#50504c">← ↑ ↓ → navigate   Enter open   Esc close</text>
+    <text x="212" y="21" fill="#171716">← ↑ ↓ → navigate   Enter open   Esc close</text>
   </g>
 </svg>

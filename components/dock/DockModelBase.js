@@ -1,6 +1,6 @@
 .pragma library
 
-// A fresh Alumina install should read as a dock before the user launches
+// A fresh Paper Jam install should read as a dock before the user launches
 // anything. These desktop entries are Omarchy base-package invariants and can
 // still be unpinned or reordered like any other item.
 var DEFAULT_PINNED = ["org.gnome.Nautilus", "chromium", "foot"]
@@ -279,6 +279,48 @@ function entryFor(id, entries) {
     return { id: value, name: pretty || value, icon: "application-x-executable" }
 }
 
+function lookupWords(value) {
+    return normalizeId(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+}
+
+// Resolve a compositor app/class id to a canonical desktop-entry id without
+// broad substring matching. Exact ids and declared window classes win. A
+// desktop name is only accepted as a whole token phrase, and the longest
+// matching name wins so "Visual Studio Code" cannot collapse into "Code".
+function resolveDesktopId(rawValue, entries) {
+    var original = normalizeId(rawValue)
+    var lower = original.toLowerCase()
+    var list = entries || []
+    var i
+
+    for (i = 0; i < list.length; i++) {
+        var exactEntry = list[i] && list[i].entry ? list[i].entry : (list[i] || {})
+        var canonical = normalizeId(exactEntry.id || exactEntry.desktopId)
+        var aliases = [canonical, exactEntry.desktopId, exactEntry.startupWmClass, exactEntry.wmClass]
+        for (var j = 0; j < aliases.length; j++) {
+            var alias = normalizeId(aliases[j]).toLowerCase()
+            if (alias && alias === lower) return canonical || original
+        }
+    }
+
+    var rawWords = lookupWords(original)
+    var paddedRaw = " " + rawWords + " "
+    var bestId = ""
+    var bestLength = 0
+    for (i = 0; i < list.length; i++) {
+        var entry = list[i] && list[i].entry ? list[i].entry : (list[i] || {})
+        var id = normalizeId(entry.id || entry.desktopId)
+        var nameWords = lookupWords(entry.name || entry.displayName)
+        if (!id || nameWords.length < 4) continue
+        if (paddedRaw.indexOf(" " + nameWords + " ") === -1) continue
+        if (nameWords.length > bestLength) {
+            bestId = id
+            bestLength = nameWords.length
+        }
+    }
+    return bestId || original
+}
+
 function buildDockItems(pinned, entries, runningIds) {
     var result = []
     var running = runningIds || []
@@ -323,27 +365,32 @@ function resetWrittenGuard() { lastWrittenHash = null }
 var lastSettingsHash = null
 
 function parseSettings(text, fallback) {
-    var defaults = fallback || { autoHide: true }
+    var defaults = fallback || { autoHide: true, screenName: "" }
+    var defaultScreen = typeof defaults.screenName === "string" ? defaults.screenName : ""
     var source = String(text || "").trim()
-    if (!source) return { autoHide: !!defaults.autoHide }
+    if (!source) return { autoHide: !!defaults.autoHide, screenName: defaultScreen }
     try {
         var parsed = JSON.parse(source)
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-            return { autoHide: !!defaults.autoHide }
+            return { autoHide: !!defaults.autoHide, screenName: defaultScreen }
+        var screenName = typeof parsed.screenName === "string"
+            ? parsed.screenName.slice(0, 160) : defaultScreen
         if (typeof parsed.autoHide === "boolean")
-            return { autoHide: parsed.autoHide }
+            return { autoHide: parsed.autoHide, screenName: screenName }
         // Legacy: tolerate string "true"/"false"
         if (typeof parsed.autoHide === "string")
-            return { autoHide: parsed.autoHide === "true" }
-        return { autoHide: !!defaults.autoHide }
+            return { autoHide: parsed.autoHide === "true", screenName: screenName }
+        return { autoHide: !!defaults.autoHide, screenName: screenName }
     } catch (error) {
-        return { autoHide: !!defaults.autoHide }
+        return { autoHide: !!defaults.autoHide, screenName: defaultScreen }
     }
 }
 
 function serializeSettings(settings) {
     var value = settings && typeof settings.autoHide === "boolean" ? settings.autoHide : true
-    return JSON.stringify({ version: 1, autoHide: value }, null, 2) + "\n"
+    var screenName = settings && typeof settings.screenName === "string"
+        ? settings.screenName.slice(0, 160) : ""
+    return JSON.stringify({ version: 1, autoHide: value, screenName: screenName }, null, 2) + "\n"
 }
 
 function shouldReprocessSettings(content) {
@@ -397,6 +444,8 @@ if (typeof module !== "undefined" && module.exports) {
         computeLayout: computeLayout,
         insertionIndexFor: insertionIndexFor,
         entryFor: entryFor,
+        lookupWords: lookupWords,
+        resolveDesktopId: resolveDesktopId,
         buildDockItems: buildDockItems,
         hashContent: hashContent,
         shouldReprocess: shouldReprocess,

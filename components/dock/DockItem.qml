@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import Quickshell
 import qs.Commons
 import "IconResolver.js" as IconResolver
@@ -75,9 +74,6 @@ Item {
     sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
     fillMode: Image.PreserveAspectFit
     cache: true
-    layer.enabled: true
-    layer.smooth: true
-    layer.effect: MultiEffect { saturation: -1 }
 
     Text {
       anchors.centerIn: parent

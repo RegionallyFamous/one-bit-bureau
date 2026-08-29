@@ -3,26 +3,95 @@
 set -euo pipefail
 
 PLUGIN_ID="io.github.regionallyfamous.alumina"
+PRODUCT_NAME="Paper Jam ’84"
+THEME_NAME="paper-jam-84"
+STATE_DIR="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID"
+STATE_FILE="$STATE_DIR/install-state.json"
+SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
+THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
+PLUGIN_TARGET="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
 
-if command -v omarchy >/dev/null; then
-  if omarchy plugin list --json | jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)' >/dev/null; then
-    omarchy plugin disable "$PLUGIN_ID" || true
-    omarchy plugin remove "$PLUGIN_ID" --yes
-  fi
-
-  for theme in alumina-raster alumina-dark alumina-light; do
-    if [[ -e $HOME/.config/omarchy/themes/$theme ]]; then
-      omarchy theme remove "$theme"
-    fi
-  done
-else
+command -v omarchy >/dev/null || {
   echo "Omarchy is unavailable; no changes were made." >&2
   exit 1
+}
+command -v jq >/dev/null || {
+  echo "jq is unavailable; no changes were made." >&2
+  exit 1
+}
+[[ -f $STATE_FILE ]] || {
+  echo "$PRODUCT_NAME has no ownership record at $STATE_FILE; refusing to remove unowned files." >&2
+  exit 1
+}
+
+jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NAME" '
+  .schemaVersion == 1 and
+  .pluginId == $id and
+  .product == $product and
+  .theme == $theme and
+  (.pluginOwned | type == "boolean") and
+  (.themeOwned | type == "boolean") and
+  (.previous | type == "object") and
+  (.previous.theme | type == "string") and
+  (.previous.barPosition | type == "string") and
+  (.previous.barTransparent | type == "boolean")
+' "$STATE_FILE" >/dev/null || {
+  echo "$PRODUCT_NAME install-state record is invalid; refusing to remove anything." >&2
+  exit 1
+}
+
+PLUGIN_OWNED=$(jq -r '.pluginOwned' "$STATE_FILE")
+THEME_OWNED=$(jq -r '.themeOwned' "$STATE_FILE")
+PREVIOUS_THEME=$(jq -r '.previous.theme // ""' "$STATE_FILE")
+PREVIOUS_BAR_POSITION=$(jq -r '.previous.barPosition // "top"' "$STATE_FILE")
+PREVIOUS_BAR_TRANSPARENT=$(jq -r '.previous.barTransparent // false' "$STATE_FILE")
+
+current_theme=""
+if [[ -f $THEME_STATE ]]; then
+  current_theme=$(<"$THEME_STATE")
+fi
+current_position=$(jq -r '.bar.position // "top"' "$SHELL_CONFIG" 2>/dev/null || echo top)
+current_transparent=$(jq -r '.bar.transparent // false' "$SHELL_CONFIG" 2>/dev/null || echo false)
+
+if [[ $PLUGIN_OWNED == "true" ]]; then
+  omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
+  if [[ -e $PLUGIN_TARGET ]]; then
+    omarchy plugin remove "$PLUGIN_ID" --yes
+  fi
+  [[ ! -e $PLUGIN_TARGET ]] || {
+    echo "$PRODUCT_NAME could not remove its plugin payload; the ownership record was retained." >&2
+    exit 1
+  }
 fi
 
+if [[ $current_theme == "$THEME_NAME" && -n $PREVIOUS_THEME ]]; then
+  omarchy theme set "$PREVIOUS_THEME"
+fi
+if [[ $current_position == "top" && $PREVIOUS_BAR_POSITION != "top" ]]; then
+  omarchy bar position "$PREVIOUS_BAR_POSITION"
+fi
+if [[ $current_transparent == "false" && $PREVIOUS_BAR_TRANSPARENT != "false" ]]; then
+  omarchy bar transparent "$PREVIOUS_BAR_TRANSPARENT"
+fi
+
+if [[ $THEME_OWNED == "true" ]]; then
+  if [[ -e $THEME_TARGET ]]; then
+    omarchy theme remove "$THEME_NAME"
+  fi
+  [[ ! -e $THEME_TARGET ]] || {
+    echo "$PRODUCT_NAME could not remove its theme; the ownership record was retained." >&2
+    exit 1
+  }
+fi
+
+rm -f "$STATE_FILE"
+rmdir "$STATE_DIR" 2>/dev/null || true
+
 echo
-echo "Alumina was removed. User data was retained:"
-echo "  $HOME/Desktop"
+echo "$PRODUCT_NAME was removed and the settings it still owned were restored."
+echo "User data was retained:"
+echo "  your configured Desktop directory"
 echo "  $HOME/.config/omarchy/alumina-dock-pinned.json"
 echo "  $HOME/.config/omarchy/alumina-dock-settings.json"
 echo "  $HOME/.config/omarchy/desktop-icon-positions.json"

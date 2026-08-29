@@ -12,11 +12,19 @@ The first generation was rejected because its left icon lane was too busy and tw
 
 The atlas prompt requested seven original transparent one-bit mini-illustrations in a four-column by two-row grid: side-tab folder, folded-corner document, linked rectangular loops, launcher aperture and arrow, removable volume, archive box, and open slatted wastebasket. It required distinct silhouettes, consistent optical weight, hard aliased edges, ordered dither, generous alpha padding, and no labels, faces, logos, historical Apple or Susan Kare shapes, gradients, blur, or fake UI.
 
+## Image fallback prompt
+
+The separate fallback prompt requested one original square picture-frame object with a mountain-and-sun aperture, using the same chunky one-bit edge scale, dither density, optical weight, and transparent padding as the atlas. It explicitly prohibited text, logos, faces, Apple marks, historical icon copies, gradients, smooth vector lines, shadows, and extra objects. `bitmap-image-fallback-source.png` is the untouched selected transparent generation; the runtime renderer derives both normal and selected 64px states from it.
+
+## Proof photograph prompt
+
+The design-proof photograph is an original ImageGen fixture, not bundled user content and not a runtime screenshot. Its prompt requested a natural documentary photograph of a cobalt-blue enamel mug beside a small green houseplant on a sunlit workshop windowsill, with simple 4:3-friendly framing, strong subject separation, real material texture, modest color, and no people, faces, text, logos, watermark, UI, computer hardware, faux pixel art, monochrome filter, or excessive blur. `proof-photo-source.png` preserves the selected generation; `docs/assets/proof-photo.png` is its 256x192 center crop.
+
 ## Runtime reduction
 
 - Wallpaper: threshold the selected source at 60% luminance, map dark pixels to `#171716` and light pixels to `#f4f4f0`, then enlarge to 3840x2160 with nearest-neighbor sampling.
 - Preview: resize the reduced 4K wallpaper to 1600x900 with Lanczos sampling; this is an honest wallpaper-only picker preview, not runtime evidence.
-- Objects: split the transparent source into its four-by-two cells, hard-threshold alpha and luminance, map to carbon/paper, trim, reduce each illustration into a 56x56 content box with nearest-neighbor sampling, and center it on a transparent 64x64 canvas.
+- Objects: split the transparent atlas into its four-by-two cells, then reduce the seven occupied cells plus the separate image-fallback source. Hard-threshold alpha and luminance, map to carbon/paper, trim, reduce each illustration into a 56x56 content box with nearest-neighbor sampling, and center it on a transparent 64x64 canvas.
 - Selected objects: use the same thresholded silhouettes with carbon and paper exchanged. The QML selection plate supplies the surrounding carbon field.
 
 No vectorization or manual tracing was used in this revision. The generated sources remain available for a later authored vector or hand-pixel cleanup pass.

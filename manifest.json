@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "io.github.regionallyfamous.alumina",
-  "name": "Alumina Raster",
-  "version": "0.4.0",
+  "name": "Paper Jam ’84",
+  "version": "0.5.0",
   "author": "RegionallyFamous",
   "license": "MIT",
-  "description": "An object-first one-bit Omarchy experience with ImageGen-authored raster objects, an illustrated workbench, dock, overview, and matching native theme.",
+  "description": "The shell half of a one-install Omarchy experience with desktop files, a dock, window overview, active-application rail, and safe object-first interaction.",
   "icon": "components/overview/assets/icon.svg",
   "kinds": [
     "service",
@@ -25,7 +25,7 @@
     "allowMultiple": false,
     "defaultSection": "left",
     "defaults": {
-      "iconSaturation": 0,
+      "iconSaturation": 100,
       "iconSize": 16,
       "maxWidth": 300,
       "showTitle": true
@@ -38,7 +38,7 @@
         "min": 0,
         "max": 200,
         "step": 5,
-        "defaultValue": 0
+        "defaultValue": 100
       },
       {
         "key": "iconSize",

@@ -19,6 +19,7 @@ if _BIN_DIR not in sys.path:
     sys.path.insert(0, _BIN_DIR)
 
 from common import desktop_dir, guess_icon, unique_dest
+from desktop_policy import copy_untrusted_launcher, is_trusted_application_launcher
 
 INVALID_FILENAME = r'/\0<>:"\\|?*'
 
@@ -27,11 +28,9 @@ def notify(title: str, message: str, error: bool = False) -> None:
     try:
         Gio.Subprocess.new(
             [
-                "notify-send",
+                "omarchy-notification-send",
                 "-u",
                 "normal" if error else "low",
-                "-i",
-                "dialog-error" if error else "user-desktop",
                 title,
                 message,
             ],
@@ -84,14 +83,12 @@ def read_desktop_name(path: Path) -> str | None:
 
 
 def write_link_desktop(dest: Path, name: str, target: Path) -> None:
-    icon = guess_icon(target)
-    content = (
-        "[Desktop Entry]\n"
-        "Type=Link\n"
-        f"Name={name}\n"
-        f"URL={file_uri(target)}\n"
-        f"Icon={icon}\n"
-    )
+    keyfile = GLib.KeyFile()
+    keyfile.set_string("Desktop Entry", "Type", "Link")
+    keyfile.set_string("Desktop Entry", "Name", sanitize_name(name))
+    keyfile.set_string("Desktop Entry", "URL", file_uri(target))
+    keyfile.set_string("Desktop Entry", "Icon", guess_icon(target))
+    content, _length = keyfile.to_data()
     dest.write_text(content, encoding="utf-8")
     trust_desktop_file(dest)
 
@@ -108,8 +105,11 @@ def add_shortcut(source: Path, desktop: Path) -> Path:
     if suffix == ".desktop":
         name = read_desktop_name(source) or source.stem
         dest = unique_path(desktop, name, ".desktop")
-        shutil.copy2(source, dest)
-        trust_desktop_file(dest)
+        if is_trusted_application_launcher(source):
+            shutil.copy2(source, dest)
+            trust_desktop_file(dest)
+        else:
+            copy_untrusted_launcher(source, dest)
         return dest
 
     if suffix == ".url":
@@ -135,9 +135,14 @@ def copy_one(source: Path, desktop: Path) -> Path:
     if source.is_dir():
         shutil.copytree(source, dest)
     else:
-        shutil.copy2(source, dest)
         if dest.suffix.lower() == ".desktop":
-            trust_desktop_file(dest)
+            if is_trusted_application_launcher(source):
+                shutil.copy2(source, dest)
+                trust_desktop_file(dest)
+            else:
+                copy_untrusted_launcher(source, dest)
+        else:
+            shutil.copy2(source, dest)
     return dest
 
 

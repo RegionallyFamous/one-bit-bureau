@@ -24,6 +24,12 @@ if _BIN_DIR not in sys.path:
     sys.path.insert(0, _BIN_DIR)
 
 from common import desktop_dir, guess_icon, unique_dest
+from desktop_policy import (
+    is_trusted_application_launcher,
+    is_under,
+    lexical_path,
+    trusted_application_dirs,
+)
 
 IMAGE_SUFFIXES = {
     ".png",
@@ -71,41 +77,6 @@ REMOTE_OR_INLINE_PREFIXES = (
     "qt:",
     "mailto:",
 )
-
-
-def trusted_application_dirs() -> list[Path]:
-    dirs: list[Path] = []
-    seen: set[str] = set()
-
-    def add(path: Path) -> None:
-        try:
-            resolved = path.expanduser().resolve()
-        except OSError:
-            return
-        key = str(resolved)
-        if key in seen:
-            return
-        seen.add(key)
-        dirs.append(resolved)
-
-    add(Path("/usr/share/applications"))
-    add(Path("/usr/local/share/applications"))
-    add(Path.home() / ".local/share/applications")
-    for raw in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":"):
-        if raw.strip():
-            add(Path(raw) / "applications")
-    data_home = os.environ.get("XDG_DATA_HOME")
-    if data_home:
-        add(Path(data_home) / "applications")
-    return dirs
-
-
-def is_under(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-        return True
-    except (ValueError, OSError):
-        return False
 
 
 def plain_text(value: str, max_length: int = MAX_NAME_LENGTH) -> str:
@@ -399,11 +370,7 @@ def list_items() -> dict:
 
 
 def path_from_uri(value: str) -> Path:
-    text = value.strip().strip("<>")
-    if text.startswith("file://"):
-        parsed = urlparse(text)
-        return Path(unquote(parsed.path))
-    return Path(os.path.expanduser(text)).resolve()
+    return lexical_path(value)
 
 
 def open_trash() -> None:
@@ -415,14 +382,22 @@ def open_trash() -> None:
 
 
 def trash_one(path: Path) -> None:
-    path = path.expanduser()
-    if path.as_uri().startswith("trash:"):
+    path = lexical_path(str(path))
+    if path.parent.resolve() != desktop_dir().resolve():
+        raise PermissionError("Trash is limited to direct Desktop items")
+    try:
+        info = path.lstat()
+    except OSError as error:
+        raise FileNotFoundError(f"Path not found: {path}") from error
+    if (
+        stat.S_ISREG(info.st_mode)
+        and path.suffix.lower() == ".desktop"
+        and is_trash_launcher(read_desktop_entry(path))
+    ):
         return
-    if not path.exists():
-        raise FileNotFoundError(f"Path not found: {path}")
-    if path.suffix.lower() == ".desktop" and is_trash_launcher(read_desktop_entry(path)):
-        return
-    gfile = Gio.File.new_for_path(str(path.resolve()))
+    # Gio must receive the lexical Desktop entry. Resolving here would move a
+    # symlink's target to Trash and leave the broken link behind.
+    gfile = Gio.File.new_for_path(str(path))
     try:
         gfile.trash(None)
     except GLib.Error as error:
@@ -480,19 +455,26 @@ def open_path(path: Path, *, require_trust: bool = True) -> None:
 
 
 def place_one(source: Path, desktop: Path, mode: str) -> Path:
-    source = source.expanduser().resolve()
-    if not source.exists():
-        raise FileNotFoundError(f"Path not found: {source}")
+    source = lexical_path(str(source))
+    try:
+        source.lstat()
+    except OSError as error:
+        raise FileNotFoundError(f"Path not found: {source}") from error
+    if mode == "move":
+        user_home = Path.home().resolve()
+        if source == user_home or not is_under(source.parent, user_home):
+            raise PermissionError("Move is limited to items inside the home directory")
+    else:
+        source = source.resolve()
+        if not source.exists():
+            raise FileNotFoundError(f"Path not found: {source}")
     if source == desktop:
         raise ValueError("Cannot place the Desktop folder onto itself")
     if source.parent == desktop and mode != "link":
         return source
 
-    if mode == "link" or (
-        mode == "copy"
-        and source.suffix.lower() == ".desktop"
-        and ("/applications" in str(source.parent) or source.parent.name == "applications")
-    ):
+    launcher_transfer = mode in ("copy", "move") and source.suffix.lower() == ".desktop"
+    if mode == "link" or launcher_transfer:
         helper = (
             shutil.which("add-to-desktop")
             or str(Path(__file__).resolve().parent / "add-to-desktop")
@@ -504,10 +486,19 @@ def place_one(source: Path, desktop: Path, mode: str) -> Path:
             stdout=subprocess.PIPE,
             text=True,
         )
+        if result.returncode != 0:
+            raise RuntimeError("Could not add the item to the Desktop safely")
         out = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
-        if out:
-            return Path(out[-1])
-        return desktop / source.name
+        destination = lexical_path(out[-1] if out else str(desktop / source.name))
+        if destination.parent.resolve() != desktop.resolve():
+            raise RuntimeError("Safe Desktop helper returned an invalid destination")
+        try:
+            destination.lstat()
+        except OSError as error:
+            raise RuntimeError("Safe Desktop helper did not create the item") from error
+        if mode == "move":
+            source.unlink()
+        return destination
 
     dest = unique_dest(desktop, source.name)
     if mode == "move":
@@ -523,6 +514,8 @@ def place_one(source: Path, desktop: Path, mode: str) -> Path:
 def _bounded_paths(values: list[str], flag: str) -> list[str]:
     if len(values) > MAX_PATH_ARGS:
         raise ValueError(f"Too many {flag} arguments (max {MAX_PATH_ARGS})")
+    if any(not str(value or "").strip() for value in values):
+        raise ValueError(f"Empty {flag} path")
     return values
 
 
@@ -607,11 +600,9 @@ if __name__ == "__main__":
             try:
                 Gio.Subprocess.new(
                     [
-                        "notify-send",
+                        "omarchy-notification-send",
                         "-u",
                         "normal",
-                        "-i",
-                        "dialog-error",
                         "Desktop",
                         plain_text(str(error), MAX_ERROR_LENGTH),
                     ],

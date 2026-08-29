@@ -30,13 +30,13 @@ collect_diagnostics() {
     quickshell --no-color log -p "$OMARCHY_PATH/shell" --any-display --tail 320 2>&1 || true
     echo "==> shell journal"
     journalctl --user -b -u omarchy-shell.service --no-pager -n 320 2>&1 || true
-  } >"$ARTIFACTS/alumina-diagnostics.log"
+  } >"$ARTIFACTS/paper-jam-diagnostics.log"
 }
 
-cleanup_alumina() {
+cleanup_paper_jam() {
   trap - ERR
   omarchy-shell shell hide "$PLUGIN_ID" >/dev/null 2>&1 || true
-  close_windows '^alumina-qa-' || true
+  close_windows '^paper-jam-qa-' || true
   if [[ -n $ORIGINAL_THEME ]]; then
     omarchy theme set "$ORIGINAL_THEME" >/dev/null 2>&1 || true
   fi
@@ -44,7 +44,7 @@ cleanup_alumina() {
     rm -rf "$PLUGIN_DIR"
     omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
   fi
-  rm -rf "$THEMES_DIR/alumina-raster"
+  rm -rf "$THEMES_DIR/paper-jam-84"
 }
 
 handle_unexpected_error() {
@@ -54,76 +54,94 @@ handle_unexpected_error() {
 
   trap - ERR
   collect_diagnostics
-  screenshot "failure-alumina-unexpected-command"
-  printf 'not ok - Alumina stopped at line %s with status %s: %s\n' "$line" "$status" "$command" >&2
+  screenshot "failure-paper-jam-unexpected-command"
+  printf 'not ok - Paper Jam stopped at line %s with status %s: %s\n' "$line" "$status" "$command" >&2
   exit "$status"
 }
 
-trap cleanup_alumina EXIT
+trap cleanup_paper_jam EXIT
 trap 'handle_unexpected_error "$LINENO" "$BASH_COMMAND"' ERR
 
-[[ ! -e $PLUGIN_DIR ]] || fail "Alumina is absent before installation"
+[[ ! -e $PLUGIN_DIR ]] || fail "Paper Jam is absent before installation"
 [[ -x $QMLLINT_BIN ]] || fail "the guest provides qmllint"
 
 mapfile -d '' -t qml_files < <(find "$FIXTURE" -type f -name '*.qml' -print0 | sort -z)
-if ! "$QMLLINT_BIN" -I "$OMARCHY_PATH/shell" "${qml_files[@]}" >"$ARTIFACTS/alumina-qmllint.log" 2>&1; then
-  fail "Alumina passes qmllint" "$(<"$ARTIFACTS/alumina-qmllint.log")"
+if ! "$QMLLINT_BIN" -I "$OMARCHY_PATH/shell" "${qml_files[@]}" >"$ARTIFACTS/paper-jam-qmllint.log" 2>&1; then
+  fail "Paper Jam passes qmllint" "$(<"$ARTIFACTS/paper-jam-qmllint.log")"
 fi
-pass "Alumina passes qmllint"
+pass "Paper Jam passes qmllint"
 
-"$OMARCHY_PATH/bin/omarchy-plugin-validate" "$FIXTURE" || fail "Alumina passes the host validator"
-pass "Alumina passes the host validator"
+"$OMARCHY_PATH/bin/omarchy-plugin-validate" "$FIXTURE" || fail "Paper Jam passes the host validator"
+pass "Paper Jam passes the host validator"
 
 mkdir -p "$HOME/Desktop" "$THEMES_DIR" "$(dirname "$PLUGIN_DIR")"
 mkdir -p "$HOME/Desktop/Projects"
-printf 'Alumina runtime proof\n' >"$HOME/Desktop/ALUMINA-QA.txt"
+printf 'Paper Jam runtime proof\n' >"$HOME/Desktop/PAPER-JAM-QA.txt"
+cp "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/Paper Jam Photo.png"
+
+printf 'keep target\n' >"$HOME/PAPER-JAM-SYMLINK-TARGET.txt"
+ln -s "$HOME/PAPER-JAM-SYMLINK-TARGET.txt" "$HOME/Desktop/Symlink to keep.txt"
+python3 "$FIXTURE/components/desktop/bin/desktop-index" --trash "$HOME/Desktop/Symlink to keep.txt"
+[[ -f $HOME/PAPER-JAM-SYMLINK-TARGET.txt && ! -e $HOME/Desktop/Symlink\ to\ keep.txt ]] || fail "Trash removes a Desktop symlink without trashing its target"
+pass "Trash preserves a Desktop symlink target"
+
+mkdir -p "$HOME/Downloads/applications"
+printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Untrusted QA' 'Exec=foot' >"$HOME/Downloads/applications/untrusted-qa.desktop"
+chmod +x "$HOME/Downloads/applications/untrusted-qa.desktop"
+python3 "$FIXTURE/components/desktop/bin/add-to-desktop" "$HOME/Downloads/applications/untrusted-qa.desktop" >/dev/null
+[[ ! -x $HOME/Desktop/Untrusted\ QA.desktop ]] || fail "Downloaded launchers remain untrusted"
+python3 "$FIXTURE/components/desktop/bin/desktop-index" | jq -e '.items[] | select(.name == "Untrusted QA") | .trusted == false' >/dev/null || fail "Desktop index reports copied downloaded launcher as untrusted"
+pass "Copied downloaded launchers remain untrusted"
+
 cp -a "$FIXTURE" "$PLUGIN_DIR"
-cp -a "$FIXTURE/themes/alumina-raster" "$THEMES_DIR/alumina-raster"
+cp -a "$FIXTURE/themes/paper-jam-84" "$THEMES_DIR/paper-jam-84"
 
 omarchy-shell shell rescanPlugins >/dev/null
-wait_until "Alumina is discovered" 15 \
+wait_until "Paper Jam is discovered" 15 \
   bash -c "omarchy plugin list --json | jq -e --arg id '$PLUGIN_ID' 'any(.[]; .id == \$id)'"
 
 omarchy plugin enable "$PLUGIN_ID" --section left --after omarchy.menu >/dev/null
-wait_until "Alumina is enabled" 15 \
+wait_until "Paper Jam is enabled" 15 \
   bash -c "omarchy plugin list --json | jq -e --arg id '$PLUGIN_ID' 'any(.[]; .id == \$id and .enabled)'"
-wait_until "Alumina desktop files are mounted" 20 layer_on_screen desktop-icons
-wait_until "Alumina dock is mounted" 20 layer_on_screen alumina-dock
-wait_until "Alumina overview hot corner is resident" 20 layer_on_screen alumina-overview-hot-corner
+wait_until "Paper Jam desktop files are mounted" 20 layer_on_screen desktop-icons
+wait_until "Paper Jam dock is mounted" 20 layer_on_screen alumina-dock
+wait_until "Paper Jam overview hot corner is resident" 20 layer_on_screen alumina-overview-hot-corner
 omarchy-shell regionallyfamous.alumina.dock setAutoHide false >/dev/null
-wait_until "Alumina dock auto-hide is disabled for visual proof" 10 \
+wait_until "Paper Jam dock auto-hide is disabled for visual proof" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.alumina.dock getAutoHide) == 'false' ]]"
 
-omarchy theme set alumina-raster >/dev/null
-wait_until "Alumina Raster is active" 30 \
-  bash -c "grep -Fxq 'alumina-raster' '$HOME/.local/state/omarchy/current/theme.name'"
+omarchy theme set paper-jam-84 >/dev/null
+wait_until "Paper Jam ’84 is active" 30 \
+  bash -c "grep -Fxq 'paper-jam-84' '$HOME/.local/state/omarchy/current/theme.name'"
 sleep 2
-screen_lacks "Your config has errors" || fail "Alumina Raster applies without a Hyprland config error"
-pass "Alumina Raster applies without a Hyprland config error"
+screen_lacks "Your config has errors" || fail "Paper Jam applies without a Hyprland config error"
+pass "Paper Jam applies without a Hyprland config error"
 omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
-screenshot "success-alumina-01-raster-desktop-dock"
+screenshot "success-paper-jam-01-desktop-dock"
 
-setsid -f foot --app-id=alumina-qa-one --title="Alumina Notes" >/dev/null 2>&1
-setsid -f foot --app-id=alumina-qa-two --title="Alumina Project" >/dev/null 2>&1
-wait_until "the first proof window opens" 20 window_present '^alumina-qa-one$'
-wait_until "the second proof window opens" 20 window_present '^alumina-qa-two$'
+setsid -f foot --app-id=paper-jam-qa-one --title="Paper Jam Notes" >/dev/null 2>&1
+setsid -f foot --app-id=paper-jam-qa-two --title="Paper Jam Project" >/dev/null 2>&1
+wait_until "the first proof window opens" 20 window_present '^paper-jam-qa-one$'
+wait_until "the second proof window opens" 20 window_present '^paper-jam-qa-two$'
 sleep 3
 omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 
 omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
-wait_until "Alumina overview opens" 20 layer_on_screen alumina-window-overview
-wait_until "Alumina overview instructions paint" 20 screen_contains "navigate"
+wait_until "Paper Jam overview opens" 20 layer_on_screen alumina-window-overview
+wait_until "Paper Jam overview instructions paint" 20 screen_contains "navigate"
 sleep 2
-screenshot "success-alumina-02-raster-overview"
+screenshot "success-paper-jam-02-overview"
 
 omarchy-shell shell hide "$PLUGIN_ID" >/dev/null
-wait_until "Alumina overview layer closes" 20 layer_absent alumina-window-overview
-wait_until "Alumina overview pixels clear" 10 screen_lacks "navigate"
+wait_until "Paper Jam overview layer closes" 20 layer_absent alumina-window-overview
+wait_until "Paper Jam overview pixels clear" 10 screen_lacks "navigate"
 
 omarchy plugin disable "$PLUGIN_ID" >/dev/null
-wait_until "Alumina dock unloads" 20 layer_absent alumina-dock
-wait_until "Alumina desktop service unloads" 20 layer_absent desktop-icons
-wait_until "Alumina hot corner unloads" 20 layer_absent alumina-overview-hot-corner
-screenshot "success-alumina-03-disabled-stock-shell"
+wait_until "Paper Jam dock unloads" 20 layer_absent alumina-dock
+wait_until "Paper Jam desktop service unloads" 20 layer_absent desktop-icons
+wait_until "Paper Jam hot corner unloads" 20 layer_absent alumina-overview-hot-corner
+hyprctl -j binds | jq -e 'all(.[]; ((.command // "") + " " + (.arg // "")) | contains("regionallyfamous.alumina.dock") | not)' >/dev/null || fail "Paper Jam leaves no dead global app-switcher bindings"
+pass "Paper Jam leaves global app-switcher bindings untouched"
+screenshot "success-paper-jam-03-disabled-stock-shell"
 
-pass "Alumina runtime acceptance passed"
+pass "Paper Jam runtime acceptance passed"

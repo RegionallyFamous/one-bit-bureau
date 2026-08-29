@@ -2,7 +2,6 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
-import QtQuick.Effects
 import qs.Commons
 
 Item {
@@ -151,6 +150,8 @@ Item {
       return "trash"
     if (kind === "folder" || item.isDir)
       return "folder"
+    if (kind === "image" && !String(item.preview || ""))
+      return "image"
     if (kind === "file") {
       var filename = String(item.name || item.path || "").toLowerCase()
       if (/\.(7z|bz2|gz|rar|tar|tgz|xz|zip)$/.test(filename))
@@ -498,6 +499,7 @@ Item {
       property real menuY: 0
       property bool dropping: false
       property int emptyClicks: 0
+      property int trustFocusIndex: 0
       property bool _initialized: false
       property var _knownIds: ({})
 
@@ -720,11 +722,26 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         focus: true
         Keys.onPressed: function(event) {
-          if (host.pendingTrust && (event.key === Qt.Key_Escape
-                                   || event.key === Qt.Key_Return
-                                   || event.key === Qt.Key_Enter)) {
-            host.clearTrustPrompt()
-            panel.closeMenu()
+          if (host.pendingTrust) {
+            if (event.key === Qt.Key_Escape
+                || event.key === Qt.Key_Return
+                || event.key === Qt.Key_Enter) {
+              // The safe default remains Cancel. Enter never trusts code.
+              host.clearTrustPrompt()
+              panel.closeMenu()
+            } else if (event.key === Qt.Key_Tab
+                       || event.key === Qt.Key_Backtab
+                       || event.key === Qt.Key_Left
+                       || event.key === Qt.Key_Right) {
+              panel.trustFocusIndex = panel.trustFocusIndex === 0 ? 1 : 0
+            } else if (event.key === Qt.Key_Space) {
+              if (panel.trustFocusIndex === 0)
+                host.clearTrustPrompt()
+              else
+                host.trustAndOpen(host.pendingTrust)
+            } else {
+              return
+            }
             event.accepted = true
             return
           }
@@ -834,6 +851,8 @@ Item {
           property real pressX: 0
           property real pressY: 0
           readonly property bool selected: panel.host.selectedId === iconRoot.modelData.id
+          readonly property bool photoPreview: String(iconRoot.modelData.kind || "") === "image"
+            && String(iconRoot.modelData.preview || "") !== ""
 
           Binding on x {
             value: panel.posFor(iconRoot.modelData, iconRoot.index).x
@@ -866,12 +885,14 @@ Item {
               width: panel.host.iconSize + 8
               height: panel.host.iconSize + 8
               anchors.horizontalCenter: parent.horizontalCenter
+              clip: true
 
               Rectangle {
                 anchors.fill: parent
                 radius: 0
                 color: iconRoot.selected && panel.host.usesCategoryIcon(iconRoot.modelData)
-                  ? Color.foreground : "transparent"
+                  ? Color.foreground
+                  : (iconRoot.selected && iconRoot.photoPreview ? Color.menu.background : "transparent")
                 border.width: iconRoot.selected ? 2 : 0
                 border.color: Color.foreground
               }
@@ -882,15 +903,12 @@ Item {
                 width: panel.host.iconSize
                 height: panel.host.iconSize
                 source: panel.host.objectIconSource(iconRoot.modelData, iconRoot.selected)
-                fillMode: Image.PreserveAspectFit
+                fillMode: iconRoot.photoPreview ? Image.PreserveAspectCrop : Image.PreserveAspectFit
                 asynchronous: true
                 cache: true
                 smooth: !panel.host.usesCategoryIcon(iconRoot.modelData)
                 sourceSize.width: panel.host.iconSize * Screen.devicePixelRatio
                 sourceSize.height: panel.host.iconSize * Screen.devicePixelRatio
-                layer.enabled: !panel.host.usesCategoryIcon(iconRoot.modelData)
-                layer.smooth: true
-                layer.effect: MultiEffect { saturation: -1 }
               }
 
               Rectangle {
@@ -1136,6 +1154,11 @@ Item {
         function onItemsChanged() {
           panel.maybeRepack()
         }
+        function onPendingTrustChanged() {
+          panel.trustFocusIndex = 0
+          if (host.pendingTrust)
+            emptyMouse.forceActiveFocus()
+        }
       }
 
       Rectangle {
@@ -1215,10 +1238,11 @@ Item {
             spacing: 8
 
             Rectangle {
+              readonly property bool keyboardFocus: host.pendingTrust && panel.trustFocusIndex === 0
               width: cancelLabel.implicitWidth + 20
               height: 32
               radius: 0
-              color: cancelMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+              color: cancelMouse.containsMouse || keyboardFocus ? Color.menu.selectedBackground : "transparent"
               border.width: 2
               border.color: Color.popups.border
 
@@ -1228,7 +1252,7 @@ Item {
                 radius: 0
                 color: "transparent"
                 border.width: 1
-                border.color: cancelMouse.containsMouse ? Color.menu.selectedText : Color.popups.border
+                border.color: cancelMouse.containsMouse || parent.keyboardFocus ? Color.menu.selectedText : Color.popups.border
               }
 
               Text {
@@ -1236,7 +1260,7 @@ Item {
                 anchors.centerIn: parent
                 text: "Cancel"
                 textFormat: Text.PlainText
-                color: cancelMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
+                color: cancelMouse.containsMouse || parent.keyboardFocus ? Color.menu.selectedText : Color.popups.text
                 font.pixelSize: 13
                 font.family: Style.fontFamily
               }
@@ -1245,15 +1269,17 @@ Item {
                 id: cancelMouse
                 anchors.fill: parent
                 hoverEnabled: true
+                onEntered: panel.trustFocusIndex = 0
                 onClicked: host.clearTrustPrompt()
               }
             }
 
             Rectangle {
+              readonly property bool keyboardFocus: host.pendingTrust && panel.trustFocusIndex === 1
               width: trustLabel.implicitWidth + 20
               height: 32
               radius: 0
-              color: trustMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+              color: trustMouse.containsMouse || keyboardFocus ? Color.menu.selectedBackground : "transparent"
               border.width: 2
               border.color: Color.popups.border
 
@@ -1262,7 +1288,7 @@ Item {
                 anchors.centerIn: parent
                 text: "Trust and Open"
                 textFormat: Text.PlainText
-                color: trustMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
+                color: trustMouse.containsMouse || parent.keyboardFocus ? Color.menu.selectedText : Color.popups.text
                 font.pixelSize: 13
                 font.family: Style.fontFamily
               }
@@ -1271,6 +1297,7 @@ Item {
                 id: trustMouse
                 anchors.fill: parent
                 hoverEnabled: true
+                onEntered: panel.trustFocusIndex = 1
                 onClicked: host.trustAndOpen(host.pendingTrust)
               }
             }

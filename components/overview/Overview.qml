@@ -1907,7 +1907,7 @@ Item {
                                 text: overviewWindow.screenToplevels.length + " windows"
                                 textFormat: Text.PlainText
                                 color: Color.menu.text
-                                opacity: 0.55
+                                opacity: 0.7
                                 font.family: Style.font.menuFamily
                                 font.pixelSize: Style.font.bodySmall
                             }
@@ -2014,7 +2014,7 @@ Item {
                             text: "← ↑ ↓ → navigate   Space preview   Tab scope   Shift+Q close   Enter open   Esc close"
                             textFormat: Text.PlainText
                             color: Color.menu.text
-                            opacity: 0.55
+                            opacity: 0.7
                             font.family: Style.font.menuFamily
                             font.pixelSize: Style.font.bodySmall
                         }

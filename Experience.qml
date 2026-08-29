@@ -1,6 +1,6 @@
 import QtQuick
-import "components/dock" as AluminaDock
-import "components/overview" as AluminaOverview
+import "components/dock" as PaperJamDock
+import "components/overview" as PaperJamOverview
 
 Item {
   id: root
@@ -21,7 +21,7 @@ Item {
     overview.close()
   }
 
-  AluminaDock.DockPanel {
+  PaperJamDock.DockPanel {
     shell: root.shell
     pluginRegistry: root.pluginRegistry
     manifest: root.manifest
@@ -29,7 +29,7 @@ Item {
     service: root.service
   }
 
-  AluminaOverview.Overview {
+  PaperJamOverview.Overview {
     id: overview
     shell: root.shell
     manifest: root.manifest

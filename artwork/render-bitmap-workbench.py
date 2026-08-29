@@ -10,8 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "artwork" / "imagegen"
 WALLPAPER_SOURCE = SOURCE_DIR / "bitmap-workbench-wallpaper-source.png"
 ATLAS_SOURCE = SOURCE_DIR / "bitmap-desktop-object-atlas-source.png"
-THEME_DIR = ROOT / "themes" / "alumina-raster"
-BACKGROUND = THEME_DIR / "backgrounds" / "alumina-raster.png"
+IMAGE_FALLBACK_SOURCE = SOURCE_DIR / "bitmap-image-fallback-source.png"
+THEME_DIR = ROOT / "themes" / "paper-jam-84"
+BACKGROUND = THEME_DIR / "backgrounds" / "paper-jam-84.png"
 PREVIEW = THEME_DIR / "preview.png"
 ASSET_DIR = ROOT / "components" / "desktop" / "assets"
 
@@ -107,10 +108,19 @@ def render_objects() -> None:
             source = temporary_dir / f"cell-{index}.png"
             render_object(source, ASSET_DIR / f"{name}.png", selected=False)
             render_object(source, ASSET_DIR / f"{name}-selected.png", selected=True)
+    render_object(
+        IMAGE_FALLBACK_SOURCE, ASSET_DIR / "image.png", selected=False
+    )
+    render_object(
+        IMAGE_FALLBACK_SOURCE, ASSET_DIR / "image-selected.png", selected=True
+    )
 
 
 def main() -> None:
-    if not WALLPAPER_SOURCE.is_file() or not ATLAS_SOURCE.is_file():
+    if not all(
+        source.is_file()
+        for source in (WALLPAPER_SOURCE, ATLAS_SOURCE, IMAGE_FALLBACK_SOURCE)
+    ):
         raise SystemExit("Bitmap Workbench ImageGen sources are missing")
     render_wallpaper()
     render_objects()

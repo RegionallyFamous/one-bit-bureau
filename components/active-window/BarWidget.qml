@@ -14,6 +14,7 @@ BarWidget {
 
   readonly property var waylandToplevel: ToplevelManager.activeToplevel
   readonly property var hyprlandToplevel: Hyprland.activeToplevel
+  readonly property bool hasActiveWindow: !!(waylandToplevel || hyprlandToplevel)
   readonly property var ipcObject: hyprlandToplevel && hyprlandToplevel.lastIpcObject
     ? hyprlandToplevel.lastIpcObject : ({})
   readonly property string appClass: String(ipcObject.class || (waylandToplevel ? waylandToplevel.appId : "") || "")
@@ -38,7 +39,7 @@ BarWidget {
   readonly property var desktopEntries: DesktopEntries.applications ? DesktopEntries.applications.values : []
   readonly property var desktopEntry: AppIconModel.resolve(desktopEntries, [appClass, initialClass, executableName])
   readonly property string applicationName: String(
-    (desktopEntry ? desktopEntry.name : "") || appClass || executableName || "Application"
+    (desktopEntry ? desktopEntry.name : "") || appClass || executableName || (hasActiveWindow ? "Application" : "")
   )
   readonly property string displayLabel: {
     var owner = applicationName.trim()
@@ -55,11 +56,11 @@ BarWidget {
   readonly property int configuredIconSize: Math.max(12, Number(setting("iconSize", 16)))
   readonly property int iconSize: Math.min(configuredIconSize, Math.max(12, barSize - Style.space(6)))
   readonly property real saturationEffect: {
-    var percent = Math.max(0, Math.min(200, Number(setting("iconSaturation", 0))))
+    var percent = Math.max(0, Math.min(200, Number(setting("iconSaturation", 100))))
     return (percent - 100) / 100
   }
 
-  visible: displayLabel !== ""
+  visible: hasActiveWindow && displayLabel !== ""
   implicitWidth: visible
     ? (vertical || !showTitle
       ? barSize

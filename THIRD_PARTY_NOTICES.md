@@ -1,6 +1,6 @@
 # Third-party notices
 
-Alumina Raster combines four MIT-licensed Omarchy plugins into one maintained experience. Their original license texts remain beside their source under `components/`.
+Paper Jam ’84 combines four MIT-licensed Omarchy plugins into one maintained experience. Their original license texts remain beside their source under `components/`.
 
 | Component | Upstream | Imported revision | Copyright |
 |---|---|---|---|

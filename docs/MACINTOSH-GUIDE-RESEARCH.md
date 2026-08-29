@@ -1,6 +1,6 @@
 # Original Macintosh interface research
 
-Alumina Raster's Object-First revision is based on primary Apple documentation and a reviewed oral history. The implementation uses the documents' interaction and communication methods while excluding Apple-owned artwork and exact trade dress.
+Paper Jam ’84’s Object-First revision is based on primary Apple documentation and a reviewed oral history. The implementation uses the documents' interaction and communication methods while excluding Apple-owned artwork and exact trade dress.
 
 ## Primary evidence
 
@@ -9,7 +9,7 @@ Alumina Raster's Object-First revision is based on primary Apple documentation a
 - Apple, [*Inside Macintosh, Volume I* (1984)](https://www.bitsavers.org/pdf/apple/mac/Inside_Macintosh_Vol_1_1984.pdf): responsiveness, permissiveness, and consistency on pages I-27–I-28; visibly constrained modes on page I-28; target-size icon-grid construction in the preliminary interface guidelines; stable menu inventories on pages I-51–I-53; and visible cause and effect plus safe dialog defaults on pages I-65–I-69.
 - Stanford University Libraries, [Susan Kare oral history](https://www-leland.stanford.edu/dept/SUL/sites/mac/primary/interviews/kare/mac.html): the reusable method is to explore alternatives, judge icons at target size, iterate from feedback, and distinguish object categories through legible concepts. Kare's exact icons, silhouettes, humor, and pixel decisions remain personal signatures and are not reproduced.
 
-## What changed in Alumina Raster
+## What changed in Paper Jam ’84
 
 - Desktop input now follows select-before-action: single click selects, double-click opens, Return opens, and empty click clears.
 - Original ImageGen-authored raster mini-illustrations replace arbitrary modern fallbacks for generic objects. Real thumbnails and meaningful application icons remain recognizable.
@@ -22,6 +22,6 @@ Alumina Raster's Object-First revision is based on primary Apple documentation a
 
 ## Deliberate limits
 
-The 1984 Macintosh had no dock, while Omarchy's client-side decorations and tiling model cannot expose one universal historical window frame. Alumina therefore keeps the dock as an explicitly modern launch shelf and concentrates historical method in the desktop object model, stable command inventory, ownership feedback, top rail, overview, theme geometry, and wallpaper ground.
+The 1984 Macintosh had no dock, while Omarchy's client-side decorations and tiling model cannot expose one universal historical window frame. Paper Jam therefore keeps the dock as an explicitly modern launch shelf and concentrates historical method in the desktop object model, stable command inventory, ownership feedback, top rail, overview, theme geometry, and wallpaper ground.
 
 No Apple logo, Happy Mac, Finder face, Command-key symbol, Susan Kare icon, Chicago or Geneva font, original desktop tile, title-bar stripe copy, system sound, device silhouette, or manual screenshot is included.

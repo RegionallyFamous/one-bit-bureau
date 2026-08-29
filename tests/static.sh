@@ -13,10 +13,13 @@ THEME_TOOL="${OMARCHY_THEME_TOOL:-$HOME/.codex/skills/build-omarchy-themes/scrip
 
 "$OMARCHY_ROOT/bin/omarchy-plugin-validate" "$ROOT"
 bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/test/omarchy-acceptance.sh"
-bash -n "$ROOT/components/overview/activate-window" "$ROOT/components/overview/background-blur-session" "$ROOT/components/dock/scripts/omarchy-dock-icon"
-for helper in "$ROOT/components/desktop/bin/common.py" "$ROOT/components/desktop/bin/desktop-index" "$ROOT/components/desktop/bin/add-to-desktop"; do
+bash "$ROOT/tests/install-roundtrip.sh"
+bash -n "$ROOT/components/overview/activate-window" "$ROOT/components/overview/background-blur-session" "$ROOT/components/dock/scripts/omarchy-dock-icon" "$ROOT/components/dock/scripts/focus-window"
+for helper in "$ROOT/components/desktop/bin/common.py" "$ROOT/components/desktop/bin/desktop_policy.py" "$ROOT/components/desktop/bin/desktop-index" "$ROOT/components/desktop/bin/add-to-desktop"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$helper"
 done
+python3 -m unittest discover -s "$ROOT/components/desktop/tests" -p 'test_*.py'
+python3 -m unittest discover -s "$ROOT/tests" -p 'test_*.py'
 for artwork_helper in "$ROOT/artwork/render-bitmap-workbench.py" "$ROOT/artwork/render-crop-proof.py"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$artwork_helper"
 done
@@ -46,4 +49,4 @@ for theme in "$ROOT"/themes/*; do
   python3 "$THEME_TOOL" render "$theme" --omarchy-root "$OMARCHY_ROOT" --out "$render_path"
 done
 
-echo "Alumina Raster static validation passed."
+echo "Paper Jam ’84 static validation passed."

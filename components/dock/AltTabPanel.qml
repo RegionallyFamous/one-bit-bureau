@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
@@ -165,9 +164,6 @@ PanelWindow {
             sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
             fillMode: Image.PreserveAspectFit
             cache: true
-            layer.enabled: true
-            layer.smooth: true
-            layer.effect: MultiEffect { saturation: -1 }
 
             Text {
               anchors.centerIn: parent

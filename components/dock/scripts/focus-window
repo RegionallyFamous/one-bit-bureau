@@ -1,0 +1,25 @@
+#!/bin/bash
+
+set -euo pipefail
+
+address=${1:-}
+[[ $address =~ ^0x[0-9a-fA-F]+$ ]] || {
+  echo "focus-window: invalid Hyprland address" >&2
+  exit 2
+}
+
+cursor_position=$(hyprctl cursorpos 2>/dev/null || true)
+no_warps=$(hyprctl getoption cursor:no_warps -j 2>/dev/null | jq -r 'if .int == 1 then "true" else "false" end' 2>/dev/null || echo false)
+
+restore_state() {
+  hyprctl eval "hl.config({ cursor = { no_warps = $no_warps } })" >/dev/null 2>&1 || true
+  if [[ $cursor_position =~ ^[[:space:]]*(-?[0-9]+)[[:space:]]*,[[:space:]]*(-?[0-9]+)[[:space:]]*$ ]]; then
+    hyprctl eval "hl.dsp.cursor.move({ x = ${BASH_REMATCH[1]}, y = ${BASH_REMATCH[2]} })" >/dev/null 2>&1 || true
+  fi
+}
+trap restore_state EXIT INT TERM
+
+hyprctl eval 'hl.config({ cursor = { no_warps = true } })' >/dev/null
+hyprctl eval "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+hyprctl eval 'hl.dsp.window.bring_to_top()' >/dev/null
+sleep 0.08

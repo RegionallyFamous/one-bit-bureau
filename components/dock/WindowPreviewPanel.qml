@@ -18,7 +18,10 @@ PanelWindow {
   property var thumbnailFor: function(item) { return "" }
   property Component cardComponent: Qt.createComponent("WindowPreview.qml")
   property var cards: []
-  readonly property bool panelActive: root.previewVisible || root.windowList.length > 0
+  // `windowList` is populated before fallback captures finish. Keep the
+  // layer-shell window out of those screenshots and out of the dock's
+  // auto-hide state until DockPanelBase explicitly commits the preview.
+  readonly property bool panelActive: root.previewVisible
 
   signal activated(var windowData)
   signal previewHoverEntered()
@@ -50,8 +53,6 @@ PanelWindow {
 
   onWindowListChanged: Qt.callLater(root.rebuild)
 
-  // Do not wait for a screenshot process to finish before showing the panel.
-  // The live ScreencopyView in each card can render independently.
   visible: root.panelActive
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
@@ -63,9 +64,7 @@ PanelWindow {
   Item {
     id: previewRow
     x: Math.max(8, Math.min(root.centerX - width / 2, parent.width - width - 8))
-    // DockPanel supplies the exact dock surface Y once its preview state is
-    // committed. While the first frame is arriving, use the known bottom
-    // dock geometry so the panel is already in the correct place.
+    // DockPanel supplies the exact dock surface Y when preview state commits.
     y: Math.max(8, (root.bottomY > 0 ? root.bottomY : parent.height - 123) - height - 6)
     width: row.implicitWidth
     height: row.implicitHeight
