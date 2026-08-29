@@ -1,14 +1,12 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
 import "DockModel.js" as DockModel
 
-// macOS-style app switcher HUD. The UI is a mirror image of the dock itself
-// (same glass surface, same icons) scaled up 30%, with the running dots,
-// icon magnification and name labels removed: a flat row of equally sized
-// icons. Selection is keyboard-driven while the dock's own mouse semantics
-// (hover to select, click to activate) still apply.
+// Raster app switcher: the launch shelf's square-cell grammar at a larger,
+// keyboard-first scale. It keeps equal icon sizes and uses binary selection.
 //
 // Keyboard contract: Hyprland consumes the ALT+GRAVE global binds (exec
 // omarchy-shell ... altTabNext/altTabPrev), so the bound key never reaches
@@ -26,11 +24,11 @@ PanelWindow {
   property var iconSourceFor: function(app) { return "" }
 
   // The dock's layout constants scaled by ~2.1 (15% over the previous 1.82).
-  property int iconSize: 105
-  property int slotWidth: 121
-  property int slotSpacing: 16
-  property int sidePadding: 38
-  property int surfaceHeight: 210
+  property int iconSize: 72
+  property int slotWidth: 88
+  property int slotSpacing: 0
+  property int sidePadding: 16
+  property int surfaceHeight: 112
 
   signal activated(string appId, string appName)
 
@@ -112,18 +110,18 @@ PanelWindow {
   anchors { top: true; bottom: true; left: true; right: true }
   mask: Region { item: dockSurface }
 
-  // The dock's own glass surface, centered on screen instead of bottom-anchored.
+  // An opaque contact strip centered on screen.
   Rectangle {
     id: dockSurface
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.verticalCenter: parent.verticalCenter
     width: root.surfaceWidth
     height: root.surfaceHeight
-    radius: 22
-    color: Util.alpha(Color.background, 0.88)
-    border.color: Util.alpha(Color.foreground, 0.20)
-    border.width: 1
-    opacity: root.active ? 1 : 0.96
+    radius: 0
+    color: Color.menu.background
+    border.color: Color.menu.border
+    border.width: 2
+    opacity: root.active ? 1 : 0
 
     Item {
       id: dockRow
@@ -153,8 +151,8 @@ PanelWindow {
             anchors.centerIn: parent
             width: root.iconSize + 12
             height: root.iconSize + 12
-            radius: 20
-            color: Util.alpha(Color.foreground, 0.10)
+            radius: 0
+            color: Color.menu.selectedBackground
             visible: root.selectedIndex === index
           }
 
@@ -167,12 +165,15 @@ PanelWindow {
             sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
             fillMode: Image.PreserveAspectFit
             cache: true
+            layer.enabled: true
+            layer.smooth: true
+            layer.effect: MultiEffect { saturation: -1 }
 
             Text {
               anchors.centerIn: parent
               visible: parent.status !== Image.Ready
               text: "◆"
-              color: Color.foreground
+              color: root.selectedIndex === index ? Color.menu.selectedText : Color.menu.text
               font.pixelSize: root.iconSize * 0.42
             }
           }

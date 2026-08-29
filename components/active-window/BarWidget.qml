@@ -45,7 +45,7 @@ BarWidget {
   readonly property int configuredIconSize: Math.max(12, Number(setting("iconSize", 16)))
   readonly property int iconSize: Math.min(configuredIconSize, Math.max(12, barSize - Style.space(6)))
   readonly property real saturationEffect: {
-    var percent = Math.max(0, Math.min(200, Number(setting("iconSaturation", 100))))
+    var percent = Math.max(0, Math.min(200, Number(setting("iconSaturation", 0))))
     return (percent - 100) / 100
   }
 
@@ -249,7 +249,7 @@ BarWidget {
         minimum: 0
         maximum: 200
         step: 5
-        currentValue: Number(root.setting("iconSaturation", 100))
+        currentValue: Number(root.setting("iconSaturation", 0))
         onPreviewed: function(value) { root.previewSetting("iconSaturation", Math.round(value)) }
         onCommitted: function(value) { root.saveSetting("iconSaturation", Math.round(value)) }
       }

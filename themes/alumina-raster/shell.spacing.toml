@@ -1,0 +1,12 @@
+scale = 0.92
+scale-with-font = false
+control-padding-x = 8
+control-padding-y = 4
+input-padding-y = 4
+control-gap = 4
+label-gap = 4
+row-gap = 8
+row-padding-x = 8
+panel-gap = 8
+panel-padding = 12
+popup-padding = 8

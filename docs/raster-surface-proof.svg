@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#f1f0e8"/>
+  <rect width="1600" height="28" fill="#171716"/>
+  <text x="16" y="19" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="700">STATIC DESIGN PROOF — NOT RUNTIME</text>
+
+  <g transform="translate(0 28)" shape-rendering="crispEdges">
+    <rect width="1600" height="872" fill="#f1f0e8"/>
+    <rect x="1120" width="10" height="872" fill="#1c1c1a"/>
+    <g fill="#1c1c1a">
+      <rect x="1160" y="80" width="20" height="20"/><rect x="1200" y="80" width="20" height="20"/><rect x="1260" y="80" width="20" height="20"/>
+      <rect x="1180" y="120" width="20" height="20"/><rect x="1240" y="120" width="20" height="20"/><rect x="1320" y="120" width="20" height="20"/>
+      <rect x="1160" y="160" width="20" height="20"/><rect x="1220" y="160" width="20" height="20"/><rect x="1280" y="160" width="20" height="20"/>
+      <rect x="1200" y="200" width="20" height="20"/><rect x="1260" y="200" width="20" height="20"/><rect x="1340" y="200" width="20" height="20"/>
+      <rect x="1160" y="260" width="20" height="20"/><rect x="1240" y="260" width="20" height="20"/><rect x="1300" y="260" width="20" height="20"/>
+      <rect x="1180" y="320" width="20" height="20"/><rect x="1220" y="320" width="20" height="20"/><rect x="1320" y="320" width="20" height="20"/>
+      <rect x="1160" y="380" width="20" height="20"/><rect x="1260" y="380" width="20" height="20"/><rect x="1360" y="380" width="20" height="20"/>
+      <rect x="1200" y="440" width="20" height="20"/><rect x="1280" y="440" width="20" height="20"/><rect x="1340" y="440" width="20" height="20"/>
+      <rect x="1160" y="500" width="20" height="20"/><rect x="1220" y="500" width="20" height="20"/><rect x="1300" y="500" width="20" height="20"/>
+      <rect x="1180" y="560" width="20" height="20"/><rect x="1260" y="560" width="20" height="20"/><rect x="1360" y="560" width="20" height="20"/>
+      <rect x="1160" y="620" width="20" height="20"/><rect x="1240" y="620" width="20" height="20"/><rect x="1320" y="620" width="20" height="20"/>
+      <rect x="1200" y="680" width="20" height="20"/><rect x="1280" y="680" width="20" height="20"/><rect x="1340" y="680" width="20" height="20"/>
+    </g>
+
+    <rect width="1600" height="30" fill="#e8e8e4" stroke="#171716" stroke-width="2"/>
+    <text x="14" y="20" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">ALUMINA RASTER</text>
+    <text x="1460" y="20" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="13">WS 1   10:24</text>
+
+    <g transform="translate(28 82)">
+      <rect x="0" y="0" width="58" height="44" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+      <rect x="6" y="-6" width="24" height="8" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+      <rect x="-4" y="52" width="66" height="22" fill="#f4f4f0" stroke="#171716"/>
+      <text x="29" y="68" text-anchor="middle" fill="#171716" font-family="DejaVu Sans Mono, monospace" font-size="12">Projects</text>
+    </g>
+    <g transform="translate(28 210)">
+      <path d="M8 0h38l12 12v42H8z" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+      <path d="M46 0v13h12" fill="none" stroke="#171716" stroke-width="2"/>
+      <rect x="-4" y="62" width="70" height="22" fill="#171716" stroke="#171716"/>
+      <text x="31" y="78" text-anchor="middle" fill="#f4f4f0" font-family="DejaVu Sans Mono, monospace" font-size="12">NOTES.TXT</text>
+    </g>
+
+    <g transform="translate(250 138)">
+      <rect width="560" height="368" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+      <rect x="0" y="0" width="560" height="32" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+      <text x="14" y="21" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Files — Documents</text>
+      <g transform="translate(30 72)" fill="#f4f4f0" stroke="#171716" stroke-width="2">
+        <g><rect width="76" height="56"/><rect x="8" y="-8" width="30" height="10"/></g>
+        <g transform="translate(130 0)"><rect width="76" height="56"/><rect x="8" y="-8" width="30" height="10"/></g>
+        <g transform="translate(260 0)"><path d="M8 0h48l16 16v52H8z"/><path d="M56 0v17h16" fill="none"/></g>
+        <g transform="translate(390 0)"><path d="M8 0h48l16 16v52H8z"/><path d="M56 0v17h16" fill="none"/></g>
+      </g>
+      <g fill="#171716" font-family="DejaVu Sans Mono, monospace" font-size="12" text-anchor="middle">
+        <text x="68" y="156">WORK</text><text x="198" y="156">ARCHIVE</text><text x="328" y="156">LIST.TXT</text><text x="458" y="156">PLAN.MD</text>
+      </g>
+      <rect x="26" y="194" width="508" height="1" fill="#171716"/>
+      <text x="30" y="230" fill="#5b5b57" font-family="DejaVu Sans, sans-serif" font-size="13">4 objects</text>
+    </g>
+
+    <g transform="translate(654 246)">
+      <rect width="570" height="360" fill="#e8e8e4" stroke="#171716" stroke-width="4"/>
+      <rect x="2" y="2" width="566" height="34" fill="#171716"/>
+      <text x="16" y="25" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Terminal — palette check</text>
+      <g font-family="DejaVu Sans Mono, monospace" font-size="15">
+        <text x="24" y="76" fill="#171716">$ omarchy theme set alumina-raster</text>
+        <text x="24" y="112" fill="#5b5b57">square surfaces · opaque paper · compact cadence</text>
+        <text x="24" y="158" fill="#7a1f24">RED</text><text x="90" y="158" fill="#205a34">GREEN</text><text x="180" y="158" fill="#514300">YELLOW</text>
+        <text x="290" y="158" fill="#1a4775">BLUE</text><text x="370" y="158" fill="#603667">MAGENTA</text><text x="475" y="158" fill="#13595e">CYAN</text>
+        <text x="24" y="204" fill="#171716">selection and focus are readable without hue</text>
+        <rect x="20" y="230" width="338" height="28" fill="#171716"/>
+        <text x="30" y="250" fill="#f4f4f0">BINARY OWNERSHIP FLIP</text>
+        <text x="24" y="302" fill="#171716">█</text>
+      </g>
+    </g>
+
+    <g transform="translate(440 786)">
+      <rect width="720" height="70" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+      <g transform="translate(14 8)" stroke="#171716" stroke-width="2">
+        <g><rect width="54" height="54" fill="#f4f4f0"/><text x="27" y="35" text-anchor="middle" fill="#171716" stroke="none" font-family="DejaVu Sans Mono, monospace" font-size="20">F</text><rect x="18" y="50" width="18" height="2" fill="#171716" stroke="none"/></g>
+        <g transform="translate(58 0)"><rect width="54" height="54" fill="#171716"/><text x="27" y="35" text-anchor="middle" fill="#f4f4f0" stroke="none" font-family="DejaVu Sans Mono, monospace" font-size="20">T</text><rect x="18" y="50" width="18" height="2" fill="#f4f4f0" stroke="none"/></g>
+        <g transform="translate(116 0)"><rect width="54" height="54" fill="#f4f4f0"/><text x="27" y="35" text-anchor="middle" fill="#171716" stroke="none" font-family="DejaVu Sans Mono, monospace" font-size="20">W</text></g>
+        <g transform="translate(174 0)"><rect width="54" height="54" fill="#f4f4f0"/><text x="27" y="35" text-anchor="middle" fill="#171716" stroke="none" font-family="DejaVu Sans Mono, monospace" font-size="20">C</text><rect x="18" y="50" width="18" height="2" fill="#171716" stroke="none"/></g>
+      </g>
+      <text x="700" y="43" text-anchor="end" fill="#5b5b57" font-family="DejaVu Sans Mono, monospace" font-size="11">LAUNCH SHELF</text>
+    </g>
+  </g>
+</svg>

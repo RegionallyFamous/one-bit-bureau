@@ -160,7 +160,7 @@ test("orderPinned keeps only pinned members in order", () => {
   assert.deepEqual(Array.from(model.orderPinned(["x", "a", "y"], ["a"])), ["a"])
 })
 
-test("computeLayout rests evenly with no cursor and grows with magnification", () => {
+test("computeLayout keeps a fixed square-cell cadence under the pointer", () => {
   const opts = model.LAYOUT_OPTS
   const rest = model.computeLayout([{ id: "a" }, { id: "b" }, { id: "c" }], -1, opts)
   assert.equal(rest.totalWidth, opts.slotWidth * 3 + opts.spacing * 2 + 2 * opts.sidePadding)
@@ -169,14 +169,14 @@ test("computeLayout rests evenly with no cursor and grows with magnification", (
   assert.equal(rest.placements.c.x, 2 * (opts.slotWidth + opts.spacing))
 
   const center = rest.placements.b.x + opts.slotWidth / 2
-  const mag = model.computeLayout([{ id: "a" }, { id: "b" }, { id: "c" }], center, opts)
-  assert.ok(mag.placements.b.scale > 1, "hovered icon magnifies")
-  assert.ok(mag.placements.a.scale < mag.placements.b.scale, "neighbors are smaller than hovered icon")
-  assert.ok(mag.totalWidth > rest.totalWidth, "dock grows as the cursor approaches")
-  assert.ok(mag.placements.b.lift > 0, "magnified icon lifts")
+  const pointed = model.computeLayout([{ id: "a" }, { id: "b" }, { id: "c" }], center, opts)
+  assert.equal(pointed.placements.b.scale, 1, "hovered icon remains on the integer grid")
+  assert.equal(pointed.placements.a.scale, 1, "neighbors remain the same size")
+  assert.equal(pointed.totalWidth, rest.totalWidth, "shelf width remains stable")
+  assert.equal(pointed.placements.b.lift, 0, "hover does not lift the icon")
 })
 
-test("computeLayout keeps icons from overlapping under magnification", () => {
+test("computeLayout keeps icons inside their fixed cells", () => {
   const opts = model.LAYOUT_OPTS
   const flow = [{ id: "a" }, { id: "b" }, { id: "c" }]
   const center = opts.slotWidth + opts.slotWidth / 2
@@ -189,9 +189,9 @@ test("computeLayout keeps icons from overlapping under magnification", () => {
   }
 })
 
-test("single magnified icon is centered in the dock", () => {
+test("single icon is centered in the shelf", () => {
   const opts = model.LAYOUT_OPTS
-  // Cursor directly over the one slot: full magnification, no neighbors.
+  // Cursor directly over the one slot, with no neighbors.
   const result = model.computeLayout([{ id: "a" }], opts.slotWidth / 2, opts)
   const p = result.placements.a
   // Icon center = wrapper center = slot center; flowWidth = scaled slot width.
@@ -212,7 +212,7 @@ test("insertionIndexFor picks the nearest slot", () => {
   const flow = [{ id: "a" }, { id: "b" }, { id: "c" }]
   assert.equal(model.insertionIndexFor(0, flow, opts), 0)
   assert.equal(model.insertionIndexFor(50, flow, opts), 1)
-  assert.equal(model.insertionIndexFor(100, flow, opts), 1)
+  assert.equal(model.insertionIndexFor(100, flow, opts), 2)
   assert.equal(model.insertionIndexFor(9999, flow, opts), 3)
 })
 

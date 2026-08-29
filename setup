@@ -3,7 +3,7 @@
 set -euo pipefail
 
 PLUGIN_ID="io.github.regionallyfamous.alumina"
-THEME_NAME="alumina-dark"
+THEME_NAME="alumina-raster"
 LOCAL_INSTALL=0
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
@@ -13,19 +13,11 @@ fail() {
 }
 
 usage() {
-  echo "Usage: bash setup [--dark|--light] [--local]"
+  echo "Usage: bash setup [--local]"
 }
 
 while (( $# > 0 )); do
   case "$1" in
-    --dark)
-      THEME_NAME="alumina-dark"
-      shift
-      ;;
-    --light)
-      THEME_NAME="alumina-light"
-      shift
-      ;;
     --local)
       LOCAL_INSTALL=1
       shift
@@ -110,10 +102,10 @@ fi
 
 omarchy plugin enable "$PLUGIN_ID" --section left --after omarchy.menu
 omarchy bar position top
-omarchy bar transparent true
+omarchy bar transparent false
 omarchy theme set "$THEME_NAME"
 
 echo
-echo "Alumina is active with $THEME_NAME."
+echo "Alumina Raster is active with $THEME_NAME."
 echo "Move the pointer to the top-left corner for the window overview."
 echo "Optional trackpad and persistent overview bindings are documented in README.md."

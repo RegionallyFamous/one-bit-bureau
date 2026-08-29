@@ -34,7 +34,8 @@ fi
   bash tests/run.sh
 )
 
-for theme in "$ROOT/themes/alumina-dark" "$ROOT/themes/alumina-light"; do
+for theme in "$ROOT"/themes/*; do
+  [[ -f $theme/colors.toml ]] || continue
   python3 "$THEME_TOOL" validate --strict "$theme"
   proof_dir=$(mktemp -d "/tmp/$(basename "$theme").proof.XXXXXX")
   python3 "$THEME_TOOL" proof "$theme" --out "$proof_dir/proof.svg"
@@ -42,4 +43,4 @@ for theme in "$ROOT/themes/alumina-dark" "$ROOT/themes/alumina-light"; do
   python3 "$THEME_TOOL" render "$theme" --omarchy-root "$OMARCHY_ROOT" --out "$render_path"
 done
 
-echo "Alumina static validation passed."
+echo "Alumina Raster static validation passed."

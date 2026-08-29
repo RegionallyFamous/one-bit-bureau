@@ -47,9 +47,9 @@ Item {
   property bool pickerOpen: false
   property bool enabled: true
   property bool dockReady: false
-  // macOS-style auto-hide. Enabled by default; persisted in dock-settings.json.
+  // Shelf auto-hide. Enabled by default; persisted in dock-settings.json.
   property bool autoHide: true
-  // Tuning for the macOS glide — not too fast, not sluggish.
+  // Short linear reveal timing for the Raster shelf.
   property int hideDelay: 1000
   property int showDelay: 100
   property int hideDuration: 380
@@ -327,7 +327,7 @@ Item {
       root.appEntries = rows.map(function(row) { return row && row.entry ? row.entry : row })
       root.appLibraryReady = true
     } catch (error) {
-      console.warn("macos.dock: app library refresh failed", error)
+      console.warn("alumina.raster: app library refresh failed", error)
     }
     refreshItems()
   }
@@ -372,8 +372,8 @@ Item {
     return dockRow.mapFromItem(null, root.hoveredMouseX, 0).x
   }
 
-  // Leaving the dock over a gap or the surface padding never triggers a
-  // DockItem exit, so reset the hover state here or icons stay magnified.
+  // Leaving the shelf over a gap or the surface padding never triggers a
+  // DockItem exit, so reset the hover state here.
   function clearHover() {
     if (root.floatingId) return // the drag controller owns hoveredMouseX
     root.hoveredItemId = ""
@@ -700,7 +700,7 @@ Item {
     // exactly what received the drag instead of a coordinate mapping
     // re-derived at release time.
     var inside = root.dragInsideDock
-    console.log("macos.dock finishDrag", JSON.stringify({ id: id, inside: inside, localX: surfacePosition.x, localY: surfacePosition.y, surfaceW: dockSurface.width, surfaceH: dockSurface.height, cursorX: root.cursorXInRow() }))
+    console.log("alumina.raster finishDrag", JSON.stringify({ id: id, inside: inside, localX: surfacePosition.x, localY: surfacePosition.y, surfaceW: dockSurface.width, surfaceH: dockSurface.height, cursorX: root.cursorXInRow() }))
     var wasPinned = root.pinnedIds.indexOf(id) !== -1
     var persist = false
 
@@ -712,7 +712,7 @@ Item {
       // Reorder the session dock — never the pinned list. Dragging never
       // promotes a running app into a persistent pin.
       var newOrder = DockModel.moveInOrder(root.dockOrder, id, idx)
-      console.log("macos.dock reorder", JSON.stringify({ id: id, idx: idx, wasPinned: wasPinned, dockOrderBefore: root.dockOrder, newOrder: newOrder, pinnedBefore: root.pinnedIds, runningIds: root.runningIds }))
+      console.log("alumina.raster reorder", JSON.stringify({ id: id, idx: idx, wasPinned: wasPinned, dockOrderBefore: root.dockOrder, newOrder: newOrder, pinnedBefore: root.pinnedIds, runningIds: root.runningIds }))
       if (newOrder.join("|") !== root.dockOrder.join("|")) {
         root.dockOrder = newOrder
         // Snap the dropped delegate straight to its new slot. Without this the
@@ -769,7 +769,7 @@ Item {
     root.ghostScale = 1.18
     root.ghostSource = ""
     } catch (error) {
-      console.warn("macos.dock finishDrag error", error)
+      console.warn("alumina.raster finishDrag error", error)
       root.floatingId = ""
       root.tempDrag = { id: "", index: -1 }
       root.refreshItems()
@@ -966,7 +966,7 @@ Item {
       var value = JSON.parse(String(content || "{}"))
       if (value && typeof value === "object" && !Array.isArray(value)) parsed = value
     } catch (error) {
-      console.warn("macos.dock: invalid dock-icons.json")
+      console.warn("alumina.raster: invalid dock-icons.json")
     }
     root.customIcons = parsed
     root.customIconRevision++
@@ -1114,7 +1114,7 @@ Item {
       } else {
         // Reloaded after a change: apply only content we did not write.
         if (!DockModel.shouldReprocess(text())) return
-        console.log("macos.dock pinFileApplied", JSON.stringify({ pinned: root.pinnedIds }))
+        console.log("alumina.raster pinFileApplied", JSON.stringify({ pinned: root.pinnedIds }))
         root.pinnedIds = DockModel.parsePinned(text(), root.pinnedIds)
       }
       root.dockOrder = DockModel.parseOrder(text(), root.dockOrder)
@@ -1287,8 +1287,6 @@ Item {
     // fade would add a visible fade-in. Disable compositor animation for
     // both layer namespaces so the HUD pops in instantly.
     if (!layerRuleProcess.running) layerRuleProcess.running = true
-    // Best-effort glass blur: if Hyprland supports it, the 0.50 tint becomes frosted glass.
-    if (!blurLayerProcess.running) blurLayerProcess.running = true
     // Register the app-switcher keybinds so the HUD works out of the box.
     // Config-file binds load before this runtime eval, so a user's own bind
     // for the same combo takes precedence.
@@ -1306,14 +1304,6 @@ Item {
     command: ["hyprctl", "eval", "hl.layer_rule({ match = { namespace = \"alumina-dock-alt-tab\" }, no_anim = true, animation = \"none\" })"]
   }
 
-  // Glass blur — attempt to enable compositor backdrop blur behind the dock layers.
-  // Best-effort: if Hyprland/Omarchy has blur disabled or the API is missing, the
-  // dock simply falls back to the tinted translucent surface (0.50 alpha) already set.
-  Process {
-    id: blurLayerProcess
-    command: ["hyprctl", "eval", "hl.layer_rule({ match = { namespace = \"alumina-dock\" }, blur = true }) hl.layer_rule({ match = { namespace = \"alumina-dock-material\" }, blur = true })"]
-  }
-
   Timer {
     id: altTabBindRetry
     interval: 1500
@@ -1328,8 +1318,8 @@ Item {
 
   Process {
     id: altTabBindProcess
-    // Take over the default Omarchy ALT+TAB window cycling so the macOS-style
-    // app switcher HUD is the primary alt-tab. The defaults bind ALT+TAB twice
+    // Take over the default Omarchy ALT+TAB window cycling so the Raster
+    // app switcher is the primary alt-tab. The defaults bind ALT+TAB twice
     // (cycle + bring-to-top), so both must be unbound first. ALT+GRAVE stays
     // as the dedicated fallback combo.
     command: ["hyprctl", "eval", "hl.unbind(\"ALT + TAB\") hl.unbind(\"ALT + SHIFT + TAB\") hl.unbind(\"ALT + GRAVE\") hl.unbind(\"ALT + SHIFT + GRAVE\") o.bind(\"ALT + TAB\", \"App switcher next\", \"omarchy-shell -q regionallyfamous.alumina.dock altTabNext\") o.bind(\"ALT + SHIFT + TAB\", \"App switcher prev\", \"omarchy-shell -q regionallyfamous.alumina.dock altTabPrev\") o.bind(\"ALT + GRAVE\", \"App switcher next\", \"omarchy-shell -q regionallyfamous.alumina.dock altTabNext\") o.bind(\"ALT + SHIFT + GRAVE\", \"App switcher prev\", \"omarchy-shell -q regionallyfamous.alumina.dock altTabPrev\")"]
@@ -1353,34 +1343,29 @@ Item {
       anchors.bottomMargin: root.autoHide && root.autoHidden ? -root.dockHeight + root.peekPx : root.bottomMargin
       width: root.layoutWidth
       height: root.dockHeight
-      radius: 18
-      color: Util.alpha(Color.background, 0.50)
-      border.color: Util.alpha(Color.foreground, 0.04)
-      border.width: 1
-      opacity: !root.enabled ? 0 : (root.menuOpen || root.pickerOpen || root.dockHovered ? 1 : 0.96)
-
-      // Top edge now matches the other three sides via the 1px border
-      // (0.04) alone — no extra highlight, so the dock reads as a uniform
-      // glass pill instead of a brighter top. Removed the previous 0.10 bar
-      // that made the top brighter than left/right/bottom.
+      radius: 0
+      color: Color.menu.background
+      border.color: Color.menu.border
+      border.width: 2
+      opacity: root.enabled ? 1 : 0
 
       Behavior on width {
-        NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: 90; easing.type: Easing.Linear }
       }
       Behavior on anchors.bottomMargin {
-        NumberAnimation { duration: root.autoHidden ? root.hideDuration : root.showDuration; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: root.autoHidden ? root.hideDuration : root.showDuration; easing.type: Easing.Linear }
       }
-      Behavior on opacity { NumberAnimation { duration: 180 } }
+      Behavior on opacity { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
 
       Item {
         id: dockRow
         anchors.centerIn: parent
-        anchors.verticalCenterOffset: 6
+        anchors.verticalCenterOffset: 0
         width: root.layoutWidth - 2 * root.sidePadding
-        height: 70
+        height: 56
 
         Behavior on width {
-          NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+          NumberAnimation { duration: 90; easing.type: Easing.Linear }
         }
 
         Repeater {
@@ -1388,11 +1373,9 @@ Item {
           delegate: Item {
             id: wrapper
             required property string modelData
-            // The wrapper spans the scaled slot so the centered icon sits at
-            // the slot's visual center — a single magnified icon stays
-            // centered in the dock instead of drifting left.
+            // The wrapper spans the fixed slot so the icon remains centered.
             width: root.slotWidth * targetScale
-            height: 70
+            height: 56
             x: 0
             property bool animating: false
 
@@ -1413,7 +1396,7 @@ Item {
 
             Behavior on x {
               enabled: wrapper.animating
-              SpringAnimation { spring: 4.5; damping: 0.95; mass: 1 }
+              NumberAnimation { duration: 70; easing.type: Easing.Linear }
             }
 
             Component.onCompleted: {
@@ -1459,9 +1442,8 @@ Item {
                   root.tooltipCenterX = pointerX
                 } else if (!root.floatingId && root.hoveredItemId === hoveredItem.id) {
                   // The cursor left this item's hit area but is still on the
-                  // dock (or already inside a neighbor's). Keep hoveredMouseX
-                  // continuous so magnification glides across gaps instead of
-                  // snap-shrinking between items; clearHover() resets it when
+                  // shelf (or already inside a neighbor's). Keep hoveredMouseX
+                  // continuous for stable drag insertion; clearHover() resets it when
                   // the cursor actually leaves the dock surface.
                   root.hoveredItemId = ""
                 }
@@ -1506,15 +1488,15 @@ Item {
       y: dockSurface.y - height - 8
       width: tooltipText.implicitWidth + 20
       height: 24
-      radius: 8
-      color: Util.alpha(Color.background, 0.88)
-      border.color: Util.alpha(Color.foreground, 0.08)
-      border.width: 1
+      radius: 0
+      color: Color.tooltip.background
+      border.color: Color.tooltip.border
+      border.width: 2
       Text {
         id: tooltipText
         anchors.centerIn: parent
         text: root.tooltipItem ? (root.tooltipItem.name || root.tooltipItem.id) : ""
-        color: Color.foreground
+        color: Color.tooltip.text
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
@@ -1525,7 +1507,7 @@ Item {
         anchors.topMargin: -5
         width: 8
         height: 8
-        radius: 1
+        radius: 0
         color: parent.color
         border.color: parent.border.color
         border.width: 1
@@ -1634,7 +1616,7 @@ Item {
   // the dock's footprint as a Wayland exclusive zone, so tiled windows never
   // overlap the dock. In auto-hide (overlay) mode the zone is always 0 so
   // tiled windows can use the full screen and the dock overlays them like
-  // macOS. A separate surface keeps the full-screen dockWindow (whose
+  // overlay behavior. A separate surface keeps the full-screen dockWindow (whose
   // coordinate space drag ghosts and tooltips rely on) untouched; the zone is
   // simply ignored on surfaces anchored to all four edges. When the dock is
   // hidden the spacer unmaps and tiled windows reclaim the space.
@@ -1714,18 +1696,18 @@ Item {
       width: root.iconSize * root.ghostScale + 16
       height: root.iconSize * root.ghostScale + 16
       opacity: root.ghostOpacity
-      Behavior on x { SpringAnimation { spring: 4.5; damping: 0.95; mass: 1 } }
-      Behavior on y { SpringAnimation { spring: 4.5; damping: 0.95; mass: 1 } }
-      Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+      Behavior on x { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
+      Behavior on y { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
+      Behavior on opacity { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
 
       Rectangle {
         anchors.centerIn: parent
         width: parent.width - 4
         height: parent.height - 4
-        radius: root.iconSize * 0.26
-        color: Util.alpha(Color.background, 0.55)
-        border.color: Util.alpha(Color.foreground, 0.18)
-        border.width: 1
+        radius: 0
+        color: Color.menu.background
+        border.color: Color.menu.border
+        border.width: 2
       }
 
       Image {

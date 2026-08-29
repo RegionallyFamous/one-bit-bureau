@@ -51,16 +51,12 @@ Item {
     id: card
     anchors { top: parent.top; left: parent.left; right: parent.right }
     height: 118
-    radius: 14
-    color: Util.alpha(Color.background, 0.96)
-    border.color: root.active ? Util.alpha(Color.accent, 0.85) : Util.alpha(Color.foreground, 0.15)
-    border.width: root.active ? 2 : 1
+    radius: 0
+    color: Color.menu.background
+    border.color: Color.menu.border
+    border.width: root.active ? 3 : 2
 
-    Behavior on border.color { ColorAnimation { duration: 150 } }
-    Behavior on scale {
-      enabled: root.animationEnabled
-      SpringAnimation { spring: 3.2; damping: 0.29; mass: 1 }
-    }
+    Behavior on border.width { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
 
     // Direct compositor capture is the primary source. ScreencopyView keeps
     // the source at the window's native resolution, then the scene renders it
@@ -101,8 +97,8 @@ Item {
       Rectangle {
         id: iconBackdrop
         anchors.fill: parent
-        radius: 9
-        color: Util.alpha(Color.foreground, 0.06)
+        radius: 0
+        color: Color.background
       }
 
       Image {
@@ -129,10 +125,10 @@ Item {
     Rectangle {
       anchors.fill: parent
       anchors.margins: 8
-      radius: 9
+      radius: 0
       color: "transparent"
       border.width: 1
-      border.color: Util.alpha(Color.foreground, 0.10)
+      border.color: Color.menu.border
     }
   }
 
@@ -155,11 +151,9 @@ Item {
     cursorShape: Qt.PointingHandCursor
 
     onEntered: {
-      card.scale = 1.05
       card.z = 1
     }
     onExited: {
-      card.scale = 1
       card.z = 0
     }
     onClicked: root.activated(root.windowData)

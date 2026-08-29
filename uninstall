@@ -10,7 +10,7 @@ if command -v omarchy >/dev/null; then
     omarchy plugin remove "$PLUGIN_ID" --yes
   fi
 
-  for theme in alumina-dark alumina-light; do
+  for theme in alumina-raster alumina-dark alumina-light; do
     if [[ -e $HOME/.config/omarchy/themes/$theme ]]; then
       omarchy theme remove "$theme"
     fi

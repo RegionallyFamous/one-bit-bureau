@@ -32,8 +32,9 @@ Rectangle {
     readonly property string applicationName: WindowModel.appIdFor(modelData) || "Application"
     readonly property string workspaceName: card.controller.workspaceName(modelData)
     readonly property string iconSource: card.controller.iconFor(modelData)
-    readonly property color outlineColor: focusedWindow ? Color.accent : (selected ? Color.menu.selectedText : Color.menu.border)
-    readonly property real outlineWidth: hovered ? Math.max(4, Style.hoverBorderWidth * 2) : (focusedWindow ? Math.max(2, Style.selectedBorderWidth) : (selected ? Math.max(2, Style.focusBorderWidth) : Math.max(1, Style.normalBorderWidth)))
+    readonly property color outlineColor: Color.menu.border
+    readonly property color contentTextColor: selected ? Color.menu.selectedText : Color.menu.text
+    readonly property real outlineWidth: selected ? 4 : (hovered || focusedWindow ? 3 : 2)
     // An excluded card keeps its last rectangle, so it neither
     // animates toward the origin nor flies back in from it.
     readonly property var packedRectSource: inLayout ? card.windowLayout[slot] : null
@@ -57,11 +58,11 @@ Rectangle {
     width: layoutRect.width
     height: layoutRect.height
     z: previewed ? 11 : (exitingPreview ? 10 : 0)
-    radius: integratedFooter ? Style.cornerRadius : 0
-    color: integratedFooter ? Color.menu.background : "transparent"
-    border.color: integratedFooter ? outlineColor : "transparent"
-    border.width: integratedFooter ? outlineWidth : 0
-    opacity: card.controller.previewIndex < 0 || previewed ? 1 : 0.28
+    radius: 0
+    color: selected ? Color.menu.selectedBackground : Color.menu.background
+    border.color: outlineColor
+    border.width: outlineWidth
+    opacity: card.controller.previewIndex < 0 || previewed ? 1 : 0.6
 
     MouseArea {
         anchors.fill: parent
@@ -114,7 +115,7 @@ Rectangle {
                 anchors.centerIn: parent
                 width: Math.min(parent.width, parent.height * windowAspectRatio)
                 height: Math.min(parent.height, parent.width / windowAspectRatio)
-                radius: Math.max(0, Style.cornerRadius - Style.spacing.xs)
+                radius: 0
                 color: Color.background
                 clip: true
                 layer.enabled: true
@@ -123,7 +124,7 @@ Rectangle {
                     anchors.centerIn: parent
                     text: "Live preview unavailable"
                     textFormat: Text.PlainText
-                    color: Color.menu.text
+                    color: card.contentTextColor
                     opacity: 0.45
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.body
@@ -153,13 +154,6 @@ Rectangle {
                     sourceComponent: overlayFooter
                 }
 
-                layer.effect: MultiEffect {
-                    maskEnabled: true
-                    maskSource: previewMask
-                    maskThresholdMin: 0.5
-                    maskSpreadAtMin: 1
-                }
-
             }
 
             Rectangle {
@@ -170,17 +164,6 @@ Rectangle {
                 color: "transparent"
                 border.color: card.outlineColor
                 border.width: card.outlineWidth
-            }
-
-            Rectangle {
-                id: previewMask
-
-                anchors.fill: previewFrame
-                radius: previewFrame.radius
-                color: "black"
-                visible: false
-                layer.enabled: true
-                layer.smooth: true
             }
 
         }
@@ -250,7 +233,7 @@ Rectangle {
                         Layout.fillWidth: true
                         text: card.windowTitle
                         textFormat: Text.PlainText
-                        color: Color.menu.text
+                        color: card.contentTextColor
                         font.family: Style.font.menuFamily
                         font.pixelSize: Style.font.body
                         font.bold: card.selected
@@ -261,7 +244,7 @@ Rectangle {
                         Layout.fillWidth: true
                         text: card.applicationName
                         textFormat: Text.PlainText
-                        color: Color.menu.text
+                        color: card.contentTextColor
                         opacity: 0.68
                         font.family: Style.font.menuFamily
                         font.pixelSize: Style.font.caption
@@ -277,7 +260,7 @@ Rectangle {
                         Layout.alignment: Qt.AlignRight
                         text: card.workspaceName
                         textFormat: Text.PlainText
-                        color: card.focusedWindow ? Color.accent : Color.menu.text
+                        color: card.contentTextColor
                         font.family: Style.font.menuFamily
                         font.pixelSize: Style.font.heading
                         font.bold: true
@@ -287,7 +270,7 @@ Rectangle {
                         Layout.alignment: Qt.AlignRight
                         text: "Workspace"
                         textFormat: Text.PlainText
-                        color: Color.menu.text
+                        color: card.contentTextColor
                         opacity: 0.55
                         font.family: Style.font.menuFamily
                         font.pixelSize: Style.font.caption
@@ -323,7 +306,7 @@ Rectangle {
                     Layout.fillWidth: true
                     text: card.windowTitle
                     textFormat: Text.PlainText
-                    color: Color.menu.text
+                    color: card.contentTextColor
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.body
                     font.bold: card.selected
@@ -334,7 +317,7 @@ Rectangle {
                     Layout.fillWidth: true
                     text: card.applicationName
                     textFormat: Text.PlainText
-                    color: Color.menu.text
+                    color: card.contentTextColor
                     opacity: 0.62
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.caption
@@ -350,7 +333,7 @@ Rectangle {
                     Layout.alignment: Qt.AlignRight
                     text: card.workspaceName
                     textFormat: Text.PlainText
-                    color: card.focusedWindow ? Color.accent : Color.menu.text
+                    color: card.contentTextColor
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.heading
                     font.bold: true
@@ -360,7 +343,7 @@ Rectangle {
                     Layout.alignment: Qt.AlignRight
                     text: "Workspace"
                     textFormat: Text.PlainText
-                    color: Color.menu.text
+                    color: card.contentTextColor
                     opacity: 0.55
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.caption
@@ -390,7 +373,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: card.windowTitle
                 textFormat: Text.PlainText
-                color: Color.menu.text
+                color: card.contentTextColor
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.body
                 font.bold: card.selected
@@ -400,7 +383,7 @@ Rectangle {
             Text {
                 text: "WS " + card.workspaceName
                 textFormat: Text.PlainText
-                color: card.focusedWindow ? Color.accent : Color.menu.text
+                color: card.contentTextColor
                 opacity: card.focusedWindow ? 1 : 0.68
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.caption
@@ -433,7 +416,7 @@ Rectangle {
                     Layout.maximumWidth: Math.max(1, card.width - Style.space(80))
                     text: card.windowTitle
                     textFormat: Text.PlainText
-                    color: Color.menu.text
+                    color: card.contentTextColor
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.body
                     font.bold: card.selected
@@ -447,7 +430,7 @@ Rectangle {
                 Layout.maximumWidth: Math.max(1, card.width - Style.space(32))
                 text: card.applicationName + "  ·  Workspace " + card.workspaceName
                 textFormat: Text.PlainText
-                color: card.focusedWindow ? Color.accent : Color.menu.text
+                color: card.contentTextColor
                 opacity: card.focusedWindow ? 1 : 0.62
                 font.family: Style.font.menuFamily
                 font.pixelSize: Style.font.caption

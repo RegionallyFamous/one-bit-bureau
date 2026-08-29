@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
+import QtQuick.Effects
 import qs.Commons
 
 Item {
@@ -769,9 +770,9 @@ Item {
       Rectangle {
         anchors.fill: parent
         visible: panel.dropping
-        color: Qt.rgba(1, 1, 1, 0.08)
+        color: "transparent"
         border.width: 2
-        border.color: Qt.rgba(1, 1, 1, 0.35)
+        border.color: Color.foreground
         z: 5
       }
 
@@ -788,6 +789,7 @@ Item {
           z: iconMouse.drag.active ? 6 : 2
           property real pressX: 0
           property real pressY: 0
+          readonly property bool selected: panel.host.selectedId === iconRoot.modelData.id
 
           Binding on x {
             value: panel.posFor(iconRoot.modelData, iconRoot.index).x
@@ -803,10 +805,10 @@ Item {
           Rectangle {
             anchors.fill: parent
             anchors.margins: 4
-            radius: 8
-            color: panel.host.selectedId === iconRoot.modelData.id ? Qt.rgba(1, 1, 1, 0.18) : (iconHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
-            border.width: panel.host.selectedId === iconRoot.modelData.id ? 1 : 0
-            border.color: Qt.rgba(1, 1, 1, 0.35)
+            radius: 0
+            color: "transparent"
+            border.width: iconRoot.selected ? 2 : (iconHover.hovered ? 1 : 0)
+            border.color: Color.foreground
           }
 
           HoverHandler { id: iconHover }
@@ -822,6 +824,7 @@ Item {
               anchors.horizontalCenter: parent.horizontalCenter
 
               Image {
+                id: desktopIcon
                 anchors.fill: parent
                 source: panel.host.iconSource(iconRoot.modelData)
                 fillMode: Image.PreserveAspectFit
@@ -829,6 +832,9 @@ Item {
                 cache: true
                 sourceSize.width: panel.host.iconSize * Screen.devicePixelRatio
                 sourceSize.height: panel.host.iconSize * Screen.devicePixelRatio
+                layer.enabled: true
+                layer.smooth: true
+                layer.effect: MultiEffect { saturation: -1 }
               }
 
               Rectangle {
@@ -837,16 +843,16 @@ Item {
                 anchors.bottom: parent.bottom
                 width: 20
                 height: 20
-                radius: 10
-                color: "#cc8a1515"
+                radius: 0
+                color: Color.urgent
                 border.width: 1
-                border.color: "#eeffffff"
+                border.color: Color.foreground
 
                 Text {
                   anchors.centerIn: parent
                   text: "!"
                   textFormat: Text.PlainText
-                  color: "white"
+                  color: Color.menu.selectedText
                   font.pixelSize: 13
                   font.bold: true
                   font.family: Style.fontFamily
@@ -854,19 +860,28 @@ Item {
               }
             }
 
-            Text {
+            Rectangle {
               width: parent.width
-              text: panel.host.plainText(iconRoot.modelData.name)
-              textFormat: Text.PlainText
-              color: "white"
-              style: Text.Outline
-              styleColor: "#cc000000"
-              font.pixelSize: 18
-              font.family: Style.fontFamily
-              wrapMode: Text.Wrap
-              elide: Text.ElideRight
-              maximumLineCount: 2
-              horizontalAlignment: Text.AlignHCenter
+              height: Math.min(44, desktopLabel.implicitHeight + 6)
+              radius: 0
+              color: iconRoot.selected ? Color.foreground : Color.menu.background
+              border.width: 1
+              border.color: Color.foreground
+
+              Text {
+                id: desktopLabel
+                anchors.fill: parent
+                anchors.margins: 3
+                text: panel.host.plainText(iconRoot.modelData.name)
+                textFormat: Text.PlainText
+                color: iconRoot.selected ? Color.menu.selectedText : Color.foreground
+                font.pixelSize: 14
+                font.family: Style.fontFamily
+                wrapMode: Text.Wrap
+                elide: Text.ElideRight
+                maximumLineCount: 2
+                horizontalAlignment: Text.AlignHCenter
+              }
             }
           }
 
@@ -952,9 +967,9 @@ Item {
         z: 20
         width: menuCol.implicitWidth + 16
         height: menuCol.implicitHeight + 12
-        radius: 8
+        radius: 0
         color: Color.popups.background
-        border.width: 1
+        border.width: 2
         border.color: Color.popups.border
         x: Math.min(Math.max(8, menuX), Math.max(8, panel.width - width - 8))
         y: Math.min(Math.max(8, menuY), Math.max(8, panel.height - height - 8))
@@ -1010,8 +1025,8 @@ Item {
             Rectangle {
               width: menuCol.width
               height: 28
-              radius: 4
-              color: rowMouse.containsMouse ? Util.alpha(Color.popups.text, 0.12) : "transparent"
+              radius: 0
+              color: rowMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
 
               Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -1019,7 +1034,7 @@ Item {
                 anchors.leftMargin: 10
                 text: String(modelData.label || "")
                 textFormat: Text.PlainText
-                color: Color.popups.text
+                color: rowMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
                 font.pixelSize: 13
                 font.family: Style.fontFamily
               }
@@ -1073,9 +1088,9 @@ Item {
         z: 21
         width: Math.min(360, Math.max(280, panel.width - 48))
         height: trustCol.implicitHeight + 24
-        radius: 8
+        radius: 0
         color: Color.popups.background
-        border.width: 1
+        border.width: 2
         border.color: Color.popups.border
         x: {
           var p = panel.trustIconPos()
@@ -1139,9 +1154,9 @@ Item {
             Rectangle {
               width: cancelLabel.implicitWidth + 20
               height: 28
-              radius: 4
-              color: cancelMouse.containsMouse ? Util.alpha(Color.popups.text, 0.12) : "transparent"
-              border.width: 1
+              radius: 0
+              color: cancelMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+              border.width: 2
               border.color: Color.popups.border
 
               Text {
@@ -1149,7 +1164,7 @@ Item {
                 anchors.centerIn: parent
                 text: "Cancel"
                 textFormat: Text.PlainText
-                color: Color.popups.text
+                color: cancelMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
                 font.pixelSize: 13
                 font.family: Style.fontFamily
               }
@@ -1165,9 +1180,9 @@ Item {
             Rectangle {
               width: trustLabel.implicitWidth + 20
               height: 28
-              radius: 4
-              color: trustMouse.containsMouse ? Util.alpha(Color.popups.text, 0.12) : Qt.rgba(1, 1, 1, 0.08)
-              border.width: 1
+              radius: 0
+              color: trustMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+              border.width: 2
               border.color: Color.popups.border
 
               Text {
@@ -1175,7 +1190,7 @@ Item {
                 anchors.centerIn: parent
                 text: "Trust and Open"
                 textFormat: Text.PlainText
-                color: Color.popups.text
+                color: trustMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
                 font.pixelSize: 13
                 font.family: Style.fontFamily
               }

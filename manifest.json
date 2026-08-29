@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "io.github.regionallyfamous.alumina",
-  "name": "Alumina",
-  "version": "0.1.0",
+  "name": "Alumina Raster",
+  "version": "0.2.0",
   "author": "RegionallyFamous",
   "license": "MIT",
-  "description": "A cohesive Mac-like Omarchy experience: desktop files, a glass dock and app switcher, a window overview, and active-app context in the top bar.",
+  "description": "A compact one-bit-inspired Omarchy experience: real desktop files, a hard-edged launch shelf, a contact-sheet overview, and active-app context in the top rail.",
   "icon": "components/overview/assets/icon.svg",
   "kinds": [
     "service",
@@ -25,7 +25,7 @@
     "allowMultiple": false,
     "defaultSection": "left",
     "defaults": {
-      "iconSaturation": 100,
+      "iconSaturation": 0,
       "iconSize": 16,
       "maxWidth": 300,
       "showTitle": true
@@ -38,7 +38,7 @@
         "min": 0,
         "max": 200,
         "step": 5,
-        "defaultValue": 100
+        "defaultValue": 0
       },
       {
         "key": "iconSize",

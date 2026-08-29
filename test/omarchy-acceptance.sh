@@ -44,7 +44,7 @@ cleanup_alumina() {
     rm -rf "$PLUGIN_DIR"
     omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
   fi
-  rm -rf "$THEMES_DIR/alumina-dark" "$THEMES_DIR/alumina-light"
+  rm -rf "$THEMES_DIR/alumina-raster"
 }
 
 handle_unexpected_error() {
@@ -78,8 +78,7 @@ mkdir -p "$HOME/Desktop" "$THEMES_DIR" "$(dirname "$PLUGIN_DIR")"
 mkdir -p "$HOME/Desktop/Projects"
 printf 'Alumina runtime proof\n' >"$HOME/Desktop/ALUMINA-QA.txt"
 cp -a "$FIXTURE" "$PLUGIN_DIR"
-cp -a "$FIXTURE/themes/alumina-dark" "$THEMES_DIR/alumina-dark"
-cp -a "$FIXTURE/themes/alumina-light" "$THEMES_DIR/alumina-light"
+cp -a "$FIXTURE/themes/alumina-raster" "$THEMES_DIR/alumina-raster"
 
 omarchy-shell shell rescanPlugins >/dev/null
 wait_until "Alumina is discovered" 15 \
@@ -95,14 +94,14 @@ omarchy-shell regionallyfamous.alumina.dock setAutoHide false >/dev/null
 wait_until "Alumina dock auto-hide is disabled for visual proof" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.alumina.dock getAutoHide) == 'false' ]]"
 
-omarchy theme set alumina-dark >/dev/null
-wait_until "Alumina Dark is active" 30 \
-  bash -c "grep -Fxq 'alumina-dark' '$HOME/.local/state/omarchy/current/theme.name'"
+omarchy theme set alumina-raster >/dev/null
+wait_until "Alumina Raster is active" 30 \
+  bash -c "grep -Fxq 'alumina-raster' '$HOME/.local/state/omarchy/current/theme.name'"
 sleep 2
-screen_lacks "Your config has errors" || fail "Alumina Dark applies without a Hyprland config error"
-pass "Alumina Dark applies without a Hyprland config error"
+screen_lacks "Your config has errors" || fail "Alumina Raster applies without a Hyprland config error"
+pass "Alumina Raster applies without a Hyprland config error"
 omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
-screenshot "success-alumina-01-dark-desktop-dock"
+screenshot "success-alumina-01-raster-desktop-dock"
 
 setsid -f foot --app-id=alumina-qa-one --title="Alumina Notes" >/dev/null 2>&1
 setsid -f foot --app-id=alumina-qa-two --title="Alumina Project" >/dev/null 2>&1
@@ -115,31 +114,16 @@ omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
 wait_until "Alumina overview opens" 20 layer_on_screen alumina-window-overview
 wait_until "Alumina overview instructions paint" 20 screen_contains "navigate"
 sleep 2
-screenshot "success-alumina-02-dark-overview"
+screenshot "success-alumina-02-raster-overview"
 
 omarchy-shell shell hide "$PLUGIN_ID" >/dev/null
 wait_until "Alumina overview layer closes" 20 layer_absent alumina-window-overview
 wait_until "Alumina overview pixels clear" 10 screen_lacks "navigate"
 
-omarchy theme set alumina-light >/dev/null
-wait_until "Alumina Light is active" 30 \
-  bash -c "grep -Fxq 'alumina-light' '$HOME/.local/state/omarchy/current/theme.name'"
-sleep 3
-screen_lacks "Your config has errors" || fail "Alumina Light applies without a Hyprland config error"
-pass "Alumina Light applies without a Hyprland config error"
-screenshot "success-alumina-03-light-desktop-dock"
-
-omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
-wait_until "Alumina Light overview opens" 20 layer_on_screen alumina-window-overview
-sleep 2
-screenshot "success-alumina-04-light-overview"
-omarchy-shell shell hide "$PLUGIN_ID" >/dev/null
-wait_until "Alumina Light overview closes" 20 layer_absent alumina-window-overview
-
 omarchy plugin disable "$PLUGIN_ID" >/dev/null
 wait_until "Alumina dock unloads" 20 layer_absent alumina-dock
 wait_until "Alumina desktop service unloads" 20 layer_absent desktop-icons
 wait_until "Alumina hot corner unloads" 20 layer_absent alumina-overview-hot-corner
-screenshot "success-alumina-05-disabled-stock-shell"
+screenshot "success-alumina-03-disabled-stock-shell"
 
 pass "Alumina runtime acceptance passed"

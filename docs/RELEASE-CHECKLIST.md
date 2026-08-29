@@ -4,7 +4,7 @@
 
 - Run `bash tests/static.sh` from the repository root.
 - Confirm `omarchy plugin validate .` passes on the target Omarchy release.
-- Confirm both theme children pass strict validation and a real template render.
+- Confirm the `alumina-raster` theme passes strict validation and a real template render.
 - Confirm the repository contains no symlinks or executable files; this is required because the same repository is also an Omarchy theme source.
 - Review every bundled upstream diff and refresh `THIRD_PARTY_NOTICES.md` when importing updates.
 
@@ -20,11 +20,11 @@
 
 ## Visual evidence
 
-- Capture a clean desktop at 16:9 for both dark and light variants.
-- Capture a non-16:9 desktop to inspect wallpaper crop, desktop icon bounds, and dock placement.
+- Capture a clean Raster desktop at 16:9 with desktop objects and the launch shelf visible.
+- Capture 16:10 and 21:9 desktops to inspect wallpaper crop, desktop icon bounds, and shelf placement.
 - Capture the overview, dock preview, app switcher, launcher, menu selected state, notification, terminal ANSI palette, and lock screen.
 - Record a short clip covering dock reveal/hide, app switching, and overview open/close.
-- Replace each provisional wallpaper-only `preview.png` with the matching real runtime desktop capture before public release.
+- Keep the wallpaper-only `preview.png` honest as a theme-picker wallpaper preview; publish real runtime captures separately and label them as runtime evidence.
 
 ## Release blockers
 

@@ -40,7 +40,7 @@ PanelWindow {
         active: !!w.active
       })
       if (!card) {
-        console.warn("macos.dock preview card failed:", root.cardComponent.errorString())
+        console.warn("alumina.raster preview card failed:", root.cardComponent.errorString())
         continue
       }
       card.activated.connect(function(data) { root.activated(data) })
@@ -70,10 +70,9 @@ PanelWindow {
     width: row.implicitWidth
     height: row.implicitHeight
     opacity: root.panelActive ? 1 : 0
-    scale: root.panelActive ? 1 : 0.92
+    scale: 1
 
-    Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-    Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+    Behavior on opacity { NumberAnimation { duration: 80; easing.type: Easing.Linear } }
 
     Row {
       id: row

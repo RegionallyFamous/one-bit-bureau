@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import qs.Commons
 import "IconResolver.js" as IconResolver
@@ -40,21 +41,29 @@ Item {
 
   Behavior on scale {
     enabled: root.animationEnabled
-    SpringAnimation { spring: 4.5; damping: 0.95; mass: 1 }
+    NumberAnimation { duration: 70; easing.type: Easing.Linear }
   }
   scale: root.targetScale
 
   Behavior on y {
     enabled: root.animationEnabled
-    SpringAnimation { spring: 4.5; damping: 0.95; mass: 1 }
+    NumberAnimation { duration: 70; easing.type: Easing.Linear }
   }
   y: -root.targetLift
 
   Behavior on opacity {
     enabled: root.animationEnabled
-    NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+    NumberAnimation { duration: 60; easing.type: Easing.Linear }
   }
   opacity: root.targetOpacity
+
+  Rectangle {
+    anchors.fill: parent
+    anchors.margins: 2
+    color: "transparent"
+    border.color: Color.foreground
+    border.width: mouse.containsMouse ? 2 : 0
+  }
 
   Image {
     id: icon
@@ -66,6 +75,9 @@ Item {
     sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
     fillMode: Image.PreserveAspectFit
     cache: true
+    layer.enabled: true
+    layer.smooth: true
+    layer.effect: MultiEffect { saturation: -1 }
 
     Text {
       anchors.centerIn: parent
@@ -80,10 +92,10 @@ Item {
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.top: icon.bottom
     anchors.topMargin: 2
-    width: 4
-    height: 4
-    radius: 2
-    color: Color.accent
+    width: 16
+    height: 2
+    radius: 0
+    color: Color.foreground
     visible: !!root.itemData.running
   }
 

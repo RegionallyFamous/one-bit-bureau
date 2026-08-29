@@ -1,46 +1,68 @@
-# Alumina direction contract
+# Alumina Raster direction contract
 
 ## Product sentence
 
-Alumina should feel immediately legible to a Mac user while remaining recognizably Omarchy: fast, keyboard-capable, composable, and recoverable.
+Alumina Raster turns Omarchy into a compact document machine where desktop objects, windows, overview, bar, and launcher all obey one-bit registration rules while modern applications remain recognizable and usable.
+
+## Thesis
+
+This edition is not a replica of an old computer. It explores what a modern Omarchy shell might look like under a binary display discipline: every state is expressed with edge, fill, pattern, placement, or inversion before hue or translucency is allowed.
 
 ## Named visual laws
 
-1. **Quiet chrome, vivid content.** Shell surfaces use low-contrast graphite or pearl glass; application icons and wallpaper refractions carry the stronger color.
-2. **Squircle rhythm.** Floating surfaces use soft continuous-looking corners, moderate gaps, and a restrained one-pixel edge instead of heavy borders.
-3. **One depth system.** Bar, dock, menus, launcher, overview cards, and notifications share translucent material, soft shadow, and the same blue focus logic.
-4. **Top context, bottom action.** The top bar identifies the active application and system state; the dock owns launching, switching, pinning, and previews.
-5. **Wallpaper yields to work.** The upper-left remains calm for desktop items, the center tolerates windows, and the visual mass stays low and right.
+1. **Integer construction.** Shell edges, offsets, icon cells, rules, and spacing land on whole pixels.
+2. **One-bit first.** Desktop chrome is built from paper, carbon, and opaque neutral fills. Gray is a solid tone or coarse pattern, never translucent glass.
+3. **Edge means ownership.** Floating shell surfaces use hard outer rules. Focus adds a registration rule or an inverted bounded region; shadows do not establish hierarchy.
+4. **Binary ownership flip.** The active or selected object inverts one complete semantic region. The same law applies to overview cards, desktop labels, launcher cells, and menu rows.
+5. **Pattern is topography.** Stipple identifies one background region or disabled state. It is not sprinkled across every component.
+6. **Compact cadence.** Layout uses a restrained 4/8-pixel rhythm and consistent square cells.
 
-## Interaction laws
+## Surface system
 
-- Desktop files are real files in `~/Desktop`, not a second database.
-- The dock auto-hides, preserves pin order, previews windows, and owns the app-switcher HUD.
-- The overview is searchable, keyboard navigable, and available from the top-left hot corner; a persistent key binding remains an explicit user choice until Omarchy exposes dependency-safe binding metadata.
-- Quick Look stays Omarchy-native through Sushi and the Space key; Alumina does not replace it.
-- Tiling stays the default window model. Alumina adds familiar surfaces without forcing every application to float.
+- The top bar is a persistent opaque paper rail with carbon text and a hard lower edge.
+- Desktop files remain real files in `~/Desktop`. Their icons are desaturated for recognition; labels have no shadow and selection uses paper-on-carbon inversion.
+- The dock is a modern Alumina launcher rendered as a hard-edged launch shelf. It is not presented as historical behavior.
+- The overview is a contact sheet: rectangular previews, flat title rails, numbered workspaces, and binary selected state.
+- Hyprland windows use square two-pixel borders with no blur, shadow, rounding, or opacity effects.
+- Menus, launchers, notifications, tooltips, and popovers are fully opaque.
 
-## Palette roles
+## Palette and typography
 
-- Dark base: graphite, blue-black, and cool slate.
-- Light base: pearl, cool silver, and soft graphite.
-- Focus/accent: restrained system blue.
-- Urgent: warm coral red.
-- Success: clean green.
-- Warning: amber.
-- Secondary atmosphere: violet and cyan, used sparingly.
+The shell is paper-dominant, with carbon black and a compact neutral ramp. Terminal and application semantics keep restrained dark ANSI inks so error, success, warning, link, and directory roles do not collapse into one gray.
 
-## Non-goals
+The shell uses Omarchy's existing legible type system. Weight, placement, and inversion create the period character; Alumina Raster does not imitate Chicago or ship novelty pixel typography.
 
-- Pixel-perfect macOS imitation.
-- Apple logos, proprietary icons, San Francisco font redistribution, or copied wallpaper compositions.
-- Universal traffic-light titlebar buttons; application decorations are client-owned on Linux.
-- A global application menu bridge with an unaudited binary dependency.
-- A globally floating desktop that discards Omarchy's tiling strengths.
+## Wallpaper law
+
+The wallpaper is an original registration sheet: a quiet paper field, one hard rule, and one asymmetrical spine of coarse square marks. Its left and central work field stay clear for desktop objects and windows. The source is deterministic, two-color, and contains no copied desktop patterns, logos, icons, devices, filters, transparency, grain, or embedded images.
+
+## Motion laws
+
+- Hover and focus are immediate or near-immediate.
+- Dock reveal may translate vertically once; it does not magnify, bounce, or spring.
+- Overview entry uses a short linear opacity/position change without blur, overshoot, or a historical zoom imitation.
+- Reduced-motion mode makes shell transitions effectively immediate.
+
+## Provenance guardrails
+
+- No Apple, Finder, Happy Mac, or copied Susan Kare artwork or product naming.
+- No original desktop tiles, device silhouettes, boot sounds, logos, or proprietary typefaces.
+- No beige-monitor costume, CRT curvature, scanlines, phosphor glow, or synthwave gradients.
+- Modern application icons are desaturated, not thresholded or replaced with copied period icons.
 
 ## Success checks
 
-- A Mac user can find files, launch or switch apps, expose windows, preview files, and locate system state without documentation.
-- The desktop remains usable with the companion theme disabled.
-- Disabling the plugin restores the stock shell without deleting user files or pinned-app state.
-- Both themes retain readable primary and selection text and keep the wallpaper quiet at 16:9, 16:10, and ultrawide crops.
+- The visual system is recognizable from geometry and state treatment without a logo or explanation.
+- Active, inactive, hover, keyboard focus, and selected states remain distinct in grayscale.
+- Desktop labels remain legible over every supported wallpaper crop.
+- ANSI and status colors remain distinguishable in normal terminal use.
+- The wallpaper has no moire or shimmer at 100%, 125%, or 200% scaling.
+- The launch shelf no longer reads as a rounded modern dock with a monochrome skin.
+- Disabling the plugin restores the stock shell without deleting desktop files or Alumina state.
+
+## Non-goals
+
+- Pixel-perfect imitation of any Apple operating system.
+- Universal client title-bar styling or global application menus.
+- Forced monochrome inside ordinary application content.
+- Replacing Omarchy's tiling model, launcher, Quick Look, controls, or update path.

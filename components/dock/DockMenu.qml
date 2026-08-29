@@ -28,10 +28,10 @@ PanelWindow {
     y: Math.max(12, Math.min(root.requestedPosition.y, root.height - height - 12))
     width: 180
     height: menuColumn.implicitHeight + 16
-    radius: 14
-    color: Util.alpha(Color.background, 0.92)
-    border.color: Util.alpha(Color.foreground, 0.08)
-    border.width: 1
+    radius: 0
+    color: Color.menu.background
+    border.color: Color.menu.border
+    border.width: 2
 
     Column {
       id: menuColumn
@@ -55,8 +55,8 @@ PanelWindow {
           required property var modelData
           width: parent.width
           height: modelData.separator ? 10 : 36
-          radius: 8
-          color: !modelData.separator && buttonMouse.containsMouse ? Util.alpha(Color.foreground, 0.10) : "transparent"
+          radius: 0
+          color: !modelData.separator && buttonMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
 
           Text {
             visible: !modelData.separator
@@ -64,7 +64,7 @@ PanelWindow {
             anchors.leftMargin: 10
             verticalAlignment: Text.AlignVCenter
             text: modelData.label
-            color: Color.foreground
+            color: buttonMouse.containsMouse ? Color.menu.selectedText : Color.menu.text
             font.family: Style.font.family
             font.pixelSize: Style.font.body
           }
@@ -77,7 +77,7 @@ PanelWindow {
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
             height: 1
-            color: Util.alpha(Color.foreground, 0.12)
+            color: Color.menu.border
           }
 
           MouseArea {

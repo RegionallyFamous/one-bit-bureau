@@ -1,6 +1,6 @@
 # Third-party notices
 
-Alumina combines four MIT-licensed Omarchy plugins into one maintained experience. Their original license texts remain beside their source under `components/`.
+Alumina Raster combines four MIT-licensed Omarchy plugins into one maintained experience. Their original license texts remain beside their source under `components/`.
 
 | Component | Upstream | Imported revision | Copyright |
 |---|---|---|---|
@@ -9,4 +9,4 @@ Alumina combines four MIT-licensed Omarchy plugins into one maintained experienc
 | Window overview | https://github.com/kristofferR/omarchy-expose | `10adad7011edba401f4408fd7013b2a449fcdcc2` | Copyright 2026 Harel Malka and Kristoffer Risanger |
 | Active application widget | https://github.com/crmne/omarchy-active-window | `b4cedda42d75d28a1960e93f10d0e9ce74ca9f9c` | Copyright 2026 Carmine Paolino |
 
-Bundle-specific changes include unified IDs and storage paths, interpreter-explicit helper launches, companion theme integration, and documentation. No Apple source code, logos, icons, fonts, or wallpaper artwork are included.
+Bundle-specific changes include unified IDs and storage paths, interpreter-explicit helper launches, companion theme integration, Raster surface styling, and documentation. The registration-sheet wallpaper, theme preview, and plugin icon are original deterministic artwork whose sources are retained under `artwork/` and `components/overview/assets/`. No Apple source code, logos, icons, fonts, desktop patterns, or wallpaper artwork are included.

@@ -37,15 +37,15 @@ Item {
     readonly property string previewPlacement: root.pluginEntry && root.pluginEntry.previewPlacement === "centered" ? "centered" : "in-place"
     readonly property var windowFooterStyles: ["floating", "integrated", "overlay", "centered"]
     readonly property string windowFooterStyle: {
-        var style = String((root.pluginEntry && root.pluginEntry.windowFooterStyle) || "floating");
-        return root.windowFooterStyles.indexOf(style) !== -1 ? style : "floating";
+        var style = String((root.pluginEntry && root.pluginEntry.windowFooterStyle) || "integrated");
+        return root.windowFooterStyles.indexOf(style) !== -1 ? style : "integrated";
     }
     readonly property var animationStyles: ["original", "fade", "zoom", "slide"]
     readonly property string animationStyle: {
-        var style = String((root.pluginEntry && root.pluginEntry.animationStyle) || "original");
-        return root.animationStyles.indexOf(style) !== -1 ? style : "original";
+        var style = String((root.pluginEntry && root.pluginEntry.animationStyle) || "fade");
+        return root.animationStyles.indexOf(style) !== -1 ? style : "fade";
     }
-    readonly property var defaultAnimationDurations: ({ original: 190, fade: 400, zoom: 320, slide: 320 })
+    readonly property var defaultAnimationDurations: ({ original: 90, fade: 90, zoom: 90, slide: 90 })
     readonly property var animationTimings: {
         var configuredTimings = root.pluginEntry && root.pluginEntry.animationTimings
             && typeof root.pluginEntry.animationTimings === "object"
@@ -111,16 +111,8 @@ Item {
         ? 0.11 * (1 - root.motionProgress)
         : 0
     readonly property real windowFooterHeight: root.windowFooterStyle === "overlay" ? 0 : Style.space(40)
-    readonly property int backgroundBlur: {
-        var raw = root.pluginEntry ? root.pluginEntry.backgroundBlur : undefined;
-        var value = raw === null || raw === undefined ? NaN : Number(raw);
-        return isFinite(value) ? Math.max(0, Math.min(20, Math.round(value))) : 4;
-    }
-    readonly property int backgroundDim: {
-        var raw = root.pluginEntry ? root.pluginEntry.backgroundDim : undefined;
-        var value = raw === null || raw === undefined ? NaN : Number(raw);
-        return isFinite(value) ? Math.max(0, Math.min(90, Math.round(value))) : 6;
-    }
+    readonly property int backgroundBlur: 0
+    readonly property int backgroundDim: 0
     readonly property bool hotCornerEnabled: !root.pluginEntry || root.pluginEntry.hotCornerEnabled !== false
     readonly property string hotCornerPosition: {
         var position = String((root.pluginEntry && root.pluginEntry.hotCornerPosition) || "top-left");
@@ -160,11 +152,11 @@ Item {
     property real animationOutDurationPreview: -1
     property real backgroundBlurPreview: -1
     property real backgroundDimPreview: -1
-    readonly property real effectiveBackgroundBlur: root.backgroundBlurPreview >= 0 ? root.backgroundBlurPreview : root.backgroundBlur
-    readonly property real effectiveBackgroundDim: root.backgroundDimPreview >= 0 ? root.backgroundDimPreview : root.backgroundDim
-    readonly property int previewAnimationDuration: root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 190
-    readonly property int previewFadeDuration: root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 130
-    readonly property int previewAnimationEasing: root.previewNavigationSlowMotion ? Easing.InOutCubic : Easing.OutQuart
+    readonly property real effectiveBackgroundBlur: 0
+    readonly property real effectiveBackgroundDim: 0
+    readonly property int previewAnimationDuration: root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 90
+    readonly property int previewFadeDuration: root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 70
+    readonly property int previewAnimationEasing: Easing.Linear
     property bool backgroundBlurPrimed: false
     property bool backgroundBlurFailed: false
     property bool dismissNotifyShell: false
@@ -380,9 +372,7 @@ Item {
             ? root.animationInDurationFor(root.animationStyle)
             : root.animationOutDurationFor(root.animationStyle);
         overviewMotionAnimation.duration = Math.max(1, Math.round(configuredDuration * distance));
-        overviewMotionAnimation.easing.type = root.animationStyle === "original"
-            ? Easing.OutQuart
-            : (next > root.motionProgress ? Easing.OutCubic : Easing.InCubic);
+        overviewMotionAnimation.easing.type = Easing.Linear;
         overviewMotionAnimation.start();
     }
 
@@ -1752,15 +1742,12 @@ Item {
                 bottom: true
                 left: true
             }
-            color: "transparent"
+            color: Color.background
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "alumina-window-overview"
             WlrLayershell.layer: WlrLayer.Overlay
             HyprlandWindow.opacity: root.motionProgress
-            BackgroundEffect.blurRegion: root.effectiveBackgroundBlur > 0
-                    && !root.backgroundBlurFailed
-                ? backgroundBlurRegion
-                : null
+            BackgroundEffect.blurRegion: null
             readonly property bool hotCornerHovered: openHotCorner.hovered
             readonly property bool acceptsKeyboard: {
                 var wanted = root.effectiveOverviewScreenName;
@@ -1889,7 +1876,7 @@ Item {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.preferredWidth: Math.min(Style.space(760), overviewWindow.width - Style.space(48))
                         Layout.preferredHeight: Style.space(48)
-                        radius: Style.cornerRadius
+                        radius: 0
                         color: Color.menu.background
                         border.color: root.filterText ? Color.menu.selectedText : Color.menu.border
                         border.width: Math.max(1, Style.normalBorderWidth)
@@ -1947,7 +1934,7 @@ Item {
                             Rectangle {
                                 Layout.preferredWidth: Style.space(34)
                                 Layout.preferredHeight: Style.space(24)
-                                radius: Math.max(2, Style.cornerRadius - Style.spacing.sm)
+                                radius: 0
                                 color: "transparent"
                                 border.color: Color.menu.border
                                 border.width: Math.max(1, Style.normalBorderWidth)
