@@ -19,6 +19,12 @@ function loadQmlJs(path) {
 
 const model = loadQmlJs("DockModel.js")
 
+test("seeds a useful first-run dock", () => {
+  const expected = ["org.gnome.Nautilus", "chromium", "foot"]
+  assert.deepEqual(Array.from(model.DEFAULT_PINNED), expected)
+  assert.deepEqual(Array.from(model.parsePinned("", model.DEFAULT_PINNED)), expected)
+})
+
 test("parses and normalizes pinned ids", () => {
   assert.deepEqual(Array.from(model.parsePinned('{"pinned":["code.desktop","code","ghostty"]}')), ["code", "ghostty"])
 })

@@ -7,7 +7,7 @@ It is intentionally Mac-familiar rather than a pixel copy. Alumina keeps Omarchy
 ## What is included
 
 - Real `~/Desktop` files and folders on every display, including drag/drop, context menus, Trash, launchers, and persistent positions.
-- A bottom dock with pinning, running indicators, auto-hide, window previews, custom icons, and a macOS-like Alt+Tab app switcher.
+- A bottom dock initially pinned with Files, Chromium, and Foot, plus running indicators, auto-hide, window previews, custom icons, and a macOS-like Alt+Tab app switcher.
 - A searchable, keyboard-navigable window overview with live previews and a top-left hot corner.
 - The current application icon and title beside the Omarchy menu.
 - `alumina-dark` and `alumina-light` theme variants with original 4K wallpaper, translucent shell surfaces, squircle-like corners, soft shadow, and restrained blue focus states.

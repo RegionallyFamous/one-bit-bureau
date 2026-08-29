@@ -91,10 +91,18 @@ wait_until "Alumina is enabled" 15 \
 wait_until "Alumina desktop files are mounted" 20 layer_on_screen desktop-icons
 wait_until "Alumina dock is mounted" 20 layer_on_screen alumina-dock
 wait_until "Alumina overview hot corner is resident" 20 layer_on_screen alumina-overview-hot-corner
+omarchy-shell regionallyfamous.alumina.dock setAutoHide false >/dev/null
+wait_until "Alumina dock auto-hide is disabled for visual proof" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.alumina.dock getAutoHide) == 'false' ]]"
 
 omarchy theme set alumina-dark >/dev/null
 wait_until "Alumina Dark is active" 30 \
   bash -c "grep -Fxq 'alumina-dark' '$HOME/.local/state/omarchy/current/theme.name'"
+sleep 2
+screen_lacks "Your config has errors" || fail "Alumina Dark applies without a Hyprland config error"
+pass "Alumina Dark applies without a Hyprland config error"
+omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
+screenshot "success-alumina-01-dark-desktop-dock"
 
 setsid -f foot --app-id=alumina-qa-one --title="Alumina Notes" >/dev/null 2>&1
 setsid -f foot --app-id=alumina-qa-two --title="Alumina Project" >/dev/null 2>&1
@@ -102,7 +110,6 @@ wait_until "the first proof window opens" 20 window_present '^alumina-qa-one$'
 wait_until "the second proof window opens" 20 window_present '^alumina-qa-two$'
 sleep 3
 omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
-screenshot "success-alumina-01-dark-desktop-dock"
 
 omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
 wait_until "Alumina overview opens" 20 layer_on_screen alumina-window-overview
@@ -118,6 +125,8 @@ omarchy theme set alumina-light >/dev/null
 wait_until "Alumina Light is active" 30 \
   bash -c "grep -Fxq 'alumina-light' '$HOME/.local/state/omarchy/current/theme.name'"
 sleep 3
+screen_lacks "Your config has errors" || fail "Alumina Light applies without a Hyprland config error"
+pass "Alumina Light applies without a Hyprland config error"
 screenshot "success-alumina-03-light-desktop-dock"
 
 omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
