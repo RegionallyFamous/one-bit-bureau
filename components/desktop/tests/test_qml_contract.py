@@ -11,19 +11,15 @@ SERVICE = (Path(__file__).resolve().parents[1] / "Service.qml").read_text(
 
 
 class DesktopQmlContractTest(unittest.TestCase):
-    def test_real_photos_keep_color_and_use_a_square_crop(self) -> None:
+    def test_image_files_use_the_bitmap_object_icon_instead_of_thumbnails(self) -> None:
         self.assertNotIn("MultiEffect", SERVICE)
         self.assertNotIn("saturation: -1", SERVICE)
         self.assertRegex(
             SERVICE,
-            r"fillMode:\s*iconRoot\.photoPreview\s*\?\s*Image\.PreserveAspectCrop",
+            r'if \(kind === "image"\)\s*return "image"',
         )
-
-    def test_unpreviewable_images_use_the_raster_fallback(self) -> None:
-        self.assertRegex(
-            SERVICE,
-            r'if \(kind === "image" && !String\(item\.preview \|\| ""\)\)\s*return "image"',
-        )
+        self.assertNotIn("photoPreview", SERVICE)
+        self.assertIn("fillMode: Image.PreserveAspectFit", SERVICE)
 
     def test_trust_dialog_keeps_enter_safe_but_allows_tab_space(self) -> None:
         trust_keys = re.search(

@@ -16,10 +16,6 @@ The atlas prompt requested seven original transparent one-bit mini-illustrations
 
 The separate fallback prompt requested one original square picture-frame object with a mountain-and-sun aperture, using the same chunky one-bit edge scale, dither density, optical weight, and transparent padding as the atlas. It explicitly prohibited text, logos, faces, Apple marks, historical icon copies, gradients, smooth vector lines, shadows, and extra objects. `bitmap-image-fallback-source.png` is the untouched selected transparent generation; the runtime renderer derives both normal and selected 64px states from it.
 
-## Proof photograph prompt
-
-The design-proof photograph is an original ImageGen fixture, not bundled user content and not a runtime screenshot. Its prompt requested a natural documentary photograph of a cobalt-blue enamel mug beside a small green houseplant on a sunlit workshop windowsill, with simple 4:3-friendly framing, strong subject separation, real material texture, modest color, and no people, faces, text, logos, watermark, UI, computer hardware, faux pixel art, monochrome filter, or excessive blur. `proof-photo-source.png` preserves the selected generation; `docs/assets/proof-photo.png` is its 256x192 center crop.
-
 ## Runtime reduction
 
 - Wallpaper: threshold the selected source at 60% luminance, map dark pixels to `#171716` and light pixels to `#f4f4f0`, then enlarge to 3840x2160 with nearest-neighbor sampling.

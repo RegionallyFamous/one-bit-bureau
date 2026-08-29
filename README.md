@@ -8,7 +8,7 @@ The tested modern Alumina edition remains preserved at the `alumina-modern-v1` G
 
 ## What is included
 
-- Real files and folders from the configured XDG Desktop directory on every display, with single-click selection, double-click open, keyboard opening, drag/drop, Trash, safe launcher confirmation, persistent positions, actual photo thumbnails, and original bitmap fallbacks.
+- Real files and folders from the configured XDG Desktop directory on every display, with single-click selection, double-click open, keyboard opening, drag/drop, Trash, safe launcher confirmation, persistent positions, and original bitmap object icons—including a dedicated picture-file icon instead of live photo thumbnails.
 - A bottom application dock seeded with Files, Chromium, and Foot, plus running indicators, auto-hide, pinning, reordering, custom icons, window previews, and an optional app-switcher HUD.
 - A searchable, keyboard-navigable contact-sheet window overview with live previews and a top-left hot corner.
 - The active application owner and secondary window title beside the Omarchy menu.

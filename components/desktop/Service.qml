@@ -150,7 +150,7 @@ Item {
       return "trash"
     if (kind === "folder" || item.isDir)
       return "folder"
-    if (kind === "image" && !String(item.preview || ""))
+    if (kind === "image")
       return "image"
     if (kind === "file") {
       var filename = String(item.name || item.path || "").toLowerCase()
@@ -851,9 +851,6 @@ Item {
           property real pressX: 0
           property real pressY: 0
           readonly property bool selected: panel.host.selectedId === iconRoot.modelData.id
-          readonly property bool photoPreview: String(iconRoot.modelData.kind || "") === "image"
-            && String(iconRoot.modelData.preview || "") !== ""
-
           Binding on x {
             value: panel.posFor(iconRoot.modelData, iconRoot.index).x
             when: !iconMouse.drag.active
@@ -892,7 +889,7 @@ Item {
                 radius: 0
                 color: iconRoot.selected && panel.host.usesCategoryIcon(iconRoot.modelData)
                   ? Color.foreground
-                  : (iconRoot.selected && iconRoot.photoPreview ? Color.menu.background : "transparent")
+                  : "transparent"
                 border.width: iconRoot.selected ? 2 : 0
                 border.color: Color.foreground
               }
@@ -903,7 +900,7 @@ Item {
                 width: panel.host.iconSize
                 height: panel.host.iconSize
                 source: panel.host.objectIconSource(iconRoot.modelData, iconRoot.selected)
-                fillMode: iconRoot.photoPreview ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+                fillMode: Image.PreserveAspectFit
                 asynchronous: true
                 cache: true
                 smooth: !panel.host.usesCategoryIcon(iconRoot.modelData)

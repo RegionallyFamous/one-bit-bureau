@@ -13,7 +13,7 @@
 - Install from the exact Git URL with `bash setup`, not a manually copied directory.
 - Verify the desktop service with an empty folder, many files, a long filename, a trusted launcher, an untrusted launcher, Trash, drag/drop, and two displays.
 - Verify one click selects, a second click does not accidentally open, double-click and Return open, and clicking empty ground clears selection.
-- Verify generic object glyphs invert inside the ownership plate while image thumbnails and meaningful application icons remain recognizable.
+- Verify every generic object glyph—including the picture-file icon—inverts inside the ownership plate while meaningful application icons remain recognizable.
 - Verify untrusted launchers default to Cancel, and both Enter and Escape cancel without executing the launcher.
 - Verify dock launch, focus-existing-window, pin/unpin, reorder, auto-hide, previews, icon management, and the opt-in app-switcher binding in floating and tiled layouts.
 - Verify dock and desktop menus preserve their row order while unavailable commands remain visible and dimmed.

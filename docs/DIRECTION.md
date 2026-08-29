@@ -11,7 +11,7 @@ This edition applies the original Macintosh interface method rather than reprodu
 ## Research-derived laws
 
 1. **Object before action.** A single click selects a desktop object, a double-click opens it, Return opens the selected object, and an empty desktop click clears selection.
-2. **Visible ownership.** Selection inverts a compact name or control rail. Generic object artwork reverses with its rail; image previews keep their original values inside a carbon enclosure.
+2. **Visible ownership.** Selection inverts a compact name or control rail. Object artwork, including picture-file icons, reverses with its rail.
 3. **Perceived stability.** Objects keep their positions, menu inventories do not jump when an action becomes unavailable, and overview preview bodies do not change value when focus moves.
 4. **Immediate feedback.** Hover, drag targets, selection, focus, disabled state, and risky actions have distinct visible treatments without depending on hue.
 5. **Forgiveness.** Risky launcher confirmation makes Cancel the double-outlined safe default. Enter and Escape cancel; neither key trusts nor executes a launcher.
@@ -22,7 +22,7 @@ This edition applies the original Macintosh interface method rather than reprodu
 
 - The desktop ground is an original ImageGen-authored one-bit machine workbench: paper stacks, organizing trays, cables, toothed leaves, and abstract mechanisms frame a calm central work field. The leftmost object lane and bottom-center shelf zone remain deliberately quiet.
 - Paper windows, dialogs, menus, notifications, and the top rail sit clearly above the desktop ground. All shell surfaces are opaque, square, and integer-aligned.
-- Generic folder, document, archive, link, launcher-fallback, and Trash objects use expressive raster mini-illustrations reduced from one original ImageGen atlas. Real image thumbnails and recognizable application icons are preserved rather than thresholded.
+- Generic folder, document, picture-file, archive, link, launcher-fallback, and Trash objects use expressive raster mini-illustrations reduced from original ImageGen sources. Recognizable application icons remain preserved rather than thresholded.
 - The overview is a contact sheet of stable paper preview bodies. Keyboard selection inverts only the title rail; the actually active window receives a double outer rule.
 - The top rail names the active application first. A distinct window or document title is secondary context, never a fake global menu.
 - The dock remains a modern Paper Jam launch shelf translated into this bitmap workbench system. It is not presented as historical Macintosh behavior.
@@ -60,7 +60,7 @@ The artwork contains no Apple marks, copied desktop tiles, historical devices, t
 
 - Single click never opens a desktop object; double-click and Return do.
 - A selected generic object changes both its glyph state and its name rail.
-- A selected image preview is enclosed but never photo-negated.
+- A selected picture file reverses the dedicated bitmap picture icon and its name rail.
 - Overview selection never changes the preview body's value.
 - The active overview window is distinguishable from the keyboard-selected window when they differ.
 - The top rail's primary identity is the application, not only the document title.

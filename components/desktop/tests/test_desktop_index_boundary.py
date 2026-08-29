@@ -81,6 +81,17 @@ class DesktopIndexBoundaryTest(unittest.TestCase):
             self.assertTrue(link.is_symlink())
             self.assertEqual(target.read_text(encoding="utf-8"), "keep me")
 
+    def test_image_item_uses_object_kind_without_exposing_a_thumbnail(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "photo.png"
+            image.write_bytes(b"not decoded by the indexer")
+
+            with mock.patch.object(self.index, "guess_icon", return_value="image-x-generic"):
+                item = self.index.item_for(image)
+
+            self.assertEqual(item["kind"], "image")
+            self.assertEqual(item["preview"], "")
+
     def test_trash_refuses_items_outside_the_desktop(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

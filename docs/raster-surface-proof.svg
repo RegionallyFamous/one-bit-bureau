@@ -18,8 +18,8 @@
     <text x="36" y="93" text-anchor="middle" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="12">Projects</text>
   </g>
   <g transform="translate(24 356)">
-    <rect width="72" height="72" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-    <image x="4" y="4" width="64" height="64" href="assets/proof-photo.png" preserveAspectRatio="xMidYMid slice"/>
+    <rect width="72" height="72" fill="#171716" stroke="#171716" stroke-width="2"/>
+    <image x="4" y="4" width="64" height="64" href="../components/desktop/assets/image-selected.png"/>
     <rect y="78" width="72" height="22" fill="#171716" stroke="#171716"/>
     <text x="36" y="93" text-anchor="middle" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="12">Photo</text>
   </g>

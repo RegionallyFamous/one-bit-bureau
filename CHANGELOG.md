@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 — Picture means icon
+
+- Replaced literal desktop photo thumbnails with the dedicated ImageGen-authored one-bit picture-file icon in both runtime and the static design proof.
+
 ## 0.5.0 — Paper Jam ’84
 
 - Reframed the vintage edition as Paper Jam ’84 while preserving the permanent plugin ID and existing user-state filenames.

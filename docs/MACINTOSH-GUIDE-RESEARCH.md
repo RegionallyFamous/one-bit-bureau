@@ -12,8 +12,8 @@ Paper Jam ’84’s Object-First revision is based on primary Apple documentatio
 ## What changed in Paper Jam ’84
 
 - Desktop input now follows select-before-action: single click selects, double-click opens, Return opens, and empty click clears.
-- Original ImageGen-authored raster mini-illustrations replace arbitrary modern fallbacks for generic objects. Real thumbnails and meaningful application icons remain recognizable.
-- Selection reverses the generic glyph and name rail; photographs stay unmodified inside a selection enclosure.
+- Original ImageGen-authored raster mini-illustrations replace arbitrary modern fallbacks for generic objects, including picture files. Meaningful application icons remain recognizable.
+- Selection reverses the object glyph and name rail; picture files use a dedicated one-bit picture-frame icon rather than a literal thumbnail.
 - Overview preview bodies remain stable paper while keyboard ownership moves through title rails. The active window receives a separate double rule.
 - The active-app widget leads with the application owner and treats a distinct window title as secondary context.
 - Risky launcher confirmation makes Cancel the visibly safe default and routes Enter and Escape to cancellation.

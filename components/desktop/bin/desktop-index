@@ -45,7 +45,6 @@ IMAGE_SUFFIXES = {
 
 # Raster-only: SVG/GIF can pull remote resources or do unbounded decode work.
 SAFE_ICON_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
-PREVIEW_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 MAX_ITEMS = 256
 MAX_PATH_ARGS = 256
@@ -54,7 +53,6 @@ MAX_NAME_LENGTH = 120
 MAX_ID_LENGTH = 255
 MAX_ICON_LENGTH = 4096
 MAX_DESKTOP_FILE_BYTES = 64 * 1024
-MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 MAX_ICON_FILE_BYTES = 2 * 1024 * 1024
 MAX_ERROR_LENGTH = 240
 
@@ -313,11 +311,6 @@ def item_for(path: Path) -> dict:
         name = plain_text(path.stem)
         icon = "text-html"
         kind = "link"
-    elif suffix in PREVIEW_SUFFIXES and is_allowed_local_image(
-        path, MAX_PREVIEW_BYTES, PREVIEW_SUFFIXES
-    ):
-        preview = str(path.resolve())
-        kind = "image"
     elif suffix in IMAGE_SUFFIXES:
         kind = "image"
 
