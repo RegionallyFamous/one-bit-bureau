@@ -35,7 +35,7 @@ Item {
         return null;
     }
     readonly property string previewPlacement: root.pluginEntry && root.pluginEntry.previewPlacement === "centered" ? "centered" : "in-place"
-    readonly property var windowFooterStyles: ["floating", "integrated", "overlay", "centered"]
+    readonly property var windowFooterStyles: ["integrated"]
     readonly property string windowFooterStyle: {
         var style = String((root.pluginEntry && root.pluginEntry.windowFooterStyle) || "integrated");
         return root.windowFooterStyles.indexOf(style) !== -1 ? style : "integrated";
@@ -110,7 +110,7 @@ Item {
     readonly property real slideOffsetFraction: root.animationStyle === "slide"
         ? 0.11 * (1 - root.motionProgress)
         : 0
-    readonly property real windowFooterHeight: root.windowFooterStyle === "overlay" ? 0 : Style.space(40)
+    readonly property real windowFooterHeight: Style.space(40)
     readonly property int backgroundBlur: 0
     readonly property int backgroundDim: 0
     readonly property bool hotCornerEnabled: !root.pluginEntry || root.pluginEntry.hotCornerEnabled !== false
@@ -130,7 +130,7 @@ Item {
     readonly property string multiMonitorMode: root.pluginEntry && root.pluginEntry.multiMonitorMode === "per-monitor"
         ? "per-monitor"
         : "mirrored"
-    readonly property bool showFooter: !root.pluginEntry || root.pluginEntry.showFooter !== false
+    readonly property bool showFooter: true
     property bool opened: false
     property bool surfaceMounted: false
     property bool hotCornerArmed: true
@@ -436,7 +436,7 @@ Item {
     }
 
     function setWindowFooterStyle(value) {
-        var style = root.windowFooterStyles.indexOf(value) !== -1 ? value : "floating";
+        var style = root.windowFooterStyles.indexOf(value) !== -1 ? value : "integrated";
         if (style !== root.windowFooterStyle)
             root.updatePluginSetting("windowFooterStyle", style);
     }
@@ -1560,7 +1560,7 @@ Item {
         }
         function windowFooterStyle(style: string): string {
             if (root.windowFooterStyles.indexOf(style) === -1)
-                return "expected floating, integrated, overlay, or centered";
+                return "expected integrated";
             root.setWindowFooterStyle(style);
             return style;
         }

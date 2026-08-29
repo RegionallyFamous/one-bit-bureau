@@ -1,69 +1,61 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" shape-rendering="crispEdges">
-  <rect width="1600" height="900" fill="#e8e8e4"/>
+  <rect width="1600" height="900" fill="#aaa9a4"/>
   <rect width="1600" height="28" fill="#171716"/>
   <text x="16" y="19" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="700">STATIC OVERVIEW PROOF — NOT RUNTIME</text>
+  <rect x="330" y="52" width="940" height="48" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+  <text x="350" y="82" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="15">⌕  Type to filter windows…</text>
+  <text x="1240" y="82" text-anchor="end" fill="#50504c" font-family="DejaVu Sans, sans-serif" font-size="12">4 windows · all workspaces</text>
 
-  <g transform="translate(0 28)">
-    <rect x="330" y="24" width="940" height="48" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-    <text x="350" y="54" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="15">⌕  Type to filter windows…</text>
-    <text x="1240" y="54" text-anchor="end" fill="#5b5b57" font-family="DejaVu Sans Mono, monospace" font-size="12">4 WINDOWS  ·  ALL WORKSPACES</text>
-
-    <g transform="translate(120 118)">
-      <rect width="620" height="290" fill="#f4f4f0" stroke="#171716" stroke-width="4"/>
-      <rect x="4" y="4" width="612" height="40" fill="#171716"/>
-      <text x="18" y="30" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Terminal — palette check</text>
-      <rect x="18" y="62" width="584" height="176" fill="#e8e8e4" stroke="#171716" stroke-width="2"/>
-      <g font-family="DejaVu Sans Mono, monospace" font-size="13">
-        <text x="36" y="94" fill="#171716">$ omarchy theme set alumina-raster</text>
-        <text x="36" y="126" fill="#205a34">PASS  shell surfaces are opaque</text>
-        <text x="36" y="158" fill="#1a4775">PASS  focus is visible in grayscale</text>
-      </g>
-      <rect x="4" y="246" width="612" height="40" fill="#171716"/>
-      <text x="18" y="272" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="13">SELECTED  ·  WS 1</text>
+  <g transform="translate(120 144)">
+    <rect width="620" height="276" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+    <rect x="8" y="8" width="604" height="40" fill="#171716" stroke="#171716"/>
+    <text x="20" y="34" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Terminal — palette check</text>
+    <text x="592" y="34" text-anchor="end" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="12">WS 1</text>
+    <rect x="18" y="62" width="584" height="194" fill="#f4f4f0" stroke="#171716"/>
+    <g font-family="DejaVu Sans Mono, monospace" font-size="13">
+      <text x="36" y="96" fill="#171716">$ omarchy theme set alumina-raster</text>
+      <text x="36" y="132" fill="#205a34">PASS  selected title rail is inverted</text>
+      <text x="36" y="164" fill="#1a4775">PASS  preview body remains paper</text>
     </g>
+  </g>
 
-    <g transform="translate(860 118)">
-      <rect width="620" height="290" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-      <rect x="2" y="2" width="616" height="40" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-      <text x="16" y="28" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Files — Documents</text>
-      <g transform="translate(44 76)" fill="#f4f4f0" stroke="#171716" stroke-width="2">
-        <g><rect width="82" height="62"/><rect x="8" y="-8" width="32" height="10"/></g>
-        <g transform="translate(150 0)"><rect width="82" height="62"/><rect x="8" y="-8" width="32" height="10"/></g>
-        <g transform="translate(300 0)"><path d="M8 0h50l18 18v52H8z"/><path d="M58 0v19h18" fill="none"/></g>
-      </g>
-      <rect x="2" y="246" width="616" height="42" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-      <text x="16" y="272" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="13">Files — Documents</text>
-      <text x="602" y="272" text-anchor="end" fill="#5b5b57" font-family="DejaVu Sans Mono, monospace" font-size="12">WS 1</text>
+  <g transform="translate(860 144)">
+    <rect width="620" height="276" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+    <rect x="4" y="4" width="612" height="268" fill="none" stroke="#171716"/>
+    <rect x="8" y="8" width="604" height="40" fill="#f4f4f0" stroke="#171716"/>
+    <text x="20" y="34" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Files — Documents</text>
+    <text x="592" y="34" text-anchor="end" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="12">WS 1</text>
+    <rect x="18" y="62" width="584" height="194" fill="#f4f4f0" stroke="#171716"/>
+    <g transform="translate(60 102)">
+      <image width="48" height="48" href="../components/desktop/assets/folder.svg"/>
+      <image x="150" width="48" height="48" href="../components/desktop/assets/document.svg"/>
+      <image x="300" width="48" height="48" href="../components/desktop/assets/link.svg"/>
     </g>
+  </g>
 
-    <g transform="translate(120 456)">
-      <rect width="620" height="290" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-      <rect x="2" y="2" width="616" height="40" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-      <text x="16" y="28" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Editor — direction contract</text>
-      <rect x="20" y="68" width="240" height="12" fill="#171716"/><rect x="20" y="96" width="520" height="8" fill="#5b5b57"/>
-      <rect x="20" y="120" width="460" height="8" fill="#5b5b57"/><rect x="20" y="144" width="500" height="8" fill="#5b5b57"/>
-      <rect x="2" y="246" width="616" height="42" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-      <text x="16" y="272" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="13">Direction contract</text>
-      <text x="602" y="272" text-anchor="end" fill="#5b5b57" font-family="DejaVu Sans Mono, monospace" font-size="12">WS 2</text>
-    </g>
+  <g transform="translate(120 480)">
+    <rect width="620" height="276" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+    <rect x="8" y="8" width="604" height="40" fill="#f4f4f0" stroke="#171716"/>
+    <text x="20" y="34" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Editor — direction contract</text>
+    <text x="592" y="34" text-anchor="end" fill="#50504c" font-family="DejaVu Sans, sans-serif" font-size="12">WS 2</text>
+    <rect x="18" y="62" width="584" height="194" fill="#f4f4f0" stroke="#171716"/>
+    <rect x="36" y="92" width="240" height="12" fill="#171716"/><rect x="36" y="122" width="520" height="8" fill="#50504c"/><rect x="36" y="148" width="460" height="8" fill="#50504c"/><rect x="36" y="174" width="500" height="8" fill="#50504c"/>
+  </g>
 
-    <g transform="translate(860 456)">
-      <rect width="620" height="290" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-      <rect x="2" y="2" width="616" height="40" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-      <text x="16" y="28" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Browser — Omarchy manual</text>
-      <rect x="28" y="70" width="564" height="22" fill="#d0d0cc" stroke="#171716"/>
-      <rect x="28" y="118" width="190" height="82" fill="#171716"/>
-      <rect x="246" y="118" width="346" height="12" fill="#5b5b57"/><rect x="246" y="146" width="300" height="8" fill="#5b5b57"/>
-      <rect x="246" y="170" width="330" height="8" fill="#5b5b57"/>
-      <rect x="2" y="246" width="616" height="42" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
-      <text x="16" y="272" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="13">Omarchy manual</text>
-      <text x="602" y="272" text-anchor="end" fill="#5b5b57" font-family="DejaVu Sans Mono, monospace" font-size="12">WS 2</text>
-    </g>
+  <g transform="translate(860 480)">
+    <rect width="620" height="276" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
+    <rect x="8" y="8" width="604" height="40" fill="#f4f4f0" stroke="#171716"/>
+    <text x="20" y="34" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Browser — Omarchy manual</text>
+    <text x="592" y="34" text-anchor="end" fill="#50504c" font-family="DejaVu Sans, sans-serif" font-size="12">WS 2</text>
+    <rect x="18" y="62" width="584" height="194" fill="#f4f4f0" stroke="#171716"/>
+    <rect x="36" y="88" width="548" height="24" fill="#e8e8e4" stroke="#171716"/>
+    <rect x="36" y="136" width="190" height="82" fill="#171716"/>
+    <rect x="250" y="136" width="334" height="12" fill="#50504c"/><rect x="250" y="164" width="288" height="8" fill="#50504c"/><rect x="250" y="188" width="318" height="8" fill="#50504c"/>
+  </g>
 
-    <g transform="translate(548 790)" font-family="DejaVu Sans Mono, monospace" font-size="12">
-      <rect width="92" height="32" fill="#171716"/><text x="46" y="21" text-anchor="middle" fill="#f4f4f0">WS 1</text>
-      <rect x="94" width="92" height="32" fill="#f4f4f0" stroke="#171716" stroke-width="2"/><text x="140" y="21" text-anchor="middle" fill="#171716">WS 2</text>
-      <text x="212" y="21" fill="#5b5b57">← ↑ ↓ → NAVIGATE   ENTER OPEN   ESC CLOSE</text>
-    </g>
+  <g transform="translate(548 806)" font-family="DejaVu Sans, sans-serif" font-size="12">
+    <rect width="92" height="32" fill="#171716"/><text x="46" y="21" text-anchor="middle" fill="#f4f4f0">WS 1</text>
+    <rect x="94" width="92" height="32" fill="#f4f4f0" stroke="#171716" stroke-width="2"/><text x="140" y="21" text-anchor="middle" fill="#171716">WS 2</text>
+    <text x="212" y="21" fill="#50504c">← ↑ ↓ → navigate   Enter open   Esc close</text>
   </g>
 </svg>

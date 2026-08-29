@@ -1,18 +1,18 @@
 # Alumina Raster
 
-Alumina Raster is a vintage one-bit-inspired edition of the Alumina experience for Omarchy. It combines real desktop files, a hard-edged launch shelf with app switching and previews, a contact-sheet window overview, active-application context in the top rail, and one matching native theme.
+Alumina Raster is an object-first, one-bit-inspired edition of the Alumina experience for Omarchy. It combines real desktop files, a hard-edged launch shelf with app switching and previews, a contact-sheet window overview, application-first context in the top rail, and one matching native theme.
 
-It borrows the discipline of early binary desktop systems rather than their owned artwork. The edition uses original procedural graphics, opaque paper-and-carbon surfaces, square geometry, compact spacing, grayscale application icons, and binary focus inversion while keeping Omarchy's tiling model and modern Linux behavior.
+It applies the original Macintosh interface method rather than copying Apple's artwork or exact trade dress: select an object before acting, keep spatial landmarks stable, provide immediate feedback, retain unavailable commands in place, and make safe actions obvious. The edition uses original procedural graphics and object glyphs, opaque paper-and-carbon surfaces, square geometry, compact spacing, and grayscale-first shell state while keeping Omarchy's tiling model and modern Linux behavior.
 
 The tested modern Alumina build remains preserved at the `alumina-modern-v1` Git tag. This branch is an alternative edition of the same plugin ID, not a side-by-side install.
 
 ## What is included
 
-- Real `~/Desktop` files and folders on every display, including drag/drop, context menus, Trash, launchers, and persistent positions.
+- Real `~/Desktop` files and folders on every display, including single-click selection, double-click open, drag/drop, stable context menus, Trash, launchers, and persistent positions.
 - A bottom launch shelf pinned initially with Files, Chromium, and Foot, plus running indicators, auto-hide, window previews, custom icons, and an Alt+Tab app switcher.
 - A searchable, keyboard-navigable window overview with live previews and a top-left hot corner.
-- The current application icon and title beside the Omarchy menu.
-- The `alumina-raster` native theme, with an original two-color 4K registration-sheet wallpaper and fully opaque square shell surfaces.
+- The current application owner and secondary window title beside the Omarchy menu.
+- The `alumina-raster` native theme, with an original three-neutral 4K Object-First Weave wallpaper and fully opaque square shell surfaces.
 - A deterministic wallpaper source and regeneration script under `artwork/`.
 
 The product direction and explicit provenance guardrails live in [docs/DIRECTION.md](docs/DIRECTION.md). Third-party code provenance lives in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
@@ -41,6 +41,8 @@ Because the modern and Raster editions intentionally share one plugin ID, switch
 
 | Intent | Alumina Raster / Omarchy control |
 |---|---|
+| Select a desktop object | Single click |
+| Open a desktop object | Double-click, or select it and press `Return` |
 | Launch an application | `Super + Space` |
 | Switch applications | `Alt + Tab` / `Alt + Shift + Tab` |
 | Show all windows | Move to the top-left hot corner, or run `omarchy-shell shell toggle io.github.regionallyfamous.alumina '{}'` |
@@ -92,7 +94,7 @@ bash tests/static.sh
 
 The local gate covers manifest validation, shell and helper syntax, bundled model tests, strict theme validation, template rendering, source safety, and unresolved legacy identities. Real runtime evidence is captured separately in a disposable x86_64 Omarchy VM and is never replaced by the wallpaper preview or deterministic theme proof.
 
-The repository includes three explicitly labeled, non-runtime design artifacts for local review: `docs/raster-surface-proof.png`, `docs/raster-overview-proof.png`, and `docs/wallpaper-crop-proof.png`.
+The repository includes explicitly labeled, non-runtime design artifacts for local review. They are never substitutes for installed runtime evidence.
 
 ## Remove
 

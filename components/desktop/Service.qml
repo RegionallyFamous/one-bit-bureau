@@ -15,9 +15,9 @@ Item {
   property var positions: ({})
   property string desktopPath: Quickshell.env("HOME") + "/Desktop"
   property string selectedId: ""
-  property int iconSize: 72
-  property int cellW: 144
-  property int cellH: 162
+  property int iconSize: 48
+  property int cellW: 104
+  property int cellH: 124
   property int padLeft: 24
   property int padRight: 24
   property int padBottom: 24
@@ -141,6 +141,38 @@ Item {
         return previewUrl
     }
     return root.safeIconSource(item.icon, item)
+  }
+
+  function categoryIconName(item) {
+    if (!item)
+      return ""
+    var kind = String(item.kind || "")
+    if (kind === "trash")
+      return "trash"
+    if (kind === "folder" || item.isDir)
+      return "folder"
+    if (kind === "file")
+      return "document"
+    if (kind === "link")
+      return "link"
+    if (kind === "launcher") {
+      var icon = String(item.icon || "")
+      if (!icon || icon === "application-x-executable")
+        return "launcher"
+    }
+    return ""
+  }
+
+  function usesCategoryIcon(item) {
+    return root.categoryIconName(item) !== ""
+  }
+
+  function objectIconSource(item, selected) {
+    var category = root.categoryIconName(item)
+    if (!category)
+      return root.iconSource(item)
+    var suffix = selected ? "-selected" : ""
+    return root.localFileUrl(root.pluginDir + "/assets/" + category + suffix + ".svg")
   }
 
   function sanitizeItem(item) {
@@ -640,30 +672,32 @@ Item {
         if (menuKind === "item") {
           if (host.isTrash(menuItem))
             return [
-              { action: "open", label: "Open Trash" },
-              { action: "files", label: "Show in Files" }
+              { action: "open", label: "Open Trash", enabled: true },
+              { action: "files", label: "Show in Files", enabled: true },
+              { action: "trash", label: "Move to Trash", enabled: false }
             ]
-          if (host.isUntrustedLauncher(menuItem))
+          if (menuItem && menuItem.kind === "launcher")
             return [
-              { action: "trust-open", label: "Trust and Open" },
-              { action: "trust", label: "Allow launching" },
-              { action: "files", label: "Show in Files" },
-              { action: "trash", label: "Move to Trash" }
+              { action: "open", label: "Open", enabled: !host.isUntrustedLauncher(menuItem) },
+              { action: "trust-open", label: "Trust and Open", enabled: host.isUntrustedLauncher(menuItem) },
+              { action: "trust", label: "Allow Launching", enabled: host.isUntrustedLauncher(menuItem) },
+              { action: "files", label: "Show in Files", enabled: true },
+              { action: "trash", label: "Move to Trash", enabled: true }
             ]
           return [
-            { action: "open", label: "Open" },
-            { action: "files", label: "Show in Files" },
-            { action: "trash", label: "Move to Trash" }
+            { action: "open", label: "Open", enabled: true },
+            { action: "files", label: "Show in Files", enabled: true },
+            { action: "trash", label: "Move to Trash", enabled: true }
           ]
         }
         if (menuKind === "empty")
           return [
-            { action: "folder", label: "New Folder" },
-            { action: "shortcut", label: "New Shortcut…" },
-            { action: "pin", label: "Pin application…" },
-            { action: "addfiles", label: "Add files…" },
-            { action: "files", label: "Open Desktop Folder" },
-            { action: "refresh", label: "Refresh" }
+            { action: "folder", label: "New Folder", enabled: true },
+            { action: "shortcut", label: "New Shortcut…", enabled: true },
+            { action: "pin", label: "Pin Application…", enabled: true },
+            { action: "addfiles", label: "Add Files…", enabled: true },
+            { action: "files", label: "Open Desktop Folder", enabled: true },
+            { action: "refresh", label: "Refresh", enabled: true }
           ]
         return []
       }
@@ -682,9 +716,15 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         focus: true
         Keys.onPressed: function(event) {
+          if (host.pendingTrust && (event.key === Qt.Key_Escape
+                                   || event.key === Qt.Key_Return
+                                   || event.key === Qt.Key_Enter)) {
+            host.clearTrustPrompt()
+            panel.closeMenu()
+            event.accepted = true
+            return
+          }
           if (event.key === Qt.Key_Escape) {
-            if (host.pendingTrust)
-              host.clearTrustPrompt()
             panel.closeMenu()
             event.accepted = true
           } else if (event.key === Qt.Key_Delete && host.selectedId) {
@@ -807,7 +847,7 @@ Item {
             anchors.margins: 4
             radius: 0
             color: "transparent"
-            border.width: iconRoot.selected ? 2 : (iconHover.hovered ? 1 : 0)
+            border.width: iconHover.hovered && !iconRoot.selected ? 1 : 0
             border.color: Color.foreground
           }
 
@@ -819,20 +859,31 @@ Item {
             spacing: 4
 
             Item {
-              width: panel.host.iconSize
-              height: panel.host.iconSize
+              width: panel.host.iconSize + 8
+              height: panel.host.iconSize + 8
               anchors.horizontalCenter: parent.horizontalCenter
+
+              Rectangle {
+                anchors.fill: parent
+                radius: 0
+                color: iconRoot.selected && panel.host.usesCategoryIcon(iconRoot.modelData)
+                  ? Color.foreground : "transparent"
+                border.width: iconRoot.selected ? 2 : 0
+                border.color: Color.foreground
+              }
 
               Image {
                 id: desktopIcon
-                anchors.fill: parent
-                source: panel.host.iconSource(iconRoot.modelData)
+                anchors.centerIn: parent
+                width: panel.host.iconSize
+                height: panel.host.iconSize
+                source: panel.host.objectIconSource(iconRoot.modelData, iconRoot.selected)
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true
                 cache: true
                 sourceSize.width: panel.host.iconSize * Screen.devicePixelRatio
                 sourceSize.height: panel.host.iconSize * Screen.devicePixelRatio
-                layer.enabled: true
+                layer.enabled: !panel.host.usesCategoryIcon(iconRoot.modelData)
                 layer.smooth: true
                 layer.effect: MultiEffect { saturation: -1 }
               }
@@ -932,6 +983,10 @@ Item {
               if (Math.abs(iconRoot.x - iconRoot.pressX) > 8 || Math.abs(iconRoot.y - iconRoot.pressY) > 8)
                 return
               panel.closeMenu()
+            }
+            onDoubleClicked: function(mouse) {
+              if (mouse.button !== Qt.LeftButton || iconMouse.drag.active)
+                return
               panel.host.openOrConfirm(iconRoot.modelData, panel.screenName)
             }
           }
@@ -1023,10 +1078,11 @@ Item {
             model: menuEntries
 
             Rectangle {
+              readonly property bool rowEnabled: modelData.enabled !== false
               width: menuCol.width
               height: 28
               radius: 0
-              color: rowMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+              color: rowEnabled && rowMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
 
               Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -1034,7 +1090,8 @@ Item {
                 anchors.leftMargin: 10
                 text: String(modelData.label || "")
                 textFormat: Text.PlainText
-                color: rowMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
+                color: parent.rowEnabled && rowMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
+                opacity: parent.rowEnabled ? 1 : 0.5
                 font.pixelSize: 13
                 font.family: Style.fontFamily
               }
@@ -1043,6 +1100,7 @@ Item {
                 id: rowMouse
                 anchors.fill: parent
                 hoverEnabled: true
+                enabled: parent.rowEnabled
                 onClicked: function(mouse) {
                   var action = String(modelData.action || "")
                   var node = rowMouse
@@ -1153,11 +1211,20 @@ Item {
 
             Rectangle {
               width: cancelLabel.implicitWidth + 20
-              height: 28
+              height: 32
               radius: 0
               color: cancelMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
               border.width: 2
               border.color: Color.popups.border
+
+              Rectangle {
+                anchors.fill: parent
+                anchors.margins: 4
+                radius: 0
+                color: "transparent"
+                border.width: 1
+                border.color: cancelMouse.containsMouse ? Color.menu.selectedText : Color.popups.border
+              }
 
               Text {
                 id: cancelLabel
@@ -1179,7 +1246,7 @@ Item {
 
             Rectangle {
               width: trustLabel.implicitWidth + 20
-              height: 28
+              height: 32
               radius: 0
               color: trustMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
               border.width: 2

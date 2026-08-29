@@ -874,22 +874,22 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: Style.space(48)
                                 Text {
-                                    text: "Bottom text"
+                                    text: "Ownership rail"
                                     textFormat: Text.PlainText
                                     color: Color.menu.text
                                     font.family: Style.font.menuFamily
                                     font.pixelSize: Style.font.body
                                 }
                                 Item { Layout.fillWidth: true }
-                                SettingToggle {
+                                Text {
                                     id: bottomTextToggle
-                                    checked: settingsView.controller.showFooter
-                                    onToggled: function (checked) {
-                                        if (checked)
-                                            settingsView.controller.updatePluginSetting("showFooter", true);
-                                        else
-                                            settingsView.controller.requestFooterHide();
-                                    }
+                                    enabled: false
+                                    text: "Always on"
+                                    textFormat: Text.PlainText
+                                    color: Color.menu.text
+                                    opacity: 0.72
+                                    font.family: Style.font.menuFamily
+                                    font.pixelSize: Style.font.bodySmall
                                 }
                             }
 
@@ -1064,10 +1064,7 @@ Item {
                                     value: settingsView.controller.windowFooterStyle
                                     spacing: Style.spacing.md
                                     options: [
-                                        { label: "Floating", value: "floating" },
-                                        { label: "Rail", value: "integrated" },
-                                        { label: "Overlay", value: "overlay" },
-                                        { label: "Centered", value: "centered" }
+                                        { label: "Ownership rail", value: "integrated" }
                                     ]
                                     onChosen: function (value) { settingsView.controller.setWindowFooterStyle(value); }
                                 }

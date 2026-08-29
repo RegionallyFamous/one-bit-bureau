@@ -37,6 +37,16 @@ BarWidget {
   }
   readonly property var desktopEntries: DesktopEntries.applications ? DesktopEntries.applications.values : []
   readonly property var desktopEntry: AppIconModel.resolve(desktopEntries, [appClass, initialClass, executableName])
+  readonly property string applicationName: String(
+    (desktopEntry ? desktopEntry.name : "") || appClass || executableName || "Application"
+  )
+  readonly property string displayLabel: {
+    var owner = applicationName.trim()
+    var documentTitle = title.trim()
+    if (!documentTitle || documentTitle.toLowerCase() === owner.toLowerCase())
+      return owner
+    return owner + " — " + documentTitle
+  }
   readonly property string iconName: desktopEntry ? String(desktopEntry.icon || "") : ""
   readonly property string iconSource: resolveIconSource(iconName)
 
@@ -49,16 +59,16 @@ BarWidget {
     return (percent - 100) / 100
   }
 
-  visible: title !== ""
+  visible: displayLabel !== ""
   implicitWidth: visible
     ? (vertical || !showTitle
       ? barSize
-      : iconSize + Style.space(6) + Math.min(maxLabelWidth, titleLabel.implicitWidth) + Style.space(16))
+      : iconSize + Style.space(6) + Math.min(maxLabelWidth, ownerLabel.implicitWidth) + Style.space(16))
     : 0
   implicitHeight: barSize
 
   Behavior on implicitWidth {
-    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+    NumberAnimation { duration: 90; easing.type: Easing.Linear }
   }
 
   function resolveIconSource(icon) {
@@ -161,22 +171,23 @@ BarWidget {
     }
 
     Item {
-      id: titleClip
-      width: Math.min(root.maxLabelWidth, titleLabel.implicitWidth)
-      height: titleLabel.implicitHeight
+      id: ownerClip
+      width: Math.min(root.maxLabelWidth, ownerLabel.implicitWidth)
+      height: ownerLabel.implicitHeight
       anchors.verticalCenter: parent.verticalCenter
       visible: !root.vertical && root.showTitle
       clip: true
 
       Text {
-        id: titleLabel
+        id: ownerLabel
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        text: root.title
+        text: root.displayLabel
         color: root.bar ? root.bar.barForeground : Color.foreground
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.body
+        font.bold: true
         elide: Text.ElideRight
         opacity: 0.9
       }
@@ -200,8 +211,7 @@ BarWidget {
       }
     }
     onEntered: if (root.bar) {
-      var appName = root.desktopEntry ? String(root.desktopEntry.name || "") : root.appClass
-      root.bar.showTooltip(root, root.title + (appName ? "\n" + appName : "") + "\nRight-click: appearance")
+      root.bar.showTooltip(root, root.displayLabel + "\nRight-click: appearance")
     }
     onExited: if (root.bar) root.bar.hideTooltip(root)
   }

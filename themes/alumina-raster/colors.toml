@@ -2,15 +2,15 @@ mode = "light"
 
 accent = "#171716"
 selection = "#d0d0cc"
-muted = "#5b5b57"
+muted = "#50504c"
 
-background = "#e8e8e4"
-dark_background = "#d0d0cc"
-darker_background = "#b7b7b3"
-lighter_background = "#f4f4f0"
+background = "#f4f4f0"
+dark_background = "#b9b9b4"
+darker_background = "#aaa9a4"
+lighter_background = "#e8e8e4"
 
 foreground = "#171716"
-dark_foreground = "#5b5b57"
+dark_foreground = "#50504c"
 light_foreground = "#2d2d2b"
 bright_foreground = "#000000"
 

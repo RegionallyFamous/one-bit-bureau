@@ -6,6 +6,6 @@ border = "#171716"
 border-error = "#7a1f24"
 border-alpha = 1.0
 border-width = 2
-scrim = "#b7b7b3"
+scrim = "#aaa9a4"
 scrim-alpha = 1.0
 accent = "#171716"

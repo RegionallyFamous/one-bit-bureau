@@ -41,22 +41,23 @@ PanelWindow {
 
       Repeater {
         model: [
-          { action: "setIcon", label: "Get Info", separator: false },
-          { action: "", label: "", separator: true },
-          { action: "togglePin", label: root.itemData && root.itemData.pinned ? "Unpin" : "Pin", separator: false },
-          { action: "newWindow", label: "New Window", separator: false },
-          { action: "close", label: "Close", separator: false },
-          { action: "", label: "", separator: true },
-          { action: "manageIcons", label: "Manage Icons", separator: false },
-          { action: "", label: "", separator: true },
-          { action: "toggleAutoHide", label: root.autoHideEnabled ? "Turn Hiding Off" : "Turn Hiding On", separator: false }
+          { action: "setIcon", label: "Get Info", separator: false, enabled: true },
+          { action: "", label: "", separator: true, enabled: false },
+          { action: "togglePin", label: root.itemData && root.itemData.pinned ? "Unpin" : "Pin", separator: false, enabled: true },
+          { action: "newWindow", label: "New Window", separator: false, enabled: true },
+          { action: "close", label: "Close", separator: false, enabled: !!(root.itemData && root.itemData.running) },
+          { action: "", label: "", separator: true, enabled: false },
+          { action: "manageIcons", label: "Manage Icons", separator: false, enabled: true },
+          { action: "", label: "", separator: true, enabled: false },
+          { action: "toggleAutoHide", label: root.autoHideEnabled ? "Turn Hiding Off" : "Turn Hiding On", separator: false, enabled: true }
         ]
         delegate: Rectangle {
           required property var modelData
+          readonly property bool rowEnabled: !modelData.separator && modelData.enabled !== false
           width: parent.width
           height: modelData.separator ? 10 : 36
           radius: 0
-          color: !modelData.separator && buttonMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+          color: rowEnabled && buttonMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
 
           Text {
             visible: !modelData.separator
@@ -64,7 +65,8 @@ PanelWindow {
             anchors.leftMargin: 10
             verticalAlignment: Text.AlignVCenter
             text: modelData.label
-            color: buttonMouse.containsMouse ? Color.menu.selectedText : Color.menu.text
+            color: parent.rowEnabled && buttonMouse.containsMouse ? Color.menu.selectedText : Color.menu.text
+            opacity: parent.rowEnabled ? 1 : 0.5
             font.family: Style.font.family
             font.pixelSize: Style.font.body
           }
@@ -84,7 +86,7 @@ PanelWindow {
             id: buttonMouse
             anchors.fill: parent
             hoverEnabled: true
-            enabled: !modelData.separator
+            enabled: parent.rowEnabled
             onClicked: {
               root.actionTriggered(modelData.action, root.itemData)
               root.opened = false

@@ -1,7 +1,7 @@
 background = "#f4f4f0"
 background-alpha = 1.0
 text = "#171716"
-placeholder = "#5b5b57"
+placeholder = "#50504c"
 text-error = "#7a1f24"
 border = "#171716"
 border-active = "#171716"

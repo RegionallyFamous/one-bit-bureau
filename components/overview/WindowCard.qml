@@ -34,7 +34,7 @@ Rectangle {
     readonly property string iconSource: card.controller.iconFor(modelData)
     readonly property color outlineColor: Color.menu.border
     readonly property color contentTextColor: selected ? Color.menu.selectedText : Color.menu.text
-    readonly property real outlineWidth: selected ? 4 : (hovered || focusedWindow ? 3 : 2)
+    readonly property real outlineWidth: 2
     // An excluded card keeps its last rectangle, so it neither
     // animates toward the origin nor flies back in from it.
     readonly property var packedRectSource: inLayout ? card.windowLayout[slot] : null
@@ -59,7 +59,7 @@ Rectangle {
     height: layoutRect.height
     z: previewed ? 11 : (exitingPreview ? 10 : 0)
     radius: 0
-    color: selected ? Color.menu.selectedBackground : Color.menu.background
+    color: Color.menu.background
     border.color: outlineColor
     border.width: outlineWidth
     opacity: card.controller.previewIndex < 0 || previewed ? 1 : 0.6
@@ -101,7 +101,22 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Style.spacing.sm
-        spacing: card.overlayFooter ? 0 : Style.spacing.sm
+        spacing: Style.spacing.sm
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: Style.space(40)
+            radius: 0
+            color: card.selected ? Color.menu.selectedBackground : Color.menu.background
+            border.color: card.outlineColor
+            border.width: 1
+
+            Loader {
+                anchors.fill: parent
+                anchors.margins: Style.spacing.sm
+                sourceComponent: integratedFooter
+            }
+        }
 
         Item {
             Layout.fillWidth: true
@@ -124,7 +139,7 @@ Rectangle {
                     anchors.centerIn: parent
                     text: "Live preview unavailable"
                     textFormat: Text.PlainText
-                    color: card.contentTextColor
+                    color: Color.menu.text
                     opacity: 0.45
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.font.body
@@ -170,8 +185,8 @@ Rectangle {
 
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: Style.space(40)
-            visible: !card.overlayFooter
+            Layout.preferredHeight: 0
+            visible: false
 
             Loader {
                 anchors.fill: parent
@@ -367,6 +382,12 @@ Rectangle {
                 source: card.iconSource
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true
+                layer.enabled: true
+                layer.smooth: true
+                layer.effect: MultiEffect {
+                    saturation: -1
+                    brightness: card.selected ? 1 : 0
+                }
             }
 
             Text {
@@ -439,6 +460,17 @@ Rectangle {
 
         }
 
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: 4
+        visible: card.focusedWindow
+        z: 20
+        radius: 0
+        color: "transparent"
+        border.color: card.outlineColor
+        border.width: 1
     }
 
     Behavior on x {
