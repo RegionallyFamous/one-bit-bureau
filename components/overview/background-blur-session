@@ -1,0 +1,127 @@
+#!/bin/bash
+set -euo pipefail
+
+command -v jq >/dev/null || { echo "alumina overview: jq is required" >&2; exit 1; }
+command -v timeout >/dev/null || { echo "alumina overview: GNU timeout is required" >&2; exit 1; }
+command -v flock >/dev/null || { echo "alumina overview: flock is required" >&2; exit 1; }
+
+runtime_dir=${XDG_RUNTIME_DIR:-}
+[[ -n $runtime_dir && -d $runtime_dir && -O $runtime_dir ]] || {
+  echo "alumina overview: a user-owned XDG_RUNTIME_DIR is required" >&2
+  exit 1
+}
+exec 9>"$runtime_dir/alumina-overview-blur-session.lock"
+flock 9
+
+run_hyprctl() {
+  timeout --signal=TERM --kill-after=1 2 hyprctl "$@"
+}
+
+# The overview owns its opacity transition. Prevent Hyprland from snapshotting
+# the unmapped layer and applying a second fade after the QML animation ends.
+run_hyprctl eval 'if rawget(_G, "__alumina_overview_layer_rule") == nil then __alumina_overview_layer_rule = hl.layer_rule({ name = "alumina-overview-layer", match = { namespace = "^alumina-window-overview$" }, no_anim = true, animation = "none" }) end' >/dev/null
+
+IFS=$'\t' read -r saved_enabled saved_size saved_contrast < <(
+  run_hyprctl --batch -j 'getoption decoration:blur:enabled; getoption decoration:blur:size; getoption decoration:blur:contrast' |
+    jq -ser '
+      if length != 3 then error("expected three blur options") else . end
+      | [
+          (.[0]
+            | if has("bool") then .bool
+              elif has("int") then .int != 0
+              else error("missing bool or int value")
+              end
+            | tostring),
+          (.[1]
+            | if has("int") and .int != null then .int | tostring
+              else error("missing int value")
+              end),
+          (.[2]
+            | if has("float") and .float != null then .float | tostring
+              else error("missing float value")
+              end)
+        ]
+      | @tsv'
+)
+restored=false
+
+apply_saved_blur() {
+  run_hyprctl eval "hl.config({ decoration = { blur = { enabled = ${saved_enabled}, size = ${saved_size}, contrast = ${saved_contrast} } } })" >/dev/null 2>&1
+}
+
+apply_blur_effect() {
+  local size=$1
+  run_hyprctl eval "hl.config({ decoration = { blur = { enabled = true, size = ${size}, contrast = ${saved_contrast} } } })" >/dev/null 2>&1
+}
+
+retry_saved_blur() {
+  local attempt
+  for attempt in 1 2 3; do
+    if apply_saved_blur; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+restore_blur() {
+  if [[ $restored == true ]]; then
+    return
+  fi
+  if retry_saved_blur; then
+    restored=true
+  else
+    echo "alumina overview: could not restore the previous Hyprland blur settings" >&2
+  fi
+}
+
+trap restore_blur EXIT
+trap 'exit 0' HUP INT TERM
+
+while IFS= read -r candidate; do
+  requested_size=""
+  close_requested=false
+  while true; do
+    if [[ $candidate == close ]]; then
+      requested_size=""
+      close_requested=true
+    elif [[ $candidate =~ ^[0-9]+$ ]]; then
+      close_requested=false
+      if [[ $candidate =~ ^0*([0-9]{1,2})$ ]]; then
+        requested_size=$((10#${BASH_REMATCH[1]}))
+      else
+        requested_size=20
+      fi
+      if (( requested_size > 20 )); then
+        requested_size=20
+      fi
+    fi
+    IFS= read -r -t 0.02 candidate || break
+  done
+
+  if [[ $close_requested == true ]]; then
+    if retry_saved_blur; then
+      restored=true
+      printf '0\n'
+    else
+      echo "alumina overview: could not restore the previous Hyprland blur settings" >&2
+      printf '%s\n' -1
+    fi
+    continue
+  fi
+
+  [[ -n $requested_size ]] || continue
+  if (( requested_size == 0 )); then
+    if retry_saved_blur; then
+      restored=true
+      printf '0\n'
+    else
+      printf '%s\n' -1
+    fi
+  elif apply_blur_effect "$requested_size"; then
+    restored=false
+    printf '%s\n' "$requested_size"
+  else
+    printf '%s\n' -1
+  fi
+done

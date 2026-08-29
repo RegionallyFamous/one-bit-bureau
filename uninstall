@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -euo pipefail
+
+PLUGIN_ID="io.github.regionallyfamous.alumina"
+
+if command -v omarchy >/dev/null; then
+  if omarchy plugin list --json | jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)' >/dev/null; then
+    omarchy plugin disable "$PLUGIN_ID" || true
+    omarchy plugin remove "$PLUGIN_ID" --yes
+  fi
+
+  for theme in alumina-dark alumina-light; do
+    if [[ -e $HOME/.config/omarchy/themes/$theme ]]; then
+      omarchy theme remove "$theme"
+    fi
+  done
+else
+  echo "Omarchy is unavailable; no changes were made." >&2
+  exit 1
+fi
+
+echo
+echo "Alumina was removed. User data was retained:"
+echo "  $HOME/Desktop"
+echo "  $HOME/.config/omarchy/alumina-dock-pinned.json"
+echo "  $HOME/.config/omarchy/alumina-dock-settings.json"
+echo "  $HOME/.config/omarchy/desktop-icon-positions.json"
+echo "  $HOME/.config/omarchy/dock-icons.json"
+echo "  $HOME/.config/omarchy/icons"

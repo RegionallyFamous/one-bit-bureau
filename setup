@@ -1,0 +1,119 @@
+#!/bin/bash
+
+set -euo pipefail
+
+PLUGIN_ID="io.github.regionallyfamous.alumina"
+THEME_NAME="alumina-dark"
+LOCAL_INSTALL=0
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+fail() {
+  echo "alumina setup: $*" >&2
+  exit 1
+}
+
+usage() {
+  echo "Usage: bash setup [--dark|--light] [--local]"
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --dark)
+      THEME_NAME="alumina-dark"
+      shift
+      ;;
+    --light)
+      THEME_NAME="alumina-light"
+      shift
+      ;;
+    --local)
+      LOCAL_INSTALL=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown option: $1"
+      ;;
+  esac
+done
+
+command -v omarchy >/dev/null || fail "Omarchy is required"
+command -v jq >/dev/null || fail "jq is required"
+
+install_local_plugin() {
+  local plugins_dir="$HOME/.config/omarchy/plugins"
+  local target="$plugins_dir/$PLUGIN_ID"
+
+  if [[ -e $target ]]; then
+    fail "plugin is already installed at $target"
+  else
+    mkdir -p "$plugins_dir" "$target"
+    cp -R "$SCRIPT_DIR/." "$target/"
+    omarchy plugin validate "$target"
+    omarchy-shell shell rescanPlugins >/dev/null
+  fi
+}
+
+install_remote_plugin() {
+  local repo_url
+  repo_url=$(git -C "$SCRIPT_DIR" config --get remote.origin.url 2>/dev/null || true)
+  [[ -n $repo_url ]] || fail "no Git origin found; publish/clone the repository or use --local"
+
+  if omarchy plugin list --json | jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)' >/dev/null; then
+    echo "Plugin $PLUGIN_ID is already installed; leaving its checkout unchanged."
+  else
+    omarchy plugin add "$repo_url" --yes
+  fi
+}
+
+install_local_theme() {
+  local target="$HOME/.config/omarchy/themes/$THEME_NAME"
+
+  if [[ -e $target ]]; then
+    echo "Theme $THEME_NAME is already installed; leaving it unchanged."
+  else
+    mkdir -p "$HOME/.config/omarchy/themes"
+    cp -R "$SCRIPT_DIR/themes/$THEME_NAME" "$target"
+  fi
+}
+
+install_remote_theme() {
+  local repo_url
+  local target="$HOME/.config/omarchy/themes/$THEME_NAME"
+  repo_url=$(git -C "$SCRIPT_DIR" config --get remote.origin.url 2>/dev/null || true)
+  [[ -n $repo_url ]] || fail "no Git origin found; publish/clone the repository or use --local"
+
+  if [[ -e $target ]]; then
+    echo "Theme $THEME_NAME is already installed; leaving it unchanged."
+  else
+    omarchy theme install "$repo_url#$THEME_NAME"
+  fi
+}
+
+if (( LOCAL_INSTALL )); then
+  install_local_plugin
+  install_local_theme
+else
+  install_remote_plugin
+  install_remote_theme
+fi
+
+mkdir -p "$HOME/Desktop"
+if command -v xdg-user-dirs-update >/dev/null; then
+  xdg-user-dirs-update --set DESKTOP "$HOME/Desktop"
+else
+  echo "xdg-user-dirs-update is unavailable; ~/Desktop exists, but XDG_DESKTOP_DIR was not changed." >&2
+fi
+
+omarchy plugin enable "$PLUGIN_ID" --section left --after omarchy.menu
+omarchy bar position top
+omarchy bar transparent true
+omarchy theme set "$THEME_NAME"
+
+echo
+echo "Alumina is active with $THEME_NAME."
+echo "Move the pointer to the top-left corner for the window overview."
+echo "Optional trackpad and persistent overview bindings are documented in README.md."
