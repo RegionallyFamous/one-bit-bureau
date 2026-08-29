@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.regionallyfamous.alumina",
   "name": "Alumina Raster",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "RegionallyFamous",
   "license": "MIT",
-  "description": "An object-first monochrome Omarchy experience with real desktop files, a hard-edged launch shelf, stable ownership rails, a contact-sheet overview, and application context in the top rail.",
+  "description": "An object-first one-bit Omarchy experience with ImageGen-authored raster objects, an illustrated workbench, dock, overview, and matching native theme.",
   "icon": "components/overview/assets/icon.svg",
   "kinds": [
     "service",
@@ -20,7 +20,7 @@
   },
   "barWidget": {
     "displayName": "Active application",
-    "description": "Current application icon and window title, placed beside the Omarchy menu.",
+    "description": "Current application owner and secondary window title, placed beside the Omarchy menu.",
     "category": "Compositor",
     "allowMultiple": false,
     "defaultSection": "left",

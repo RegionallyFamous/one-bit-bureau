@@ -2,7 +2,7 @@
 
 ## Product sentence
 
-Alumina Raster turns Omarchy into an object-first document machine: select the noun, act second, and show ownership through compact monochrome rails while modern applications remain recognizable and usable.
+Alumina Raster turns Omarchy into a Bitmap Workbench: select the noun, act second, and move expressive one-bit objects across an illustrated electronic worktable while modern applications remain recognizable and usable.
 
 ## Thesis
 
@@ -20,9 +20,9 @@ This edition applies the original Macintosh interface method rather than reprodu
 
 ## Surface system
 
-- The desktop ground is an original full-field middle-neutral weave. It has no hero mark, directional spine, repeated historical tile, privileged edge, or crop-dependent composition.
+- The desktop ground is an original ImageGen-authored one-bit machine workbench: paper stacks, organizing trays, cables, toothed leaves, and abstract mechanisms frame a calm central work field. The leftmost object lane and bottom-center shelf zone remain deliberately quiet.
 - Paper windows, dialogs, menus, notifications, and the top rail sit clearly above the desktop ground. All shell surfaces are opaque, square, and integer-aligned.
-- Generic folder, document, link, launcher-fallback, and Trash objects use original grid-built glyphs. Real image thumbnails and recognizable application icons are preserved rather than thresholded.
+- Generic folder, document, archive, link, launcher-fallback, and Trash objects use expressive raster mini-illustrations reduced from one original ImageGen atlas. Real image thumbnails and recognizable application icons are preserved rather than thresholded.
 - The overview is a contact sheet of stable paper preview bodies. Keyboard selection inverts only the title rail; the actually active window receives a double outer rule.
 - The top rail names the active application first. A distinct window or document title is secondary context, never a fake global menu.
 - The dock remains a modern Alumina launch shelf translated into the Raster system. It is not presented as historical Macintosh behavior.
@@ -36,9 +36,9 @@ The shell uses Omarchy's existing legible type system. Weight, title case, group
 
 ## Wallpaper law
 
-Object-First Weave 01 is a deterministic 3840x2160 aperiodic field. Balanced shadow and highlight marks sit on a middle neutral ground with equal horizontal and vertical structure. Its toroidal point distribution keeps edge density equal to the center, so centered, ultrawide, narrow, and off-center crops have no semantic difference.
+Bitmap Workbench 01 is a 3840x2160 two-color raster reduction of a preserved ImageGen master. It uses carbon and warm paper only; ordered marks and hard nearest-neighbor enlargement keep the illustrated pixel construction visible at desktop scale. Large forms live primarily in the upper-right, lower-right, and lower-left perimeter while the central 50% remains a low-noise application field.
 
-The master contains no Apple marks, copied desktop tiles, icons, devices, text, filters, transparency, gradients, embedded images, or grain effects. The theme picker preview is wallpaper-only and is never described as runtime evidence.
+The artwork contains no Apple marks, copied desktop tiles, historical devices, text, logos, fake UI, gradients, or smooth gray effects. The untouched generation master and prompt are retained under `artwork/imagegen/`; the theme picker preview is wallpaper-only and is never described as runtime evidence.
 
 ## Motion laws
 
@@ -53,7 +53,7 @@ The master contains no Apple marks, copied desktop tiles, icons, devices, text, 
 - No Apple, Finder, Happy Mac, Command-key, or copied Susan Kare artwork or product naming.
 - No original desktop tiles, exact striped title rhythm, system sounds, logos, device silhouettes, or proprietary typefaces.
 - No beige-monitor costume, CRT curvature, scanlines, phosphor glow, sepia, or synthwave gradients.
-- Original object glyphs use a shared grid and stroke system but do not recreate Apple silhouettes, proportions, badges, faces, or pixel decisions.
+- Original object illustrations use a shared bitmap scale and dither system but do not recreate Apple silhouettes, proportions, badges, faces, or pixel decisions.
 - Modern application content and meaningful icons are not forced into historical monochrome.
 
 ## Success checks
@@ -67,7 +67,7 @@ The master contains no Apple marks, copied desktop tiles, icons, devices, text, 
 - Enter and Escape in the trust dialog always cancel.
 - Unavailable plugin-menu actions remain visible and dimmed in stable positions.
 - Desktop labels remain legible over every supported wallpaper crop.
-- The wallpaper shows no tile, hero, directional drift, moire, or edge-density change at 100%, 125%, or 200% scaling.
+- The wallpaper's icon lane, central field, and dock zone remain usable under 16:9, 16:10, 21:9, and 4:3 cover crops, with no moire or edge shimmer at 100%, 125%, or 200% scaling.
 - Disabling the plugin restores the stock shell without deleting desktop files or Alumina state.
 
 ## Non-goals

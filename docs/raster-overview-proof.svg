@@ -27,9 +27,9 @@
     <text x="592" y="34" text-anchor="end" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="12">WS 1</text>
     <rect x="18" y="62" width="584" height="194" fill="#f4f4f0" stroke="#171716"/>
     <g transform="translate(60 102)">
-      <image width="48" height="48" href="../components/desktop/assets/folder.svg"/>
-      <image x="150" width="48" height="48" href="../components/desktop/assets/document.svg"/>
-      <image x="300" width="48" height="48" href="../components/desktop/assets/link.svg"/>
+      <image width="56" height="56" href="../components/desktop/assets/folder.png"/>
+      <image x="150" width="56" height="56" href="../components/desktop/assets/document.png"/>
+      <image x="300" width="56" height="56" href="../components/desktop/assets/link.png"/>
     </g>
   </g>
 

@@ -1,8 +1,8 @@
 # Alumina Raster
 
-Alumina Raster is an object-first, one-bit-inspired edition of the Alumina experience for Omarchy. It combines real desktop files, a hard-edged launch shelf with app switching and previews, a contact-sheet window overview, application-first context in the top rail, and one matching native theme.
+Alumina Raster is an object-first, one-bit-inspired edition of the Alumina experience for Omarchy. Its Bitmap Workbench revision combines real desktop files, expressive ImageGen-authored raster objects, a hard-edged launch shelf with app switching and previews, a contact-sheet window overview, application-first context in the top rail, and one matching native theme.
 
-It applies the original Macintosh interface method rather than copying Apple's artwork or exact trade dress: select an object before acting, keep spatial landmarks stable, provide immediate feedback, retain unavailable commands in place, and make safe actions obvious. The edition uses original procedural graphics and object glyphs, opaque paper-and-carbon surfaces, square geometry, compact spacing, and grayscale-first shell state while keeping Omarchy's tiling model and modern Linux behavior.
+It applies the original Macintosh interface method rather than copying Apple's artwork or exact trade dress: select an object before acting, keep spatial landmarks stable, provide immediate feedback, retain unavailable commands in place, and make safe actions obvious. The edition uses original ImageGen-authored bitmap illustration, opaque paper-and-carbon surfaces, square geometry, compact spacing, and grayscale-first shell state while keeping Omarchy's tiling model and modern Linux behavior.
 
 The tested modern Alumina build remains preserved at the `alumina-modern-v1` Git tag. This branch is an alternative edition of the same plugin ID, not a side-by-side install.
 
@@ -12,8 +12,8 @@ The tested modern Alumina build remains preserved at the `alumina-modern-v1` Git
 - A bottom launch shelf pinned initially with Files, Chromium, and Foot, plus running indicators, auto-hide, window previews, custom icons, and an Alt+Tab app switcher.
 - A searchable, keyboard-navigable window overview with live previews and a top-left hot corner.
 - The current application owner and secondary window title beside the Omarchy menu.
-- The `alumina-raster` native theme, with an original three-neutral 4K Object-First Weave wallpaper and fully opaque square shell surfaces.
-- A deterministic wallpaper source and regeneration script under `artwork/`.
+- The `alumina-raster` native theme, with an original two-color 4K Bitmap Workbench wallpaper and fully opaque square shell surfaces.
+- Preserved ImageGen wallpaper and object-atlas masters, prompts, and deterministic raster reductions under `artwork/`.
 
 The product direction and explicit provenance guardrails live in [docs/DIRECTION.md](docs/DIRECTION.md). Third-party code provenance lives in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

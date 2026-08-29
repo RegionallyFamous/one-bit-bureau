@@ -17,6 +17,9 @@ bash -n "$ROOT/components/overview/activate-window" "$ROOT/components/overview/b
 for helper in "$ROOT/components/desktop/bin/common.py" "$ROOT/components/desktop/bin/desktop-index" "$ROOT/components/desktop/bin/add-to-desktop"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$helper"
 done
+for artwork_helper in "$ROOT/artwork/render-bitmap-workbench.py" "$ROOT/artwork/render-crop-proof.py"; do
+  python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$artwork_helper"
+done
 
 unsafe=$(find -P "$ROOT" -path "$ROOT/.git" -prune -o \( -type l -o -type f -perm -111 \) -print -quit)
 if [[ -n $unsafe ]]; then

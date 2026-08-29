@@ -12,13 +12,13 @@ Alumina Raster's Object-First revision is based on primary Apple documentation a
 ## What changed in Alumina Raster
 
 - Desktop input now follows select-before-action: single click selects, double-click opens, Return opens, and empty click clears.
-- Original grid-built category glyphs replace arbitrary modern fallbacks for generic objects. Real thumbnails and meaningful application icons remain recognizable.
+- Original ImageGen-authored raster mini-illustrations replace arbitrary modern fallbacks for generic objects. Real thumbnails and meaningful application icons remain recognizable.
 - Selection reverses the generic glyph and name rail; photographs stay unmodified inside a selection enclosure.
 - Overview preview bodies remain stable paper while keyboard ownership moves through title rails. The active window receives a separate double rule.
 - The active-app widget leads with the application owner and treats a distinct window title as secondary context.
 - Risky launcher confirmation makes Cancel the visibly safe default and routes Enter and Escape to cancellation.
 - Plugin-owned menus keep disabled commands visible instead of changing their geometry.
-- The directional registration-sheet wallpaper was replaced with a crop-independent full-field neutral weave.
+- The restrained neutral weave was replaced with a much more legible original Bitmap Workbench illustration: historically informed one-bit raster authorship, a protected desktop-object lane, and a calm central window field without copying an original Macintosh pattern or scene.
 
 ## Deliberate limits
 

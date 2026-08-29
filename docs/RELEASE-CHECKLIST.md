@@ -26,7 +26,7 @@
 ## Visual evidence
 
 - Capture a clean Raster desktop at 16:9 with desktop objects and the launch shelf visible.
-- Capture 16:10 and 21:9 desktops to inspect full-field wallpaper density, desktop icon bounds, and shelf placement.
+- Capture 16:10 and 21:9 desktops to inspect the protected icon lane, central application field, perimeter illustration crop, desktop icon bounds, and shelf placement.
 - Capture the overview, dock preview, app switcher, launcher, menu selected state, notification, terminal ANSI palette, and lock screen.
 - Record a short clip covering dock reveal/hide, app switching, and overview open/close.
 - Keep the wallpaper-only `preview.png` honest as a theme-picker wallpaper preview; publish real runtime captures separately and label them as runtime evidence.

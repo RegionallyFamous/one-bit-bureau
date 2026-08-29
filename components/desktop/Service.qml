@@ -15,9 +15,9 @@ Item {
   property var positions: ({})
   property string desktopPath: Quickshell.env("HOME") + "/Desktop"
   property string selectedId: ""
-  property int iconSize: 48
-  property int cellW: 104
-  property int cellH: 124
+  property int iconSize: 64
+  property int cellW: 120
+  property int cellH: 142
   property int padLeft: 24
   property int padRight: 24
   property int padBottom: 24
@@ -151,8 +151,12 @@ Item {
       return "trash"
     if (kind === "folder" || item.isDir)
       return "folder"
-    if (kind === "file")
+    if (kind === "file") {
+      var filename = String(item.name || item.path || "").toLowerCase()
+      if (/\.(7z|bz2|gz|rar|tar|tgz|xz|zip)$/.test(filename))
+        return "archive"
       return "document"
+    }
     if (kind === "link")
       return "link"
     if (kind === "launcher") {
@@ -172,7 +176,7 @@ Item {
     if (!category)
       return root.iconSource(item)
     var suffix = selected ? "-selected" : ""
-    return root.localFileUrl(root.pluginDir + "/assets/" + category + suffix + ".svg")
+    return root.localFileUrl(root.pluginDir + "/assets/" + category + suffix + ".png")
   }
 
   function sanitizeItem(item) {
@@ -881,6 +885,7 @@ Item {
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true
                 cache: true
+                smooth: !panel.host.usesCategoryIcon(iconRoot.modelData)
                 sourceSize.width: panel.host.iconSize * Screen.devicePixelRatio
                 sourceSize.height: panel.host.iconSize * Screen.devicePixelRatio
                 layer.enabled: !panel.host.usesCategoryIcon(iconRoot.modelData)

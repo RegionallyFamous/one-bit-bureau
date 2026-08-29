@@ -1,10 +1,11 @@
 # Alumina Raster artwork
 
-The Raster edition uses one original procedural desktop field instead of illustrative wallpaper.
+The Bitmap Workbench wallpaper and desktop-object family are ImageGen-authored raster artwork. The untouched generated masters are retained under `artwork/imagegen/`; [BITMAP-WORKBENCH.md](BITMAP-WORKBENCH.md) records their prompts, selection decisions, and deterministic reduction recipe.
 
-- `object-first-weave-01.svg` is the deterministic vector master.
-- `render-object-first-weave.py` generates the packaged 3840x2160 wallpaper and 1600x900 wallpaper-only picker preview.
-- `render-crop-proof.py` generates the labeled multi-aspect wallpaper crop proof.
-- `OBJECT-FIRST-WEAVE.md` records the provenance and regeneration contract.
+Regenerate the shipped 4K wallpaper, picker preview, desktop-object PNGs, selected-state PNGs, and labeled crop proof from the preserved sources with:
+
+```bash
+python3 artwork/render-bitmap-workbench.py
+```
 
 The preserved modern edition's source artwork remains in this branch for Git continuity but is not installed by `setup` and is not part of the Raster theme.
