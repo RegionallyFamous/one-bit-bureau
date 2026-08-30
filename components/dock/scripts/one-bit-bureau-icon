@@ -38,6 +38,7 @@ canonical_id() {
 
 list_pack() {
   printf '%s\n' \
+    'application: Application' \
     'files: Files' \
     'terminal: Terminal' \
     'browser: Web' \
@@ -49,7 +50,26 @@ list_pack() {
     'calendar: Calendar' \
     'settings: Controls' \
     'games: Games' \
-    'notes: Notes'
+    'notes: Notes' \
+    'theme: Themes' \
+    'document: Documents' \
+    'disk: Disks' \
+    'image: Images' \
+    'spreadsheet: Spreadsheets' \
+    'presentation: Presentations' \
+    'writer: Writing' \
+    'transfer: Transfer' \
+    'paint: Paint' \
+    'video-edit: Video Editing' \
+    'broadcast: Broadcast' \
+    'calculator: Calculator' \
+    'printer: Printing' \
+    'ocr: Text Scan' \
+    'project: Projects' \
+    'containers: Containers' \
+    'contacts: Contacts' \
+    'maps: Maps' \
+    'social: Social'
 }
 
 write_mapping() {

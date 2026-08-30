@@ -11,6 +11,7 @@ function loadQmlJs(path) {
 }
 
 const resolver = loadQmlJs("IconResolver.js")
+const pack = JSON.parse(fs.readFileSync("assets/app-icons/pack.json", "utf8"))
 
 test("resolves explicit and fallback icons", () => {
   assert.equal(resolver.resolveIcon({ icon: "mail" }), "mail")
@@ -56,6 +57,20 @@ test("associates common Linux apps with One-Bit Bureau roles", () => {
   assert.equal(resolver.automaticPackRole({ id: "com.valvesoftware.Steam" }), "games")
   assert.equal(resolver.automaticPackRole({ id: "md.obsidian.Obsidian" }), "notes")
   assert.equal(resolver.automaticPackRole({ id: "org.example.Encode" }), "")
+})
+
+test("covers every launcher-visible app in a fresh Omarchy install", () => {
+  assert.equal(pack.schemaVersion, 2)
+  assert.equal(pack.fallbackRole, "application")
+  assert.equal(pack.roles.length, 32)
+  assert.equal(pack.freshInstallApps.length, 36)
+  for (const app of pack.freshInstallApps) {
+    assert.equal(
+      resolver.automaticPackRole({ id: app.id, name: app.name }),
+      app.role,
+      `${app.name} maps to ${app.role}`
+    )
+  }
 })
 
 test("grays only unmatched automatic native icons", () => {

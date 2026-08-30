@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 PACK_ROLES = {
+    "application",
     "files",
     "terminal",
     "browser",
@@ -24,6 +25,25 @@ PACK_ROLES = {
     "settings",
     "games",
     "notes",
+    "theme",
+    "document",
+    "disk",
+    "image",
+    "spreadsheet",
+    "presentation",
+    "writer",
+    "transfer",
+    "paint",
+    "video-edit",
+    "broadcast",
+    "calculator",
+    "printer",
+    "ocr",
+    "project",
+    "containers",
+    "contacts",
+    "maps",
+    "social",
 }
 APP_ID = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
 MAX_ICONS = 256

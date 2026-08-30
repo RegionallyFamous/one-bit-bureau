@@ -38,6 +38,7 @@ PanelWindow {
   property int appliedRevision: 0
   property int gridCell: 112
   readonly property var packIcons: [
+    { pack: "application", label: "Application" },
     { pack: "files", label: "Files" },
     { pack: "terminal", label: "Terminal" },
     { pack: "browser", label: "Web" },
@@ -49,7 +50,26 @@ PanelWindow {
     { pack: "calendar", label: "Calendar" },
     { pack: "settings", label: "Controls" },
     { pack: "games", label: "Games" },
-    { pack: "notes", label: "Notes" }
+    { pack: "notes", label: "Notes" },
+    { pack: "theme", label: "Themes" },
+    { pack: "document", label: "Documents" },
+    { pack: "disk", label: "Disks" },
+    { pack: "image", label: "Images" },
+    { pack: "spreadsheet", label: "Spreadsheets" },
+    { pack: "presentation", label: "Presentations" },
+    { pack: "writer", label: "Writing" },
+    { pack: "transfer", label: "Transfer" },
+    { pack: "paint", label: "Paint" },
+    { pack: "video-edit", label: "Video Editing" },
+    { pack: "broadcast", label: "Broadcast" },
+    { pack: "calculator", label: "Calculator" },
+    { pack: "printer", label: "Printing" },
+    { pack: "ocr", label: "Text Scan" },
+    { pack: "project", label: "Projects" },
+    { pack: "containers", label: "Containers" },
+    { pack: "contacts", label: "Contacts" },
+    { pack: "maps", label: "Maps" },
+    { pack: "social", label: "Social" }
   ]
 
   function appHasCustomIcon(id) {
@@ -627,7 +647,7 @@ PanelWindow {
                     sourceSize: Qt.size(136, 136)
                     fillMode: Image.PreserveAspectFit
                     cache: true
-                    asynchronous: true
+                    asynchronous: false
                   }
                 }
 
@@ -773,7 +793,7 @@ PanelWindow {
                 sourceSize: Qt.size(72, 72)
                 fillMode: Image.PreserveAspectFit
                 cache: true
-                asynchronous: true
+                asynchronous: false
               }
 
               Text {

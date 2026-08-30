@@ -22,7 +22,7 @@ This edition applies the original Macintosh interface method rather than reprodu
 
 - The desktop ground is an original ImageGen-authored one-bit machine workbench: paper stacks, organizing trays, cables, toothed leaves, and abstract mechanisms frame a calm central work field. The leftmost object lane and bottom-center shelf zone remain deliberately quiet.
 - Paper windows, dialogs, menus, notifications, and the top rail sit clearly above the desktop ground. All shell surfaces are opaque, square, and integer-aligned.
-- Generic folder, document, archive, link, launcher-fallback, and Trash objects use expressive raster mini-illustrations reduced from original ImageGen sources. Safe local raster image files use grayscale desktop thumbnails without changing the source bytes; unsupported or unsafe image inputs use the authored one-bit picture fallback. Authored and manually assigned application icons render as supplied, while an unmatched automatic native fallback retains its silhouette and detail in grayscale. Explicit Native mode restores its original color.
+- Generic folder, document, archive, link, launcher-fallback, and Trash objects use expressive raster mini-illustrations reduced from original ImageGen sources. Safe local raster image files use grayscale desktop thumbnails without changing the source bytes; unsupported or unsafe image inputs use the authored one-bit picture fallback. Every launcher-visible fresh-install application maps to one of 32 authored roles. An uncommon application keeps a resolvable native icon in grayscale; when that native icon cannot be resolved, the authored Application mark prevents a blank. Explicit Native mode restores the original icon in color.
 - The overview is a contact sheet of stable paper preview bodies. Keyboard selection inverts only the title rail; the actually active window receives a double outer rule.
 - The top rail names the active application first. A distinct window or document title is secondary context, never a fake global menu.
 - The dock remains a modern One-Bit Bureau launch shelf translated into this bitmap workbench system. It is not presented as historical Macintosh behavior.
@@ -58,7 +58,7 @@ The artwork contains no Apple marks, copied desktop tiles, historical devices, t
 - No original desktop tiles, exact striped title rhythm, system sounds, logos, device silhouettes, or proprietary typefaces.
 - No beige-monitor costume, CRT curvature, scanlines, phosphor glow, sepia, or synthwave gradients.
 - Original object illustrations use a shared bitmap scale and dither system but do not recreate Apple silhouettes, proportions, badges, faces, or pixel decisions.
-- Modern application content is not recolored. Application icons keep their authored One-Bit or user-assigned treatment; only unmatched automatic native fallbacks are desaturated, with an explicit Native color opt-out.
+- Modern application content is not recolored. Fresh-install application icons keep their authored One-Bit role and user-assigned icons render as supplied. Only uncommon automatic native fallbacks are desaturated, with an explicit Native color opt-out; unresolved native icons use the authored one-bit Application mark.
 
 ## Success checks
 
@@ -66,7 +66,7 @@ The artwork contains no Apple marks, copied desktop tiles, historical devices, t
 - A selected generic object changes both its glyph state and its name rail.
 - A selected safe local photograph keeps the same grayscale desktop pixels while its enclosure and name rail change state; the source file remains byte-identical and opens in color.
 - An unsupported or unsafe image uses the authored picture fallback, whose glyph and name rail reverse together when selected.
-- An unmatched automatic app uses a grayscale native fallback on every One-Bit dock surface; explicit Native mode and user-supplied custom icons render as supplied.
+- Every launcher-visible fresh-install app resolves to its cataloged authored role on every One-Bit dock surface. An uncommon automatic app uses a grayscale native fallback when resolvable and the authored Application mark otherwise; explicit Native mode and user-supplied custom icons render as supplied.
 - Overview selection never changes the preview body's value.
 - The active overview window is distinguishable from the keyboard-selected window when they differ.
 - The top rail's primary identity is the application, not only the document title.

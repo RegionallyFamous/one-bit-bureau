@@ -6,7 +6,7 @@
 - Confirm `omarchy plugin validate .` passes on the target Omarchy release.
 - Confirm the `one-bit-bureau` theme passes strict validation and a real template render.
 - Confirm the branded `unlock.png` has transparency and `preview-unlock.png` is 1920×1080 and matches the current mark.
-- Confirm all twelve rendered app icons match `pack.json`, the font family names and checksums match `fonts/README.md`, and both license texts ship.
+- Confirm all 32 rendered app icons match `pack.json`, all 36 fresh-install application associations resolve to a declared role, the authored Application fallback ships, the font family names and checksums match `fonts/README.md`, and both license texts ship.
 - Confirm the desktop policy exposes only regular local PNG, JPEG, WebP, and BMP files at or below 32 MiB as previews; SVG, GIF, oversized, remote, inline, missing, and disallowed-path inputs must fall back without being decoded by the shell.
 - Confirm the repository contains no symlinks or executable files; this is required because the same repository is also an Omarchy theme source.
 - Run the desktop transaction-helper tests and verify local-path/type/count/byte limits, collision-free copy and move, partial receipts, private atomic journals, child timeout/parent-death containment, launcher demotion, changed-destination rejection, and exact hash-proven Undo.
@@ -35,7 +35,7 @@
 - Verify the clean first-run dock seeds Files, Chromium, and Foot; all three use their One-Bit Bureau associations, painted-alpha crops, 48px boxes, and a shared optical center without clipping or crowding.
 - Verify dock launch, focus-existing-window, pin/unpin, reorder, auto-hide, previews, icon management, and the opt-in app-switcher binding in floating and tiled layouts.
 - Open two windows under one app identity across two workspaces. Verify 1/2/3+ marks, active and workspace-split text, most-recent-window focus, the titled Window Ledger, explicit Activate/Close, stale-address fallback, and no accidental duplicate launch.
-- Verify automatic app-icon associations for Files, terminal, browser, and one communication app. Add an unmatched app and confirm its automatic native fallback is grayscale in the dock, drag ghost, preview fallback, app switcher, and icon manager; then confirm explicit Native mode restores the original color and custom files plus manual pack choices render as supplied, all without network access.
+- Verify all 36 fresh-install app-icon associations resolve to their cataloged authored roles in the dock, drag ghost, preview fallback, app switcher, and icon manager. Add an uncommon app with a resolvable native icon and confirm its automatic fallback is grayscale on every surface; add an app with an unresolvable native icon and confirm the authored Application mark appears instead of a blank. Then confirm explicit Native mode restores the original color and custom files plus manual pack choices render as supplied, all without network access.
 - Verify dock and desktop menus preserve their row order while unavailable commands remain visible and dimmed.
 - Verify overview hot corner, summon/hide IPC, keyboard navigation, search, preview, close-window action, workspace changes, and two displays.
 - Verify the overview workspace rail's stable ordinary-workspace ordering, occupancy, Control+Left/Right selection, Control+Enter scope, Control+Shift+Enter move, context parity, stale destination error, and that the overview remains open while the card re-homes.

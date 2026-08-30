@@ -38,11 +38,36 @@ for artwork_helper in "$ROOT/artwork/render-bitmap-workbench.py" "$ROOT/artwork/
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$artwork_helper"
 done
 
-[[ $(find "$ROOT/components/dock/assets/app-icons" -maxdepth 1 -type f -name '*.png' | wc -l | tr -d ' ') == 12 ]] || {
-  echo "One-Bit Bureau app icon pack must contain exactly 12 rendered PNGs" >&2
+[[ $(find "$ROOT/components/dock/assets/app-icons" -maxdepth 1 -type f -name '*.png' | wc -l | tr -d ' ') == 32 ]] || {
+  echo "One-Bit Bureau app icon pack must contain exactly 32 rendered PNGs" >&2
   exit 1
 }
-jq -e '.schemaVersion == 1 and .id == "one-bit-bureau" and (.roles | length) == 12' "$ROOT/components/dock/assets/app-icons/pack.json" >/dev/null
+[[ $(find "$ROOT/artwork/imagegen/app-icons" -maxdepth 1 -type f -name '*-source.png' ! -name '*-rejected-source.png' | wc -l | tr -d ' ') == 32 ]] || {
+  echo "One-Bit Bureau app icon artwork must contain exactly 32 selected source PNGs" >&2
+  exit 1
+}
+while IFS= read -r source_icon; do
+  [[ $(identify -ping -format '%[channels]' "$source_icon") == *a* ]] || {
+    echo "One-Bit Bureau source icon must have an alpha channel: $source_icon" >&2
+    exit 1
+  }
+done < <(find "$ROOT/artwork/imagegen/app-icons" -maxdepth 1 -type f -name '*-source.png' ! -name '*-rejected-source.png' -print)
+jq -e '
+  .schemaVersion == 2 and
+  .id == "one-bit-bureau" and
+  .fallbackRole == "application" and
+  (.roles | length) == 32 and
+  (.freshInstallApps | length) == 36 and
+  ([.roles[].id] | length == (unique | length)) and
+  ([.freshInstallApps[].id] | length == (unique | length)) and
+  ([.freshInstallApps[].role] - [.roles[].id] | length == 0)
+' "$ROOT/components/dock/assets/app-icons/pack.json" >/dev/null
+while IFS= read -r role; do
+  [[ -f $ROOT/components/dock/assets/app-icons/$role.png ]] || {
+    echo "One-Bit Bureau rendered icon is missing for role: $role" >&2
+    exit 1
+  }
+done < <(jq -r '.roles[].id' "$ROOT/components/dock/assets/app-icons/pack.json")
 [[ $(identify -ping -format '%wx%h' "$ROOT/docs/assets/proof-photo.png") == "256x192" ]]
 [[ $(identify -ping -format '%wx%h' "$ROOT/themes/one-bit-bureau/preview-unlock.png") == "1920x1080" ]]
 [[ $(identify -ping -format '%[channels]' "$ROOT/themes/one-bit-bureau/unlock.png") == *a* ]]

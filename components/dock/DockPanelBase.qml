@@ -1421,10 +1421,10 @@ Item {
     }
   }
 
-  // Automatic matching is the authored One-Bit path. When no role matches,
-  // preserve the native artwork's shape but remove its color so an uncommon
-  // app still belongs on the Bureau shelf. Custom files, manual pack choices,
-  // and the explicit Native mode remain exactly as the user chose them.
+  // Automatic matching is the authored One-Bit path. Every fresh Omarchy app
+  // has a role; uncommon apps retain a grayscale native icon when one resolves,
+  // then fall back to the bundled Application mark instead of a blank slot.
+  // Custom files, manual pack choices, and explicit Native remain untouched.
   function iconUsesAutomaticNativeFallback(item) {
     var id = typeof item === "string" ? item : item && item.id
     if (!id) return false
@@ -1460,7 +1460,7 @@ Item {
           return resolved
       }
     }
-    return ""
+    return Util.fileUrl(root.packDir + "/application.png")
   }
 
   Timer { id: conflictNotice; interval: 30000 }

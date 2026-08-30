@@ -19,7 +19,10 @@ python3 "$state_helper" read "$config/dock-icons.json" "$config/dock-pinned.json
 rm "$config/dock-pinned.json"
 
 echo "== bundled pack roles are listed and associated offline"
-HOME="$test_home" bash "$helper" pack list | grep -q '^terminal: Terminal$'
+HOME="$test_home" bash "$helper" pack list >"$work/pack-list.txt"
+[[ $(wc -l <"$work/pack-list.txt" | tr -d ' ') == 32 ]]
+grep -q '^application: Application$' "$work/pack-list.txt"
+grep -q '^terminal: Terminal$' "$work/pack-list.txt"
 HOME="$test_home" bash "$helper" pack set code terminal
 jq -e '.code == {"pack":"terminal"}' "$config/dock-icons.json" >/dev/null
 

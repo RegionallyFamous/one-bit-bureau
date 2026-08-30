@@ -5,6 +5,12 @@ const path = require("node:path")
 
 const source = fs.readFileSync(path.join(__dirname, "..", "IconPickerPanel.qml"), "utf8")
 const surface = source.slice(source.indexOf("// ---- Surface"))
+const pack = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "assets", "app-icons", "pack.json"), "utf8"))
+
+test("icon manager exposes every bundled raster role", () => {
+  const pickerRoles = [...source.matchAll(/\{ pack: "([a-z0-9-]+)", label: "[^"]+" \}/g)].map(match => match[1])
+  assert.deepEqual(pickerRoles, pack.roles.map(role => role.id))
+})
 
 test("icon manager uses opaque square One-Bit Bureau geometry", () => {
   assert.match(surface, /id: card[\s\S]*?radius: 0[\s\S]*?color: Color\.background[\s\S]*?border\.color: Color\.foreground[\s\S]*?border\.width: 2/)

@@ -33,8 +33,8 @@ The complete manual install and trust model are documented in the [installation 
 - **A bottom dock with a Window Ledger.** Launch apps, focus the most-recent surviving window, see 1/2/3+ window state, inspect current and other-workspace counts, open a titled window list, pin and reorder favorites, preview windows, and optionally auto-hide it.
 - **A window overview and workspace board.** Move the pointer to the top-left corner or run `one-bit-bureau overview` to search and switch. The compact rail shows occupancy and moves the selected window to an existing ordinary workspace without closing the overview.
 - **A complete visual system.** The Bitmap Workbench wallpaper, square paper-and-carbon surfaces, top-bar app context, notification styling, terminal palette, branding, and unlock art all belong together.
-- **Twelve original app icons.** Files, Terminal, Web, Code, Mail, Chat, Music, Video, Calendar, Controls, Games, and Notes work offline.
-- **Sensible fallbacks.** Apps without a matching One-Bit icon keep their recognizable native icon in grayscale. You can restore the original color icon at any time.
+- **Thirty-two original app icons.** Every launcher-visible app in a fresh Omarchy Quattro install maps to an authored offline role, including office, creative, media, utility, communication, and web apps.
+- **Sensible fallbacks.** An uncommon app keeps its recognizable native icon in grayscale. If that icon cannot be resolved, the dock uses an authored one-bit Application mark instead of leaving a blank. You can restore the original color icon at any time.
 - **Two optional retro fonts.** Monaspace Krypton NF is the practical whole-desktop choice; Departure Mono is the sharper pixel-shaped alternative.
 - **A reversible install.** One-Bit Bureau records what it owns, restores the settings and branding it replaced, and leaves your Desktop files and personal choices alone.
 
@@ -74,7 +74,7 @@ These are real 1280×800 captures retained from passed disposable x86_64 Omarchy
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/runtime-icon-picker.png" alt="One-Bit Bureau app icon picker with twelve original bitmap roles"><br><sub>Twelve offline icons plus automatic grayscale and native fallbacks</sub></td>
+    <td width="50%"><img src="docs/screenshots/runtime-icon-picker.png" alt="One-Bit Bureau app icon picker with 32 original bitmap roles"><br><sub>Thirty-two offline icons cover every fresh-install app, with grayscale-native and one-bit Application fallbacks</sub></td>
     <td width="50%"><img src="docs/screenshots/runtime-overview.png" alt="One-Bit Bureau searchable window overview with ordinary workspaces 1 and 2"><br><sub>Searchable, keyboard-navigable windows and workspaces</sub></td>
   </tr>
   <tr>
@@ -92,7 +92,7 @@ one-bit-bureau motion reduce
 one-bit-bureau motion full
 ```
 
-The dock’s **Manage Icons** screen is the easiest way to assign a One-Bit role, keep an automatic grayscale fallback, use an app’s original full-color icon, or choose your own local image.
+The dock’s **Manage Icons** screen is the easiest way to use the automatic authored match, assign another One-Bit role, keep an uncommon app’s automatic grayscale-native fallback, restore an app’s original full-color icon, or choose your own local image. When no native icon can be resolved, the automatic mode uses the bundled one-bit Application mark instead of an empty box.
 
 ## Update or remove
 

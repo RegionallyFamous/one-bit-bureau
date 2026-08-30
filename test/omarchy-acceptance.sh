@@ -252,7 +252,7 @@ move_directory_contents() {
 }
 
 close_showcase_apps() {
-  close_windows '^(chromium|libreoffice-writer|org.gnome.Nautilus)$' || true
+  close_windows '^([cC]hromium.*|libreoffice-writer|org.gnome.Nautilus)$' || true
 }
 
 restore_showcase_state() {
@@ -339,6 +339,8 @@ prepare_showcase_desktop() {
     bash -c "(( \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getItemCount) == 5 ))"
   wait_until "the showcase dock renders all five curated application icons" 20 \
     bash -c "(( \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getReadyIconCount) == 5 ))"
+  wait_until "the showcase dock normalizes all five authored application icons" 20 \
+    bash -c "(( \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getNormalizedPackIconCount) == 5 ))"
   sleep 2
 }
 
@@ -368,7 +370,7 @@ launch_showcase_apps() {
   )
   setsid -f chromium "${chromium_flags[@]}" --app="file://$FIXTURE/demo/site/index.html" >/dev/null 2>&1
   wait_until "the local Bureau Field Guide opens in Chromium" 30 \
-    bash -c "hyprctl -j clients | jq -e 'any(.[]; .class == \"chromium\" and .title == \"Bureau Field Guide\")' >/dev/null"
+    bash -c "hyprctl -j clients | jq -e 'any(.[]; ((.title // \"\") | startswith(\"Bureau Field Guide\")))' >/dev/null"
   setsid -f chromium "${chromium_flags[@]}" --app="file://$FIXTURE/demo/site/release-desk.html" >/dev/null 2>&1
   setsid -f nautilus --new-window "$SHOWCASE_FILES" >/dev/null 2>&1
   setsid -f libreoffice \
@@ -376,7 +378,7 @@ launch_showcase_apps() {
     --writer --norestore --nodefault --nolockcheck "$SHOWCASE_ROOT/showcase-notes.odt" >/dev/null 2>&1
 
   wait_until "the local Bureau Release Desk opens in Chromium" 30 \
-    bash -c "hyprctl -j clients | jq -e 'any(.[]; .class == \"chromium\" and .title == \"Bureau Release Desk\")' >/dev/null"
+    bash -c "hyprctl -j clients | jq -e 'any(.[]; ((.title // \"\") | startswith(\"Bureau Release Desk\")))' >/dev/null"
   wait_until "the showcase opens the real Files application" 30 window_present '^org.gnome.Nautilus$'
   wait_until "the showcase opens the real Writer application" 30 window_present '^libreoffice-writer$'
   pass "the showcase opens Chromium, Files, and Writer with offline local content"
@@ -990,8 +992,8 @@ wait_until "the showcase icon picker closes" 10 \
 launch_showcase_apps
 screenshot "success-one-bit-bureau-24-showcase-apps"
 
-guide_address=$(hyprctl -j clients | jq -er '.[] | select(.class == "chromium" and .title == "Bureau Field Guide") | .address' | head -n 1)
-release_address=$(hyprctl -j clients | jq -er '.[] | select(.class == "chromium" and .title == "Bureau Release Desk") | .address' | head -n 1)
+guide_address=$(hyprctl -j clients | jq -er '.[] | select((.title // "") | startswith("Bureau Field Guide")) | .address' | head -n 1)
+release_address=$(hyprctl -j clients | jq -er '.[] | select((.title // "") | startswith("Bureau Release Desk")) | .address' | head -n 1)
 writer_address=$(hyprctl -j clients | jq -er '.[] | select(.class == "libreoffice-writer") | .address' | head -n 1)
 [[ -n $guide_address && -n $release_address && -n $writer_address ]] ||
   fail "the showcase exposes stable addresses for its real applications"

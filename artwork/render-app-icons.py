@@ -13,6 +13,7 @@ SOURCE_DIR = ROOT / "artwork" / "imagegen" / "app-icons"
 OUTPUT_DIR = ROOT / "components" / "dock" / "assets" / "app-icons"
 CONTACT_SHEET = ROOT / "docs" / "app-icon-pack.png"
 ROLES = (
+    "application",
     "files",
     "terminal",
     "browser",
@@ -25,6 +26,25 @@ ROLES = (
     "settings",
     "games",
     "notes",
+    "theme",
+    "document",
+    "disk",
+    "image",
+    "spreadsheet",
+    "presentation",
+    "writer",
+    "transfer",
+    "paint",
+    "video-edit",
+    "broadcast",
+    "calculator",
+    "printer",
+    "ocr",
+    "project",
+    "containers",
+    "contacts",
+    "maps",
+    "social",
 )
 
 
@@ -51,13 +71,19 @@ def render_icon(magick: str, identify: str, role: str) -> Path:
         raise SystemExit(f"missing source: {source}")
     geometry = output(identify, "-ping", "-format", "%wx%h", str(source))
     channels = output(identify, "-ping", "-format", "%[channels]", str(source))
-    if geometry != "1254x1254" or "a" not in channels.lower():
+    width, height = (int(value) for value in geometry.split("x", 1))
+    if min(width, height) < 1024 or "a" not in channels.lower():
         raise SystemExit(f"unexpected source format for {source}: {geometry} {channels}")
 
     destination = OUTPUT_DIR / f"{role}.png"
     run(
         magick,
         str(source),
+        "-channel",
+        "A",
+        "-threshold",
+        "4%",
+        "+channel",
         "-trim",
         "+repage",
         "-resize",
@@ -93,7 +119,7 @@ def contact_sheet(magick: str, icons: list[Path]) -> None:
         command.extend(("-font", font))
     for icon in icons:
         command.extend(("-label", icon.stem, str(icon)))
-    command.extend(("-tile", "4x3", "-geometry", "164x188+14+14", str(CONTACT_SHEET)))
+    command.extend(("-tile", "6x6", "-geometry", "164x188+14+14", str(CONTACT_SHEET)))
     run(*command)
 
 

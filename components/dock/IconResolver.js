@@ -13,39 +13,47 @@ var FALLBACK_MAP = {
 }
 
 var PACK_ALIASES = {
+    theme: ["aether", "theme designer", "theme editor"],
+    document: ["org gnome evince", "document viewer", "evince", "pdf viewer"],
+    disk: ["org gnome diskutility", "disk utility", "gnome disks", "disk usage", "disk image mounter", "disk image writer"],
+    image: ["imv", "image viewer", "google photos", "photo viewer"],
+    spreadsheet: ["libreoffice calc", "spreadsheet"],
+    presentation: ["libreoffice impress", "presentation"],
+    writer: ["libreoffice writer", "omawrite", "word processor"],
+    transfer: ["localsend", "local send", "file transfer"],
+    paint: ["pinta", "paint editor", "image editor"],
+    "video-edit": ["kdenlive", "omacut", "video editor"],
+    broadcast: ["obsproject studio", "obs studio", "screen recorder", "broadcast studio"],
+    calculator: ["omacalc", "calculator"],
+    printer: ["system config printer", "printer settings", "printing"],
+    ocr: ["tensaku", "optical character recognition", "text recognition"],
+    project: ["basecamp", "project management"],
+    containers: ["docker", "lazydocker", "containers"],
+    contacts: ["google contacts", "address book", "contacts"],
+    maps: ["google maps", "maps"],
+    social: [" x ", "twitter", "social feed"],
     files: ["nautilus", "dolphin", "thunar", "pcmanfm", "nemo", "cosmic files", "file manager"],
     terminal: ["foot", "kitty", "alacritty", "ghostty", "wezterm", "konsole", "kgx", "gnome console", "xterm"],
     browser: ["chromium", "chrome", "firefox", "brave", "vivaldi", "epiphany", "helium", "zen browser"],
     code: ["code", "codium", "cursor", "zed", "sublime text", "intellij", "pycharm", "webstorm", "neovim"],
-    mail: ["thunderbird", "geary", "evolution", "mailspring", "proton mail"],
-    chat: ["discord", "slack", "signal", "telegram", "mattermost", "element", "whatsapp"],
-    music: ["spotify", "rhythmbox", "lollypop", "amberol", "strawberry", "audacious", "music"],
-    video: ["vlc", "mpv", "celluloid", "clapper", "totem", "obs studio", "video"],
+    mail: ["hey", "thunderbird", "geary", "evolution", "mailspring", "proton mail"],
+    chat: ["discord", "slack", "signal", "telegram", "mattermost", "element", "whatsapp", "google messages"],
+    music: ["cliamp", "spotify", "rhythmbox", "lollypop", "amberol", "strawberry", "audacious", "music"],
+    video: ["vlc", "mpv", "celluloid", "clapper", "totem", "youtube", "zoom", "video player"],
     calendar: ["calendar", "morgen", "fantastical"],
     settings: ["settings", "control center", "pavucontrol", "blueman", "nwg look"],
-    games: ["steam", "lutris", "heroic", "bottles", "games"],
-    notes: ["obsidian", "logseq", "joplin", "standard notes", "notes"]
+    games: ["moonlight", "steam", "lutris", "heroic", "bottles", "games"],
+    notes: ["obsidian", "xournalpp", "xournal", "logseq", "joplin", "standard notes", "notes"],
+    application: []
 }
 
 var PACK_ROLES = Object.keys(PACK_ALIASES)
 
-// Alpha bounds measured from the bundled 256x256 raster originals. Keeping
-// the source files untouched preserves their authored masters while the UI
-// presents the painted artwork at a consistent visual size.
-var PACK_CROPS = {
-    browser: { x: 23, y: 46, width: 207, height: 145 },
-    calendar: { x: 23, y: 13, width: 214, height: 230 },
-    chat: { x: 20, y: 34, width: 216, height: 190 },
-    code: { x: 44, y: 25, width: 175, height: 193 },
-    files: { x: 37, y: 19, width: 189, height: 199 },
-    games: { x: 24, y: 24, width: 218, height: 199 },
-    mail: { x: 14, y: 34, width: 217, height: 188 },
-    music: { x: 45, y: 13, width: 177, height: 222 },
-    notes: { x: 28, y: 18, width: 192, height: 210 },
-    settings: { x: 30, y: 36, width: 202, height: 188 },
-    terminal: { x: 28, y: 13, width: 199, height: 230 },
-    video: { x: 58, y: 13, width: 158, height: 219 }
-}
+// Every rendered pack asset is trimmed, scaled into the same 230px optical
+// box, and centered on a 256px transparent canvas by render-app-icons.py.
+var PACK_CROPS = {}
+for (var cropIndex = 0; cropIndex < PACK_ROLES.length; cropIndex++)
+    PACK_CROPS[PACK_ROLES[cropIndex]] = { x: 13, y: 13, width: 230, height: 230 }
 
 function sanitizeName(value) {
     return String(value || "").replace(/\.desktop$/i, "").replace(/[-_]+/g, " ").trim()
