@@ -1379,7 +1379,10 @@ Item {
 
       Timer {
         id: springOpenTimer
-        interval: 800
+        // Leave enough dwell time to read the route slip and release onto the
+        // folder. A shorter delay made deliberate drops feel like accidental
+        // folder launches and could hide the route confirmation itself.
+        interval: 1800
         repeat: false
         onTriggered: {
           // Eligibility is deliberately resolved before the timer begins.

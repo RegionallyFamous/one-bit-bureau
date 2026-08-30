@@ -157,6 +157,7 @@ class DesktopQmlContractTest(unittest.TestCase):
             r"if \(panel\.routeEligibilityResolved && panel\.routeValid && panel\.routeTarget",
         )
         self.assertIn("id: springOpenTimer", SERVICE)
+        self.assertIn("interval: 1800", SERVICE)
         self.assertIn("!panel.routeEligibilityResolved || !panel.routeValid", SERVICE)
         self.assertIn("panel.dragCanceled = true", SERVICE)
 

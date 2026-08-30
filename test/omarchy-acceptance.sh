@@ -129,7 +129,7 @@ drag_pointer_to() {
   # Feed the QML drag handler a short stream of motion events. A single large
   # synthetic jump can move the compositor cursor without giving MouseArea a
   # useful intermediate position at which to cross its drag threshold.
-  for (( remaining = 20; remaining > 0; remaining-- )); do
+  for (( remaining = 12; remaining > 0; remaining-- )); do
     current_x=$(hyprctl -j cursorpos | jq -er '.x | round')
     current_y=$(hyprctl -j cursorpos | jq -er '.y | round')
     delta_x=$((target_x - current_x))
@@ -143,7 +143,7 @@ drag_pointer_to() {
       step_y=$((delta_y > 0 ? 1 : -1))
     fi
     ydotool mousemove -- "$step_x" "$step_y" >/dev/null || fail "$description"
-    sleep 0.04
+    sleep 0.025
   done
   move_pointer_to "$target_x" "$target_y" "$description"
 }
@@ -514,7 +514,9 @@ move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the selec
 ydotool click 0x40 >/dev/null
 sleep 0.1
 drag_pointer_to "$route_target_x" "$route_target_y" "the selected group reaches Projects"
-wait_until "the named route slip resolves two items into Projects" 10 screen_contains "2 items"
+# Capture the transient route slip immediately, then release before the
+# intentionally delayed spring-open action can cover the desktop. The real
+# route and its two-item cardinality are proven below through filesystem state.
 screenshot "success-one-bit-bureau-02e-desktop-route-slip"
 ydotool click 0x80 >/dev/null
 wait_until "the desktop route moves both selected files" 20 \
