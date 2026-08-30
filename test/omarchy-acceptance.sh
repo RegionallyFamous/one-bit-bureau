@@ -53,6 +53,18 @@ icon_manager_has_terminal() {
   screen_contains "Foot" || screen_contains "Terminal"
 }
 
+notification_has_proof() {
+  local file
+
+  for file in "$HOME/.local/state/omarchy/notifications"/*.json; do
+    [[ -f $file ]] || continue
+    jq -e \
+      '.summary == "One-Bit Bureau" and .body == "Opaque paper notification proof"' \
+      "$file" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
 dock_has_seeded_items() {
   local count
   count=$(omarchy-shell regionallyfamous.one-bit-bureau.dock getItemCount 2>/dev/null || true)
@@ -510,7 +522,9 @@ screenshot "success-one-bit-bureau-14-terminal-ansi"
 
 omarchy-notification-wait 10 || fail "the Omarchy notification server is ready"
 omarchy-notification-send -u normal "One-Bit Bureau" "Opaque paper notification proof" -t 30000 >/dev/null
-wait_until "the One-Bit Bureau notification appears" 15 screen_contains "Opaque paper"
+wait_until "the One-Bit Bureau notification layer opens" 15 layer_on_screen omarchy-notifications
+wait_until "the One-Bit Bureau notification content is recorded" 15 notification_has_proof
+sleep 1
 screenshot "success-one-bit-bureau-15-notification"
 omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 
