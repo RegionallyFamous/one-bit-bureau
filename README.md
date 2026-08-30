@@ -4,6 +4,22 @@ One-Bit Bureau is one installable Omarchy experience: real desktop files, a bott
 
 It borrows the original Macintosh interface method rather than Apple artwork or exact trade dress. Select the object before acting, keep spatial landmarks stable, show immediate feedback, leave unavailable commands discoverable, and make the safe action obvious. The visual system uses original raster artwork, opaque paper-and-carbon surfaces, square geometry, and a two-color illustrated workbench.
 
+## See it running
+
+![One-Bit Bureau desktop with real files, a grayscale photo preview, the Bitmap Workbench background, top bar, and bottom dock](docs/screenshots/runtime-desktop.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/runtime-icon-picker.png" alt="One-Bit Bureau app icon picker with twelve original bitmap roles"><br><sub>Offline app-icon picker and association controls</sub></td>
+    <td width="50%"><img src="docs/screenshots/runtime-overview.png" alt="One-Bit Bureau searchable two-window overview"><br><sub>Searchable keyboard-navigable window overview</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/runtime-notification.png" alt="One-Bit Bureau terminal palette, notification, top bar, and dock"><br><sub>Whole-desktop theme across terminals, notifications, bar, dock, and wallpaper</sub></td>
+  </tr>
+</table>
+
+These are unedited 1280×800 runtime captures from the passed disposable x86_64 Omarchy acceptance run for v1.0.1. The v1.0.2 release adds installer infrastructure only and does not change the pictured runtime UI.
+
 ![The twelve original One-Bit Bureau app-role icons](docs/app-icon-pack.png)
 
 The product identity is consistent throughout: repository `RegionallyFamous/one-bit-bureau`, plugin ID `io.github.regionallyfamous.one-bit-bureau`, and namespaced runtime state under `~/.config/omarchy/one-bit-bureau/`.
