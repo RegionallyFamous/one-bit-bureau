@@ -35,6 +35,8 @@ SHOWCASE_DESKTOP_RETIRED="$SHOWCASE_ROOT/showcase-desktop"
 SHOWCASE_FILES="$SHOWCASE_ROOT/Bureau"
 SHOWCASE_BROWSER_PROFILE="$SHOWCASE_ROOT/chromium-profile"
 SHOWCASE_LIBREOFFICE_PROFILE="$SHOWCASE_ROOT/libreoffice-profile"
+ORIGINAL_NAUTILUS_VIEW=""
+showcase_nautilus_view_changed=false
 showcase_active=false
 QMLLINT_BIN=$(command -v qmllint || true)
 : "${QMLLINT_BIN:=/usr/lib/qt6/bin/qmllint}"
@@ -308,6 +310,11 @@ restore_showcase_state() {
   omarchy-shell shell hide "$PLUGIN_ID" >/dev/null 2>&1 || true
   omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 
+  if [[ $showcase_nautilus_view_changed == true ]]; then
+    gsettings set org.gnome.nautilus.preferences default-folder-viewer "$ORIGINAL_NAUTILUS_VIEW" >/dev/null 2>&1 || true
+    showcase_nautilus_view_changed=false
+  fi
+
   if [[ $showcase_active == true ]]; then
     omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
     sleep 1
@@ -332,11 +339,14 @@ restore_showcase_state() {
 }
 
 prepare_showcase_desktop() {
-  local monitor_width right_x left_x top_y second_y third_y
+  local monitor_width right_x left_x top_y second_y third_y red_hash green_hash blue_hash
 
   command -v chromium >/dev/null 2>&1 || fail "the showcase has Chromium from the Omarchy base install"
   command -v nautilus >/dev/null 2>&1 || fail "the showcase has Files from the Omarchy base install"
   command -v libreoffice >/dev/null 2>&1 || fail "the showcase has Writer from the Omarchy base install"
+  command -v gsettings >/dev/null 2>&1 || fail "the showcase can curate the Files presentation"
+  gsettings list-keys org.gnome.nautilus.preferences 2>/dev/null | grep -qx 'default-folder-viewer' ||
+    fail "the showcase can select Files' restrained list presentation"
   pass "the showcase uses real applications from the Omarchy base install"
 
   hyprctl dispatch 'hl.dsp.focus({ workspace = "1" })' >/dev/null 2>&1 ||
@@ -366,10 +376,24 @@ prepare_showcase_desktop() {
   printf 'Bureau manuals and visual references\n' >"$HOME/Desktop/Reference/Bureau Manual.txt"
   cp -- "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/Desk Study.png"
 
-  mkdir -p "$SHOWCASE_FILES/Current Work" "$SHOWCASE_FILES/Reference" "$SHOWCASE_FILES/Archive"
+  mkdir -p "$SHOWCASE_FILES"
   printf 'ONE-BIT BUREAU / STUDIO NOTES\n\nA calm desk, accountable windows, and reversible work.\n' >"$SHOWCASE_FILES/Studio Notes.txt"
   printf '# Release checklist\n\n- Review the desk composition\n- Account for every open window\n- Move the active draft to Desk 2\n' >"$SHOWCASE_FILES/Release Checklist.md"
-  cp -- "$FIXTURE/docs/assets/proof-photo.png" "$SHOWCASE_FILES/Desk Study.png"
+  ffmpeg -y -v error -i "$FIXTURE/docs/assets/proof-photo.png" -vf format=gray "$SHOWCASE_FILES/Desk Study.png" ||
+    fail "the showcase prepares a monochrome desk study for Files"
+  red_hash=$(decoded_channel_hash "$SHOWCASE_FILES/Desk Study.png" r)
+  green_hash=$(decoded_channel_hash "$SHOWCASE_FILES/Desk Study.png" g)
+  blue_hash=$(decoded_channel_hash "$SHOWCASE_FILES/Desk Study.png" b)
+  [[ $red_hash == $green_hash && $green_hash == $blue_hash ]] ||
+    fail "the Files desk study contains only grayscale pixels"
+
+  ORIGINAL_NAUTILUS_VIEW=$(gsettings get org.gnome.nautilus.preferences default-folder-viewer 2>/dev/null || true)
+  [[ -n $ORIGINAL_NAUTILUS_VIEW ]] || fail "the showcase records Files' original presentation"
+  ORIGINAL_NAUTILUS_VIEW=${ORIGINAL_NAUTILUS_VIEW#\'}
+  ORIGINAL_NAUTILUS_VIEW=${ORIGINAL_NAUTILUS_VIEW%\'}
+  gsettings set org.gnome.nautilus.preferences default-folder-viewer list-view >/dev/null ||
+    fail "the showcase selects Files' restrained list presentation"
+  showcase_nautilus_view_changed=true
 
   printf '%s\n' \
     '{"version":1,"pinned":["org.gnome.Nautilus","chromium","libreoffice-writer","obsidian","foot"],"order":["org.gnome.Nautilus","chromium","libreoffice-writer","obsidian","foot"]}' \
