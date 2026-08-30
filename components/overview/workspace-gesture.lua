@@ -1,7 +1,7 @@
 return function(options)
   options = options or {}
 
-  local namespace = "alumina-window-overview"
+  local namespace = "paper-jam-84-window-overview"
   local expose_layers = #hl.get_layers({ namespace = namespace })
   local workspace_gesture_enabled
 

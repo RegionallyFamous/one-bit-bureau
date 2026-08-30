@@ -18,7 +18,7 @@ PanelWindow {
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.namespace: "alumina-dock-menu"
+  WlrLayershell.namespace: "paper-jam-84-dock-menu"
   anchors { top: true; bottom: true; left: true; right: true }
   mask: Region { item: dismissSurface }
 

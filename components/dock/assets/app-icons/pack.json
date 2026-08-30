@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "paper-jam-84",
+  "name": "Paper Jam ’84",
+  "roles": [
+    { "id": "files", "label": "Files" },
+    { "id": "terminal", "label": "Terminal" },
+    { "id": "browser", "label": "Web" },
+    { "id": "code", "label": "Code" },
+    { "id": "mail", "label": "Mail" },
+    { "id": "chat", "label": "Chat" },
+    { "id": "music", "label": "Music" },
+    { "id": "video", "label": "Video" },
+    { "id": "calendar", "label": "Calendar" },
+    { "id": "settings", "label": "Controls" },
+    { "id": "games", "label": "Games" },
+    { "id": "notes", "label": "Notes" }
+  ]
+}

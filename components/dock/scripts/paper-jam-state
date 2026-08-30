@@ -1,0 +1,248 @@
+#!/usr/bin/python3
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import signal
+import stat
+import sys
+from pathlib import Path
+
+
+PACK_ROLES = {
+    "files",
+    "terminal",
+    "browser",
+    "code",
+    "mail",
+    "chat",
+    "music",
+    "video",
+    "calendar",
+    "settings",
+    "games",
+    "notes",
+}
+APP_ID = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
+MAX_ICONS = 256
+MAX_PINNED = 128
+
+
+def deadline(_signum: int, _frame: object) -> None:
+    raise TimeoutError("state read exceeded its deadline")
+
+
+def bounded_text(value: object, byte_limit: int) -> str:
+    return str(value or "").encode("utf-8")[:byte_limit].decode("utf-8", "ignore")
+
+
+def read_json(path: str, byte_limit: int, fallback: object) -> object:
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return fallback
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > byte_limit:
+            return fallback
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(65536, byte_limit + 1 - total))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > byte_limit:
+                return fallback
+            chunks.append(chunk)
+    except (BlockingIOError, OSError):
+        return fallback
+    finally:
+        os.close(descriptor)
+    try:
+        return json.loads(b"".join(chunks).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return fallback
+
+
+def safe_id(value: object) -> str:
+    candidate = str(value or "").removesuffix(".desktop")
+    return candidate if APP_ID.fullmatch(candidate) else ""
+
+
+def shape_ids(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in value:
+        candidate = safe_id(raw)
+        if not candidate or candidate in seen:
+            continue
+        output.append(candidate)
+        seen.add(candidate)
+        if len(output) >= MAX_PINNED:
+            break
+    return output
+
+
+def shape_icons(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    output: dict[str, object] = {}
+    for raw_id, raw_entry in value.items():
+        app_id = safe_id(raw_id)
+        if not app_id:
+            continue
+        if isinstance(raw_entry, str):
+            filename = bounded_text(raw_entry, 255)
+            if filename and Path(filename).name == filename:
+                output[app_id] = filename
+        elif isinstance(raw_entry, dict):
+            entry: dict[str, str] = {}
+            filename = bounded_text(raw_entry.get("file"), 255)
+            pack = bounded_text(raw_entry.get("pack"), 32)
+            mode = bounded_text(raw_entry.get("mode"), 16)
+            if filename and Path(filename).name == filename:
+                entry["file"] = filename
+            if pack in PACK_ROLES:
+                entry["pack"] = pack
+            if mode == "native":
+                entry["mode"] = mode
+            if entry:
+                output[app_id] = entry
+        if len(output) >= MAX_ICONS:
+            break
+    return output
+
+
+def shape_pins(value: object) -> dict[str, object]:
+    if isinstance(value, list):
+        return {"version": 1, "pinned": shape_ids(value), "order": []}
+    if not isinstance(value, dict):
+        return {}
+    return {
+        "version": 1,
+        "pinned": shape_ids(value.get("pinned")),
+        "order": shape_ids(value.get("order")),
+    }
+
+
+def shape_settings(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    output: dict[str, object] = {}
+    if isinstance(value.get("autoHide"), bool):
+        output["autoHide"] = value["autoHide"]
+    screen = bounded_text(value.get("screenName"), 160)
+    if screen:
+        output["screenName"] = screen
+    return output
+
+
+def write_icons(path: str, icons: dict[str, object]) -> None:
+    encoded = (json.dumps(icons, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if len(encoded) > 1024 * 1024:
+        raise SystemExit("icon mapping exceeds output budget")
+    parent, name = os.path.split(path)
+    directory_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        directory_flags |= os.O_NOFOLLOW
+    parent_fd = os.open(parent, directory_flags)
+    temporary = f".{name}.paper-jam-{os.getpid()}"
+    output_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        output_flags |= os.O_NOFOLLOW
+    try:
+        try:
+            current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            current = None
+        if current is not None and not stat.S_ISREG(current.st_mode):
+            raise SystemExit("icon mapping must be a regular, non-symlink file")
+        output_fd = os.open(temporary, output_flags, 0o600, dir_fd=parent_fd)
+        try:
+            view = memoryview(encoded)
+            while view:
+                written = os.write(output_fd, view)
+                view = view[written:]
+            os.fsync(output_fd)
+        finally:
+            os.close(output_fd)
+        os.replace(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=parent_fd)
+        except FileNotFoundError:
+            pass
+        os.close(parent_fd)
+
+
+def update_icon_mapping(path: str, app_id: str, operation: str, value: str = "") -> None:
+    canonical = safe_id(app_id)
+    if not canonical:
+        raise SystemExit("invalid app id")
+    icons = shape_icons(read_json(path, 1024 * 1024, {}))
+    if operation == "pack":
+        if value not in PACK_ROLES:
+            raise SystemExit("unknown Paper Jam icon role")
+        if canonical not in icons and len(icons) >= MAX_ICONS:
+            raise SystemExit("icon mapping already contains 256 entries")
+        icons[canonical] = {"pack": value}
+    elif operation == "native":
+        if canonical not in icons and len(icons) >= MAX_ICONS:
+            raise SystemExit("icon mapping already contains 256 entries")
+        icons[canonical] = {"mode": "native"}
+    elif operation in {"auto", "clear"}:
+        icons.pop(canonical, None)
+    else:
+        raise SystemExit("unknown icon mapping operation")
+    write_icons(path, icons)
+
+
+def list_icons(map_path: str, pins_path: str) -> None:
+    icons = shape_icons(read_json(map_path, 1024 * 1024, {}))
+    pins = shape_pins(read_json(pins_path, 64 * 1024, {})).get("pinned", [])
+    for app_id in pins:
+        entry = icons.get(app_id, {})
+        if isinstance(entry, str):
+            choice = entry
+        elif isinstance(entry, dict) and entry.get("pack"):
+            choice = f"Paper Jam {entry['pack']}"
+        elif isinstance(entry, dict) and entry.get("mode") == "native":
+            choice = "native icon"
+        else:
+            choice = "automatic"
+        print(f"{app_id}: {choice}")
+
+
+def main() -> None:
+    signal.signal(signal.SIGALRM, deadline)
+    signal.alarm(2)
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    if command == "read" and len(sys.argv) == 5:
+        icons_path, pins_path, settings_path = sys.argv[2:]
+        shaped = {
+            "icons": shape_icons(read_json(icons_path, 1024 * 1024, {})),
+            "pins": shape_pins(read_json(pins_path, 64 * 1024, {})),
+            "settings": shape_settings(read_json(settings_path, 16 * 1024, {})),
+        }
+        encoded = json.dumps(shaped, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > 128 * 1024:
+            raise SystemExit("shaped state exceeded output budget")
+        print(encoded)
+    elif command == "write" and len(sys.argv) in {5, 6}:
+        update_icon_mapping(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5] if len(sys.argv) == 6 else "")
+    elif command == "list" and len(sys.argv) == 4:
+        list_icons(sys.argv[2], sys.argv[3])
+    else:
+        raise SystemExit("usage: paper-jam-state read|write|list ...")
+
+
+if __name__ == "__main__":
+    main()

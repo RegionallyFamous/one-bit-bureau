@@ -6,23 +6,48 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 OMARCHY_ROOT=$(cd -- "$ROOT/../.." && pwd)
 THEME_TOOL="${OMARCHY_THEME_TOOL:-$HOME/.codex/skills/build-omarchy-themes/scripts/omarchy_theme.py}"
 
+sha256() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
 [[ -f $THEME_TOOL ]] || {
   echo "Theme authoring tool not found; set OMARCHY_THEME_TOOL to omarchy_theme.py" >&2
   exit 1
 }
 
 "$OMARCHY_ROOT/bin/omarchy-plugin-validate" "$ROOT"
-bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/test/omarchy-acceptance.sh"
+bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/update" "$ROOT/paper-jam" "$ROOT/test/omarchy-acceptance.sh"
 bash "$ROOT/tests/install-roundtrip.sh"
-bash -n "$ROOT/components/overview/activate-window" "$ROOT/components/overview/background-blur-session" "$ROOT/components/dock/scripts/omarchy-dock-icon" "$ROOT/components/dock/scripts/focus-window"
+bash "$ROOT/tests/update-ownership.sh"
+bash -n "$ROOT/components/overview/activate-window" "$ROOT/components/dock/scripts/omarchy-dock-icon" "$ROOT/components/dock/scripts/focus-window"
+for dock_helper in "$ROOT/components/dock/scripts/paper-jam-state" "$ROOT/components/dock/scripts/paper-jam-run" "$ROOT/test/stubborn-state-helper.py"; do
+  python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$dock_helper"
+done
 for helper in "$ROOT/components/desktop/bin/common.py" "$ROOT/components/desktop/bin/desktop_policy.py" "$ROOT/components/desktop/bin/desktop-index" "$ROOT/components/desktop/bin/add-to-desktop"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$helper"
 done
 python3 -m unittest discover -s "$ROOT/components/desktop/tests" -p 'test_*.py'
 python3 -m unittest discover -s "$ROOT/tests" -p 'test_*.py'
-for artwork_helper in "$ROOT/artwork/render-bitmap-workbench.py" "$ROOT/artwork/render-crop-proof.py"; do
+for artwork_helper in "$ROOT/artwork/render-bitmap-workbench.py" "$ROOT/artwork/render-crop-proof.py" "$ROOT/artwork/render-app-icons.py" "$ROOT/artwork/render-branding.py"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$artwork_helper"
 done
+
+[[ $(find "$ROOT/components/dock/assets/app-icons" -maxdepth 1 -type f -name '*.png' | wc -l | tr -d ' ') == 12 ]] || {
+  echo "Paper Jam app icon pack must contain exactly 12 rendered PNGs" >&2
+  exit 1
+}
+jq -e '.schemaVersion == 1 and .id == "paper-jam-84" and (.roles | length) == 12' "$ROOT/components/dock/assets/app-icons/pack.json" >/dev/null
+[[ $(identify -ping -format '%wx%h' "$ROOT/themes/paper-jam-84/preview-unlock.png") == "1920x1080" ]]
+[[ $(identify -ping -format '%[channels]' "$ROOT/themes/paper-jam-84/unlock.png") == *a* ]]
+[[ $(fc-scan --format '%{family[0]}' "$ROOT/fonts/DepartureMono-1.500.otf") == "Departure Mono" ]]
+[[ $(fc-scan --format '%{family[0]}' "$ROOT/fonts/MonaspaceKryptonNF-Regular-1.400.otf") == "Monaspace Krypton NF" ]]
+[[ $(sha256 "$ROOT/fonts/DepartureMono-1.500.otf") == "4d53f663155cf8bf7ffc8e688776e719625f7bbb80a8d90073438b249261a2e0" ]]
+[[ $(sha256 "$ROOT/fonts/MonaspaceKryptonNF-Regular-1.400.otf") == "e4f4ce9b02139544d20c46eaa0ae7df9cce7bfcdcdeb75bb70575236ccc86954" ]]
+[[ -s $ROOT/branding/about.txt && -s $ROOT/branding/screensaver.txt ]]
 
 unsafe=$(find -P "$ROOT" -path "$ROOT/.git" -prune -o \( -type l -o -type f -perm -111 \) -print -quit)
 if [[ -n $unsafe ]]; then
@@ -32,6 +57,12 @@ fi
 
 if rg -n 'henri\.desktop-icons|crmne\.active-window|expose\.window-overview|omarchy-shell -q macos\.dock' "$ROOT/components" -g '*.qml' -g '*.js' -g '*.py' -g '*.sh'; then
   echo "Found a legacy plugin identity in runtime code" >&2
+  exit 1
+fi
+
+if rg -n 'io\.github\.regionallyfamous\.alumina|regionallyfamous\.alumina|alumina-dock|alumina-window-overview' \
+  "$ROOT/components" "$ROOT/manifest.json" "$ROOT/README.md" "$ROOT/paper-jam" "$ROOT/update" "$ROOT/uninstall"; then
+  echo "Found an unpublished Alumina identity outside the explicit setup migration" >&2
   exit 1
 fi
 

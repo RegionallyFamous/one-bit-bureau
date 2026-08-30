@@ -1,0 +1,90 @@
+#!/bin/bash
+
+set -euo pipefail
+
+PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+STATE_FILE="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
+
+usage() {
+  cat <<'EOF'
+Usage: paper-jam <command> [arguments]
+
+Commands:
+  status                       Show installed component state
+  update [--yes]               Update Paper Jam's plugin and matching theme
+  remove                       Remove owned components and restore prior settings
+  overview                     Toggle the window overview
+  dock <command> [arguments]   Call the Paper Jam dock IPC interface
+  icon <command> [arguments]   Manage automatic, pack, native, and custom app icons
+  font list                    List the two bundled font choices
+  font use <krypton|departure> Select a bundled font through Omarchy
+EOF
+}
+
+require_install() {
+  [[ -f $PLUGIN_DIR/manifest.json && -f $STATE_FILE ]] || {
+    echo "paper-jam: Paper Jam ’84 is not fully installed" >&2
+    exit 1
+  }
+}
+
+command_name="${1:-}"
+case "$command_name" in
+  -h | --help | help | "")
+    usage
+    ;;
+  status)
+    require_install
+    jq '{product, pluginId, theme, installed, previous}' "$STATE_FILE"
+    ;;
+  update)
+    require_install
+    shift
+    exec bash "$PLUGIN_DIR/update" "$@"
+    ;;
+  remove | uninstall)
+    require_install
+    temporary=$(mktemp "${TMPDIR:-/tmp}/paper-jam-84-uninstall.XXXXXX")
+    cp -- "$PLUGIN_DIR/uninstall" "$temporary"
+    export PAPER_JAM_UNINSTALL_TEMP="$temporary"
+    exec bash "$temporary"
+    ;;
+  overview)
+    require_install
+    omarchy-shell regionallyfamous.paper-jam-84.overview toggle
+    ;;
+  dock)
+    require_install
+    shift
+    (( $# > 0 )) || { usage >&2; exit 2; }
+    omarchy-shell regionallyfamous.paper-jam-84.dock "$@"
+    ;;
+  icon | icons)
+    require_install
+    shift
+    exec bash "$PLUGIN_DIR/components/dock/scripts/omarchy-dock-icon" "$@"
+    ;;
+  font)
+    require_install
+    case "${2:-}" in
+      list)
+        printf '%s\n' \
+          'krypton: Monaspace Krypton NF — recommended; includes Nerd Font symbols' \
+          'departure: Departure Mono — sharper pixel look; no Nerd Font symbols'
+        ;;
+      use)
+        case "${3:-}" in
+          krypton) omarchy font set "Monaspace Krypton NF" ;;
+          departure) omarchy font set "Departure Mono" ;;
+          *) usage >&2; exit 2 ;;
+        esac
+        ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

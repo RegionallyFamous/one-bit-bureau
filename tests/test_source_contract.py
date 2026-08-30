@@ -43,6 +43,48 @@ class PluginSourceContractTest(unittest.TestCase):
         self.assertIn('if mode == "move":\n            source.unlink()', source)
         self.assertIn("if result.returncode != 0:", source)
 
+    def test_keyboard_surfaces_leave_super_chords_to_omarchy(self) -> None:
+        paths = [
+            "components/desktop/Service.qml",
+            "components/overview/Overview.qml",
+            "components/dock/AltTabPanel.qml",
+        ]
+        for relative in paths:
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            guard = "event.modifiers & Qt.MetaModifier"
+            self.assertIn(guard, source, relative)
+            guard_index = source.index(guard)
+            self.assertNotEqual(
+                source.find("event.key === Qt.Key_Left", guard_index), -1, relative
+            )
+
+    def test_runtime_does_not_claim_omarchy_navigation_bindings(self) -> None:
+        runtime = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "components").rglob("*")
+            if path.is_file() and path.suffix in {".qml", ".js", ".lua", ".sh"}
+        )
+        self.assertNotIn("hl.unbind", runtime)
+        self.assertNotIn("o.bind", runtime)
+        self.assertNotIn("bindings.lua", runtime)
+        self.assertNotIn("input.lua", runtime)
+
+    def test_public_lifecycle_uses_exact_plugin_and_theme_sources(self) -> None:
+        setup = (ROOT / "setup").read_text(encoding="utf-8")
+        update = (ROOT / "update").read_text(encoding="utf-8")
+        uninstall = (ROOT / "uninstall").read_text(encoding="utf-8")
+        command = (ROOT / "paper-jam").read_text(encoding="utf-8")
+
+        self.assertIn('EXPECTED_REPO_URL="https://github.com/RegionallyFamous/paper-jam-84.git"', setup)
+        self.assertIn('omarchy theme source inspect "$repo_url" --json', setup)
+        self.assertIn('omarchy theme source install "$THEME_SOURCE_ID" "$THEME_NAME" --json', setup)
+        self.assertIn('omarchy "${arguments[@]}"', update)
+        self.assertIn('exec bash "$PLUGIN_DIR/update" --reconcile', update)
+        self.assertIn('omarchy theme source update "$source_id" --json', update)
+        self.assertIn('[[ $theme_commit == "$plugin_commit" ]]', update)
+        self.assertIn('omarchy theme source detach "$THEME_SOURCE_ID" "$THEME_NAME" --json', uninstall)
+        self.assertIn('PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"', command)
+
 
 if __name__ == "__main__":
     unittest.main()

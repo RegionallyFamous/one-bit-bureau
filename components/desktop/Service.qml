@@ -29,11 +29,11 @@ Item {
   readonly property string home: Quickshell.env("HOME")
   readonly property string pluginDir: (manifest && manifest.__sourceDir)
     ? String(manifest.__sourceDir) + "/components/desktop"
-    : (home + "/.config/omarchy/plugins/io.github.regionallyfamous.alumina/components/desktop")
+    : (home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/desktop")
   readonly property string indexScript: pluginDir + "/bin/desktop-index"
   readonly property string addScript: pluginDir + "/bin/add-to-desktop"
   readonly property string hyperlinkScript: home + "/.local/bin/create-hyperlink"
-  readonly property string positionsPath: home + "/.config/omarchy/desktop-icon-positions.json"
+  readonly property string positionsPath: home + "/.config/omarchy/paper-jam-84/desktop-icon-positions.json"
 
   function padTopFor(screen) {
     var bar = shell && shell.bar ? shell.bar : null
@@ -722,6 +722,10 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         focus: true
         Keys.onPressed: function(event) {
+          if (event.modifiers & Qt.MetaModifier) {
+            event.accepted = false
+            return
+          }
           if (host.pendingTrust) {
             if (event.key === Qt.Key_Escape
                 || event.key === Qt.Key_Return

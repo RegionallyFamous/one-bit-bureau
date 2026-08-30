@@ -2,10 +2,13 @@
 
 set -Eeuo pipefail
 
-PLUGIN_ID="io.github.regionallyfamous.alumina"
+PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"
 PRODUCT_NAME="Paper Jam ’84"
 THEME_NAME="paper-jam-84"
+EXPECTED_REPO_URL="https://github.com/RegionallyFamous/paper-jam-84.git"
 LOCAL_INSTALL=0
+ADOPT_PLUGIN=0
+ASSUME_YES=0
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STATE_DIR="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID"
 STATE_FILE="$STATE_DIR/install-state.json"
@@ -13,12 +16,37 @@ SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
 THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
 PLUGIN_TARGET="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
+PAPER_JAM_CONFIG="$HOME/.config/omarchy/paper-jam-84"
+FONT_TARGET="$HOME/.local/share/fonts/paper-jam-84"
+BRANDING_TARGET="$HOME/.config/omarchy/branding"
+BRANDING_BACKUP_DIR="$STATE_DIR/backups/branding"
+COMMAND_TARGET="$HOME/.local/bin/paper-jam"
+BRANDING_MAX_BYTES=$((1024 * 1024))
+MIGRATION_FILE_MAX_BYTES=$((10 * 1024 * 1024))
+MIGRATION_ICON_MAX_FILES=128
+MIGRATION_ICON_MAX_BYTES=$((32 * 1024 * 1024))
 
 PLUGIN_OWNED=0
 THEME_OWNED=0
 SETTINGS_CHANGED=0
+FONT_OWNED=0
+BRANDING_OWNED=0
+COMMAND_OWNED=0
+FONT_TREE_HASH=""
+ABOUT_HASH=""
+SCREENSAVER_HASH=""
+COMMAND_HASH=""
+PREVIOUS_ABOUT_PRESENT=false
+PREVIOUS_SCREENSAVER_PRESENT=false
 PLUGIN_STAGE=""
 THEME_STAGE=""
+FONT_STAGE=""
+PLUGIN_ORIGIN=""
+PLUGIN_COMMIT=""
+THEME_SOURCE_ID=""
+THEME_SOURCE_URL=""
+THEME_SOURCE_COMMIT=""
+REMOTE_REPO_URL=""
 
 fail() {
   echo "paper-jam setup: $*" >&2
@@ -26,13 +54,21 @@ fail() {
 }
 
 usage() {
-  echo "Usage: bash setup [--local]"
+  echo "Usage: bash setup [--local | --adopt-plugin] [--yes]"
 }
 
 while (( $# > 0 )); do
   case "$1" in
     --local)
       LOCAL_INSTALL=1
+      shift
+      ;;
+    --adopt-plugin)
+      ADOPT_PLUGIN=1
+      shift
+      ;;
+    --yes | -y)
+      ASSUME_YES=1
       shift
       ;;
     -h | --help)
@@ -44,22 +80,52 @@ while (( $# > 0 )); do
       ;;
   esac
 done
+(( ! LOCAL_INSTALL || ! ADOPT_PLUGIN )) || fail "--local and --adopt-plugin are mutually exclusive"
 
 command -v omarchy >/dev/null || fail "Omarchy is required"
 command -v jq >/dev/null || fail "jq is required"
+command -v fc-cache >/dev/null || fail "fontconfig is required"
+command -v python3 >/dev/null || fail "Python 3 is required"
 [[ -f $SCRIPT_DIR/manifest.json ]] || fail "manifest.json is missing"
 [[ -d $SCRIPT_DIR/themes/$THEME_NAME ]] || fail "theme $THEME_NAME is missing"
+[[ -f $SCRIPT_DIR/fonts/DepartureMono-1.500.otf ]] || fail "Departure Mono is missing"
+[[ -f $SCRIPT_DIR/fonts/MonaspaceKryptonNF-Regular-1.400.otf ]] || fail "Monaspace Krypton NF is missing"
+[[ -f $SCRIPT_DIR/branding/about.txt ]] || fail "About branding is missing"
+[[ -f $SCRIPT_DIR/branding/screensaver.txt ]] || fail "screensaver branding is missing"
 jq -e --arg id "$PLUGIN_ID" --arg name "$PRODUCT_NAME" '
   .id == $id and .name == $name and (.version | type == "string")
 ' "$SCRIPT_DIR/manifest.json" >/dev/null || fail "manifest identity does not match this release"
 
+if (( ! LOCAL_INSTALL && ! ADOPT_PLUGIN )); then
+  REMOTE_REPO_URL=$(git -C "$SCRIPT_DIR" config --get remote.origin.url 2>/dev/null || true)
+  [[ $REMOTE_REPO_URL == "$EXPECTED_REPO_URL" ]] || fail "remote setup requires the canonical origin $EXPECTED_REPO_URL; use --local for a fork or development checkout"
+fi
+
 [[ ! -e $STATE_FILE ]] || fail "an install-state record already exists; run bash uninstall before reinstalling"
-[[ ! -e $PLUGIN_TARGET ]] || fail "plugin target already exists: $PLUGIN_TARGET"
+if (( ADOPT_PLUGIN )); then
+  [[ -d $PLUGIN_TARGET/.git ]] || fail "--adopt-plugin requires a Git-managed plugin at $PLUGIN_TARGET"
+  [[ $(cd -- "$SCRIPT_DIR" && pwd -P) == "$(cd -- "$PLUGIN_TARGET" && pwd -P)" ]] || fail "run the setup script from the installed Paper Jam plugin"
+else
+  [[ ! -e $PLUGIN_TARGET ]] || fail "plugin target already exists: $PLUGIN_TARGET"
+fi
 [[ ! -e $THEME_TARGET ]] || fail "theme target already exists: $THEME_TARGET"
+[[ ! -e $FONT_TARGET ]] || fail "font target already exists: $FONT_TARGET"
+[[ ! -e $COMMAND_TARGET && ! -L $COMMAND_TARGET ]] || fail "command target already exists: $COMMAND_TARGET"
+[[ ! -L $BRANDING_TARGET ]] || fail "branding directory must not be a symlink: $BRANDING_TARGET"
+[[ ! -e $BRANDING_TARGET || -d $BRANDING_TARGET ]] || fail "branding target is not a directory: $BRANDING_TARGET"
+for branding_name in about.txt screensaver.txt; do
+  branding_path="$BRANDING_TARGET/$branding_name"
+  [[ ! -L $branding_path ]] || fail "branding file must not be a symlink: $branding_path"
+  [[ ! -e $branding_path || -f $branding_path ]] || fail "branding path is not a regular file: $branding_path"
+done
 plugin_list=$(omarchy plugin list --json) || fail "could not inspect installed plugins"
 jq -e 'type == "array"' <<<"$plugin_list" >/dev/null || fail "Omarchy returned an invalid plugin list"
-if jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)' <<<"$plugin_list" >/dev/null; then
-  fail "plugin $PLUGIN_ID is already registered"
+if (( ADOPT_PLUGIN )); then
+  jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id and .enabled == false)' <<<"$plugin_list" >/dev/null || fail "the adopted plugin must be installed and disabled"
+else
+  if jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)' <<<"$plugin_list" >/dev/null; then
+    fail "plugin $PLUGIN_ID is already registered"
+  fi
 fi
 conflicts=$(jq -r '[
   .[] |
@@ -76,12 +142,264 @@ conflicts=$(jq -r '[
 ] | join(", ")' <<<"$plugin_list")
 [[ -z $conflicts ]] || fail "disable conflicting standalone plugins before setup: $conflicts"
 
+verify_adopted_plugin() {
+  local installed_manifest origin
+  installed_manifest="$PLUGIN_TARGET/manifest.json"
+  origin=$(git -C "$PLUGIN_TARGET" config --get remote.origin.url 2>/dev/null || true)
+  [[ $origin == "$EXPECTED_REPO_URL" ]] || fail "adopted plugin origin must be $EXPECTED_REPO_URL"
+  [[ -z $(git -C "$PLUGIN_TARGET" status --porcelain) ]] || fail "adopted plugin checkout has local changes"
+  jq -e --arg id "$PLUGIN_ID" --arg name "$PRODUCT_NAME" '.id == $id and .name == $name' "$installed_manifest" >/dev/null || fail "installed plugin identity does not match this release"
+}
+
+remove_declined_adoption() {
+  omarchy plugin remove "$PLUGIN_ID" --yes >/dev/null 2>&1 || true
+  [[ ! -e $PLUGIN_TARGET ]] || fail "confirmation was declined, but Omarchy could not remove the disabled plugin checkout"
+}
+
+confirm_adopted_plugin() {
+  (( ADOPT_PLUGIN )) || return 0
+  verify_adopted_plugin
+  (( ! ASSUME_YES )) || return 0
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    remove_declined_adoption
+    fail "interactive trust confirmation is required; rerun with --yes only after reviewing the repository"
+  fi
+
+  printf '\n%s runs unsandboxed inside omarchy-shell.\n' "$PRODUCT_NAME"
+  printf 'It will install its matching theme and fonts, replace Omarchy About/screensaver branding, place the bar at the top, enable the plugin, and activate %s.\n\n' "$THEME_NAME"
+  if command -v gum >/dev/null; then
+    if gum confirm "Trust and activate $PRODUCT_NAME?"; then
+      return 0
+    fi
+  else
+    read -r -p "Trust and activate $PRODUCT_NAME? [y/N] " answer
+    if [[ ${answer,,} == "y" || ${answer,,} == "yes" ]]; then
+      return 0
+    fi
+  fi
+
+  remove_declined_adoption
+  echo "$PRODUCT_NAME was not activated; the disabled plugin checkout was removed."
+  exit 1
+}
+
+confirm_adopted_plugin
+
 PREVIOUS_THEME=""
 if [[ -f $THEME_STATE ]]; then
   PREVIOUS_THEME=$(<"$THEME_STATE")
 fi
 PREVIOUS_BAR_POSITION=$(jq -r '.bar.position // "top"' "$SHELL_CONFIG" 2>/dev/null || echo top)
 PREVIOUS_BAR_TRANSPARENT=$(jq -r '.bar.transparent // false' "$SHELL_CONFIG" 2>/dev/null || echo false)
+[[ ! -f $BRANDING_TARGET/about.txt ]] || PREVIOUS_ABOUT_PRESENT=true
+[[ ! -f $BRANDING_TARGET/screensaver.txt ]] || PREVIOUS_SCREENSAVER_PRESENT=true
+
+hash_file() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+safe_copy_regular() {
+  local source="$1" destination="$2" max_bytes="$3"
+  python3 - "$source" "$destination" "$max_bytes" <<'PY'
+import os
+import signal
+import stat
+import sys
+
+source, destination, raw_limit = sys.argv[1:]
+limit = int(raw_limit)
+def deadline(_signum, _frame):
+    raise TimeoutError("bounded copy exceeded its 10-second deadline")
+signal.signal(signal.SIGALRM, deadline)
+signal.alarm(10)
+flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+source_fd = os.open(source, flags)
+try:
+    source_stat = os.fstat(source_fd)
+    if not stat.S_ISREG(source_stat.st_mode):
+        raise SystemExit(f"unsafe non-regular source: {source}")
+    if source_stat.st_size > limit:
+        raise SystemExit(f"source exceeds {limit} bytes: {source}")
+    chunks = []
+    total = 0
+    while True:
+        chunk = os.read(source_fd, min(65536, limit + 1 - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+        if total > limit:
+            raise SystemExit(f"source exceeds {limit} bytes: {source}")
+finally:
+    os.close(source_fd)
+
+parent = os.path.dirname(destination)
+name = os.path.basename(destination)
+directory_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
+if hasattr(os, "O_NOFOLLOW"):
+    directory_flags |= os.O_NOFOLLOW
+parent_fd = os.open(parent, directory_flags)
+temporary = f".{name}.paper-jam-{os.getpid()}"
+output_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+if hasattr(os, "O_NOFOLLOW"):
+    output_flags |= os.O_NOFOLLOW
+try:
+    output_fd = os.open(temporary, output_flags, 0o600, dir_fd=parent_fd)
+    try:
+        for chunk in chunks:
+            view = memoryview(chunk)
+            while view:
+                written = os.write(output_fd, view)
+                view = view[written:]
+        os.fsync(output_fd)
+    finally:
+        os.close(output_fd)
+    os.replace(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+finally:
+    try:
+        os.unlink(temporary, dir_fd=parent_fd)
+    except FileNotFoundError:
+        pass
+    os.close(parent_fd)
+PY
+}
+
+safe_hash_regular() {
+  local source="$1" max_bytes="$2"
+  python3 - "$source" "$max_bytes" <<'PY'
+import hashlib
+import os
+import signal
+import stat
+import sys
+
+source, raw_limit = sys.argv[1:]
+limit = int(raw_limit)
+def deadline(_signum, _frame):
+    raise TimeoutError("bounded hash exceeded its 10-second deadline")
+signal.signal(signal.SIGALRM, deadline)
+signal.alarm(10)
+flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+fd = os.open(source, flags)
+digest = hashlib.sha256()
+total = 0
+try:
+    source_stat = os.fstat(fd)
+    if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_size > limit:
+        raise SystemExit(1)
+    while True:
+        chunk = os.read(fd, min(65536, limit + 1 - total))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise SystemExit(1)
+        digest.update(chunk)
+finally:
+    os.close(fd)
+print(digest.hexdigest())
+PY
+}
+
+safe_copy_icon_tree() {
+  local source="$1" destination="$2"
+  python3 - "$source" "$destination" "$MIGRATION_ICON_MAX_FILES" "$MIGRATION_FILE_MAX_BYTES" "$MIGRATION_ICON_MAX_BYTES" <<'PY'
+import os
+import shutil
+import signal
+import stat
+import sys
+
+source, destination, raw_max_files, raw_file_limit, raw_total_limit = sys.argv[1:]
+max_files = int(raw_max_files)
+file_limit = int(raw_file_limit)
+total_limit = int(raw_total_limit)
+def deadline(_signum, _frame):
+    raise TimeoutError("bounded icon migration exceeded its 10-second deadline")
+signal.signal(signal.SIGALRM, deadline)
+signal.alarm(10)
+directory_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
+if hasattr(os, "O_NOFOLLOW"):
+    directory_flags |= os.O_NOFOLLOW
+source_fd = os.open(source, directory_flags)
+parent = os.path.dirname(destination)
+name = os.path.basename(destination)
+parent_fd = os.open(parent, directory_flags)
+stage_name = f".{name}.paper-jam-{os.getpid()}"
+stage_path = os.path.join(parent, stage_name)
+stage_fd = -1
+try:
+    names = sorted(os.listdir(source_fd))
+    if len(names) > max_files:
+        raise SystemExit(f"legacy icon directory exceeds {max_files} entries")
+    os.mkdir(stage_name, 0o700, dir_fd=parent_fd)
+    stage_fd = os.open(stage_name, directory_flags, dir_fd=parent_fd)
+    total = 0
+    for entry in names:
+        read_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK
+        if hasattr(os, "O_NOFOLLOW"):
+            read_flags |= os.O_NOFOLLOW
+        input_fd = os.open(entry, read_flags, dir_fd=source_fd)
+        try:
+            item_stat = os.fstat(input_fd)
+            if not stat.S_ISREG(item_stat.st_mode):
+                raise SystemExit(f"legacy icon is not a regular file: {entry}")
+            if item_stat.st_size > file_limit:
+                raise SystemExit(f"legacy icon exceeds {file_limit} bytes: {entry}")
+            total += item_stat.st_size
+            if total > total_limit:
+                raise SystemExit(f"legacy icon directory exceeds {total_limit} bytes")
+            output_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+            if hasattr(os, "O_NOFOLLOW"):
+                output_flags |= os.O_NOFOLLOW
+            output_fd = os.open(entry, output_flags, 0o600, dir_fd=stage_fd)
+            try:
+                copied = 0
+                while True:
+                    chunk = os.read(input_fd, min(65536, file_limit + 1 - copied))
+                    if not chunk:
+                        break
+                    copied += len(chunk)
+                    if copied > file_limit:
+                        raise SystemExit(f"legacy icon exceeds {file_limit} bytes: {entry}")
+                    view = memoryview(chunk)
+                    while view:
+                        written = os.write(output_fd, view)
+                        view = view[written:]
+            finally:
+                os.close(output_fd)
+        finally:
+            os.close(input_fd)
+    os.close(stage_fd)
+    stage_fd = -1
+    os.rename(stage_name, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+finally:
+    if stage_fd >= 0:
+        os.close(stage_fd)
+    os.close(source_fd)
+    os.close(parent_fd)
+    if os.path.isdir(stage_path):
+        shutil.rmtree(stage_path)
+PY
+}
+
+font_tree_hash() {
+  local directory="$1"
+  [[ -f $directory/DepartureMono-1.500.otf && -f $directory/MonaspaceKryptonNF-Regular-1.400.otf ]] || return 1
+  [[ $(find "$directory" -maxdepth 1 -type f | wc -l | tr -d ' ') == 2 ]] || return 1
+  {
+    hash_file "$directory/DepartureMono-1.500.otf"
+    hash_file "$directory/MonaspaceKryptonNF-Regular-1.400.otf"
+  } | hash_file /dev/stdin
+}
 
 write_state() {
   local temporary="$STATE_FILE.tmp"
@@ -92,23 +410,76 @@ write_state() {
     --arg theme "$THEME_NAME" \
     --arg pluginOwned "$PLUGIN_OWNED" \
     --arg themeOwned "$THEME_OWNED" \
+    --arg fontOwned "$FONT_OWNED" \
+    --arg brandingOwned "$BRANDING_OWNED" \
+    --arg commandOwned "$COMMAND_OWNED" \
+    --arg fontTreeHash "$FONT_TREE_HASH" \
+    --arg aboutHash "$ABOUT_HASH" \
+    --arg screensaverHash "$SCREENSAVER_HASH" \
+    --arg commandHash "$COMMAND_HASH" \
+    --arg pluginOrigin "$PLUGIN_ORIGIN" \
+    --arg pluginCommit "$PLUGIN_COMMIT" \
+    --arg themeSourceId "$THEME_SOURCE_ID" \
+    --arg themeSourceUrl "$THEME_SOURCE_URL" \
+    --arg themeSourceCommit "$THEME_SOURCE_COMMIT" \
     --arg previousTheme "$PREVIOUS_THEME" \
     --arg previousBarPosition "$PREVIOUS_BAR_POSITION" \
     --argjson previousBarTransparent "$PREVIOUS_BAR_TRANSPARENT" \
+    --argjson previousAboutPresent "$PREVIOUS_ABOUT_PRESENT" \
+    --argjson previousScreensaverPresent "$PREVIOUS_SCREENSAVER_PRESENT" \
     '{
-      schemaVersion: 1,
+      schemaVersion: 2,
       product: $product,
       pluginId: $pluginId,
       theme: $theme,
       pluginOwned: ($pluginOwned == "1"),
       themeOwned: ($themeOwned == "1"),
+      fontOwned: ($fontOwned == "1"),
+      brandingOwned: ($brandingOwned == "1"),
+      commandOwned: ($commandOwned == "1"),
+      installed: {
+        pluginOrigin: $pluginOrigin,
+        pluginCommit: $pluginCommit,
+        themeSourceId: $themeSourceId,
+        themeSourceUrl: $themeSourceUrl,
+        themeSourceCommit: $themeSourceCommit,
+        fontTreeHash: $fontTreeHash,
+        aboutHash: $aboutHash,
+        screensaverHash: $screensaverHash
+        ,commandHash: $commandHash
+      },
       previous: {
         theme: $previousTheme,
         barPosition: $previousBarPosition,
-        barTransparent: $previousBarTransparent
+        barTransparent: $previousBarTransparent,
+        aboutPresent: $previousAboutPresent,
+        screensaverPresent: $previousScreensaverPresent
       }
     }' >"$temporary"
   mv "$temporary" "$STATE_FILE"
+}
+
+restore_branding_file() {
+  local current="$1" backup="$2" previous_present="$3" installed_hash="$4"
+  local current_hash=""
+  if [[ -f $current && ! -L $current ]]; then
+    current_hash=$(safe_hash_regular "$current" "$BRANDING_MAX_BYTES" 2>/dev/null || true)
+  fi
+  if [[ -n $installed_hash && $current_hash == "$installed_hash" ]]; then
+    if [[ $previous_present == true ]]; then
+      [[ -f $backup && ! -L $backup ]] && safe_copy_regular "$backup" "$current" "$BRANDING_MAX_BYTES"
+    else
+      rm -f -- "$current"
+    fi
+  elif [[ ! -e $current && ! -L $current && $previous_present == true && -f $backup && ! -L $backup ]]; then
+    safe_copy_regular "$backup" "$current" "$BRANDING_MAX_BYTES"
+  fi
+}
+
+restore_owned_branding() {
+  (( BRANDING_OWNED )) || return 0
+  restore_branding_file "$BRANDING_TARGET/about.txt" "$BRANDING_BACKUP_DIR/about.txt" "$PREVIOUS_ABOUT_PRESENT" "$ABOUT_HASH"
+  restore_branding_file "$BRANDING_TARGET/screensaver.txt" "$BRANDING_BACKUP_DIR/screensaver.txt" "$PREVIOUS_SCREENSAVER_PRESENT" "$SCREENSAVER_HASH"
 }
 
 restore_previous_settings() {
@@ -138,17 +509,30 @@ rollback() {
   if (( SETTINGS_CHANGED )); then
     restore_previous_settings
   fi
+  restore_owned_branding
+  if (( COMMAND_OWNED )) && [[ -f $COMMAND_TARGET ]] && [[ $(hash_file "$COMMAND_TARGET") == "$COMMAND_HASH" ]]; then
+    rm -f -- "$COMMAND_TARGET"
+  fi
+  if (( FONT_OWNED )) && [[ -d $FONT_TARGET ]]; then
+    rm -rf -- "$FONT_TARGET"
+    fc-cache -f >/dev/null 2>&1 || true
+  fi
   if (( PLUGIN_OWNED )); then
     omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
     omarchy plugin remove "$PLUGIN_ID" --yes >/dev/null 2>&1 || true
     [[ ! -e $PLUGIN_TARGET ]] || rm -rf "$PLUGIN_TARGET"
   fi
   if (( THEME_OWNED )); then
-    omarchy theme remove "$THEME_NAME" >/dev/null 2>&1 || true
+    if [[ -n $THEME_SOURCE_ID ]]; then
+      omarchy theme source detach "$THEME_SOURCE_ID" "$THEME_NAME" --json >/dev/null 2>&1 || true
+    else
+      omarchy theme remove "$THEME_NAME" >/dev/null 2>&1 || true
+    fi
     [[ ! -e $THEME_TARGET ]] || rm -rf "$THEME_TARGET"
   fi
   [[ -z $PLUGIN_STAGE || ! -e $PLUGIN_STAGE ]] || rm -rf "$PLUGIN_STAGE"
   [[ -z $THEME_STAGE || ! -e $THEME_STAGE ]] || rm -rf "$THEME_STAGE"
+  [[ -z $FONT_STAGE || ! -e $FONT_STAGE ]] || rm -rf "$FONT_STAGE"
   rm -f "$STATE_FILE" "$STATE_FILE.tmp"
   rmdir "$STATE_DIR" 2>/dev/null || true
   echo "paper-jam setup rolled back after an error" >&2
@@ -161,7 +545,7 @@ install_local_plugin() {
   mkdir -p "$plugins_dir"
   PLUGIN_STAGE=$(mktemp -d "$plugins_dir/.paper-jam-plugin.XXXXXX")
   mkdir -p "$PLUGIN_STAGE/components"
-  cp "$SCRIPT_DIR/manifest.json" "$SCRIPT_DIR/Experience.qml" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$PLUGIN_STAGE/"
+  cp "$SCRIPT_DIR/manifest.json" "$SCRIPT_DIR/Experience.qml" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$SCRIPT_DIR/paper-jam" "$SCRIPT_DIR/update" "$SCRIPT_DIR/uninstall" "$PLUGIN_STAGE/"
   cp -R "$SCRIPT_DIR/components/active-window" "$SCRIPT_DIR/components/desktop" "$SCRIPT_DIR/components/dock" "$SCRIPT_DIR/components/overview" "$PLUGIN_STAGE/components/"
   rm -rf "$PLUGIN_STAGE/components/desktop/tests" "$PLUGIN_STAGE/components/dock/tests"
   find "$PLUGIN_STAGE" -type d -name __pycache__ -prune -exec rm -rf {} +
@@ -175,19 +559,31 @@ install_local_plugin() {
 }
 
 install_remote_plugin() {
-  local repo_url current_branch default_branch installed_manifest
-  repo_url=$(git -C "$SCRIPT_DIR" config --get remote.origin.url 2>/dev/null || true)
-  [[ -n $repo_url ]] || fail "no Git origin found; publish/clone the repository or use --local"
+  local repo_url current_branch default_branch installed_manifest installed_commit
+  repo_url="$REMOTE_REPO_URL"
+  [[ $repo_url == "$EXPECTED_REPO_URL" ]] || fail "remote setup origin changed after preflight"
   current_branch=$(git -C "$SCRIPT_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
   default_branch=$(git -C "$SCRIPT_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
   default_branch=${default_branch#origin/}
   [[ -n $current_branch && -n $default_branch && $current_branch == "$default_branch" ]] || fail "remote setup requires the checked-out release to be origin's default branch; use --local for this checkout"
 
   PLUGIN_OWNED=1
+  PLUGIN_ORIGIN="$repo_url"
+  PLUGIN_COMMIT=$(git -C "$SCRIPT_DIR" rev-parse HEAD)
   write_state
   omarchy plugin add "$repo_url" --yes
   installed_manifest="$PLUGIN_TARGET/manifest.json"
   jq -e --arg id "$PLUGIN_ID" --arg name "$PRODUCT_NAME" '.id == $id and .name == $name' "$installed_manifest" >/dev/null || fail "installed plugin identity does not match this release"
+  installed_commit=$(git -C "$PLUGIN_TARGET" rev-parse HEAD)
+  [[ $installed_commit == "$PLUGIN_COMMIT" ]] || fail "installed plugin commit does not match the setup checkout"
+}
+
+install_adopted_plugin() {
+  verify_adopted_plugin
+  PLUGIN_OWNED=1
+  PLUGIN_ORIGIN=$(git -C "$PLUGIN_TARGET" config --get remote.origin.url)
+  PLUGIN_COMMIT=$(git -C "$PLUGIN_TARGET" rev-parse HEAD)
+  write_state
 }
 
 install_local_theme() {
@@ -202,23 +598,113 @@ install_local_theme() {
 }
 
 install_remote_theme() {
-  local repo_url
-  repo_url=$(git -C "$SCRIPT_DIR" config --get remote.origin.url 2>/dev/null || true)
-  [[ -n $repo_url ]] || fail "no Git origin found; publish/clone the repository or use --local"
+  local repo_url source_json install_json
+  if (( ADOPT_PLUGIN )); then
+    repo_url=$(git -C "$SCRIPT_DIR" config --get remote.origin.url 2>/dev/null || true)
+  else
+    repo_url="$REMOTE_REPO_URL"
+  fi
+  [[ $repo_url == "$EXPECTED_REPO_URL" ]] || fail "theme setup requires the canonical origin $EXPECTED_REPO_URL"
+  source_json=$(omarchy theme source inspect "$repo_url" --json) || fail "could not inspect the Paper Jam theme source"
+  THEME_SOURCE_ID=$(jq -er '.source.id' <<<"$source_json") || fail "theme source did not return an ID"
+  THEME_SOURCE_URL=$(jq -er '.source.url' <<<"$source_json") || fail "theme source did not return a URL"
+  [[ $THEME_SOURCE_URL == "$EXPECTED_REPO_URL" ]] || fail "theme source returned an unexpected repository URL"
+  THEME_SOURCE_COMMIT=$(jq -er '.source.commit' <<<"$source_json") || fail "theme source did not return a commit"
+  if [[ -n $PLUGIN_COMMIT && $THEME_SOURCE_COMMIT != "$PLUGIN_COMMIT" ]]; then
+    fail "plugin and theme source commits differ; rerun setup after the repository finishes updating"
+  fi
   THEME_OWNED=1
   write_state
-  omarchy theme install "$repo_url#$THEME_NAME"
+  install_json=$(omarchy theme source install "$THEME_SOURCE_ID" "$THEME_NAME" --json) || fail "could not install the Paper Jam theme"
+  jq -e --arg source "$THEME_SOURCE_ID" --arg theme "$THEME_NAME" '.source.id == $source and .action.theme == $theme' <<<"$install_json" >/dev/null || fail "theme source install returned an unexpected result"
   [[ -e $THEME_TARGET ]] || fail "theme install did not create $THEME_TARGET"
+}
+
+copy_legacy_file() {
+  local source="$1"
+  local destination="$2"
+  [[ ! -L $source ]] || fail "legacy migration source must not be a symlink: $source"
+  [[ ! -e $source || -f $source ]] || fail "legacy migration source is not a regular file: $source"
+  [[ ! -L $destination ]] || fail "Paper Jam migration destination must not be a symlink: $destination"
+  if [[ -f $source && ! -e $destination ]]; then
+    safe_copy_regular "$source" "$destination" "$MIGRATION_FILE_MAX_BYTES"
+  fi
+}
+
+migrate_legacy_user_data() {
+  [[ ! -L $PAPER_JAM_CONFIG ]] || fail "Paper Jam config directory must not be a symlink: $PAPER_JAM_CONFIG"
+  [[ ! -e $PAPER_JAM_CONFIG || -d $PAPER_JAM_CONFIG ]] || fail "Paper Jam config path is not a directory: $PAPER_JAM_CONFIG"
+  mkdir -p "$PAPER_JAM_CONFIG"
+  copy_legacy_file "$HOME/.config/omarchy/alumina-dock-pinned.json" "$PAPER_JAM_CONFIG/dock-pinned.json"
+  copy_legacy_file "$HOME/.config/omarchy/alumina-dock-settings.json" "$PAPER_JAM_CONFIG/dock-settings.json"
+  copy_legacy_file "$HOME/.config/omarchy/dock-icons.json" "$PAPER_JAM_CONFIG/dock-icons.json"
+  copy_legacy_file "$HOME/.config/omarchy/desktop-icon-positions.json" "$PAPER_JAM_CONFIG/desktop-icon-positions.json"
+  legacy_icons="$HOME/.config/omarchy/icons"
+  destination_icons="$PAPER_JAM_CONFIG/icons"
+  [[ ! -L $legacy_icons ]] || fail "legacy icon directory must not be a symlink: $legacy_icons"
+  [[ ! -e $legacy_icons || -d $legacy_icons ]] || fail "legacy icon path is not a directory: $legacy_icons"
+  [[ ! -L $destination_icons ]] || fail "Paper Jam icon directory must not be a symlink: $destination_icons"
+  if [[ -d $legacy_icons && ! -e $destination_icons ]]; then
+    safe_copy_icon_tree "$legacy_icons" "$destination_icons"
+  else
+    mkdir -p "$destination_icons"
+  fi
+}
+
+install_fonts() {
+  local fonts_dir="$HOME/.local/share/fonts"
+  mkdir -p "$fonts_dir"
+  FONT_STAGE=$(mktemp -d "$fonts_dir/.paper-jam-84.XXXXXX")
+  cp -- "$SCRIPT_DIR/fonts/DepartureMono-1.500.otf" "$SCRIPT_DIR/fonts/MonaspaceKryptonNF-Regular-1.400.otf" "$FONT_STAGE/"
+  FONT_TREE_HASH=$(font_tree_hash "$FONT_STAGE") || fail "could not verify staged fonts"
+  FONT_OWNED=1
+  write_state
+  mv "$FONT_STAGE" "$FONT_TARGET"
+  FONT_STAGE=""
+  fc-cache -f >/dev/null
+}
+
+install_branding() {
+  mkdir -p "$BRANDING_TARGET" "$BRANDING_BACKUP_DIR"
+  if [[ $PREVIOUS_ABOUT_PRESENT == true ]]; then
+    safe_copy_regular "$BRANDING_TARGET/about.txt" "$BRANDING_BACKUP_DIR/about.txt" "$BRANDING_MAX_BYTES"
+  fi
+  if [[ $PREVIOUS_SCREENSAVER_PRESENT == true ]]; then
+    safe_copy_regular "$BRANDING_TARGET/screensaver.txt" "$BRANDING_BACKUP_DIR/screensaver.txt" "$BRANDING_MAX_BYTES"
+  fi
+  ABOUT_HASH=$(hash_file "$SCRIPT_DIR/branding/about.txt")
+  SCREENSAVER_HASH=$(hash_file "$SCRIPT_DIR/branding/screensaver.txt")
+  BRANDING_OWNED=1
+  write_state
+  safe_copy_regular "$SCRIPT_DIR/branding/about.txt" "$BRANDING_TARGET/about.txt" "$BRANDING_MAX_BYTES"
+  safe_copy_regular "$SCRIPT_DIR/branding/screensaver.txt" "$BRANDING_TARGET/screensaver.txt" "$BRANDING_MAX_BYTES"
+}
+
+install_command() {
+  local command_dir="$HOME/.local/bin"
+  mkdir -p "$command_dir"
+  COMMAND_HASH=$(hash_file "$PLUGIN_TARGET/paper-jam")
+  COMMAND_OWNED=1
+  write_state
+  cp -- "$PLUGIN_TARGET/paper-jam" "$COMMAND_TARGET"
+  chmod 755 "$COMMAND_TARGET"
 }
 
 write_state
 if (( LOCAL_INSTALL )); then
   install_local_plugin
   install_local_theme
+elif (( ADOPT_PLUGIN )); then
+  install_adopted_plugin
+  install_remote_theme
 else
   install_remote_plugin
   install_remote_theme
 fi
+migrate_legacy_user_data
+install_command
+install_fonts
+install_branding
 
 desktop_dir="$HOME/Desktop"
 if command -v xdg-user-dir >/dev/null; then

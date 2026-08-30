@@ -1522,7 +1522,7 @@ Item {
                         id: recoveryText
                         anchors.fill: parent
                         anchors.margins: Style.space(12)
-                        text: "After closing Settings, restore it in ~/.config/omarchy/shell.json by setting showFooter to true in the io.github.regionallyfamous.alumina entry."
+                        text: "After closing Settings, restore it in ~/.config/omarchy/shell.json by setting showFooter to true in the io.github.regionallyfamous.paper-jam-84 entry."
                         textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
                         color: Color.menu.text

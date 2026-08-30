@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.regionallyfamous.alumina",
+  "id": "io.github.regionallyfamous.paper-jam-84",
   "name": "Paper Jam ’84",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "author": "RegionallyFamous",
   "license": "MIT",
   "description": "The shell half of a one-install Omarchy experience with desktop files, a dock, window overview, active-application rail, and safe object-first interaction.",
-  "icon": "components/overview/assets/icon.svg",
+  "icon": "components/overview/assets/icon.png",
   "kinds": [
     "service",
     "panel",

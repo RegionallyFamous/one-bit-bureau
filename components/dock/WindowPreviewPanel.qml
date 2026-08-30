@@ -43,7 +43,7 @@ PanelWindow {
         active: !!w.active
       })
       if (!card) {
-        console.warn("alumina.raster preview card failed:", root.cardComponent.errorString())
+        console.warn("paper-jam-84 preview card failed:", root.cardComponent.errorString())
         continue
       }
       card.activated.connect(function(data) { root.activated(data) })
@@ -57,7 +57,7 @@ PanelWindow {
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.namespace: "alumina-dock-preview"
+  WlrLayershell.namespace: "paper-jam-84-dock-preview"
   anchors { top: true; bottom: true; left: true; right: true }
   mask: Region { item: previewRow }
 

@@ -1,72 +1,182 @@
 #!/bin/bash
-# Offline smoke tests for scripts/omarchy-dock-icon. Network access is faked
-# through CURL_CMD; HOME is redirected so nothing touches the real config.
+
 set -euo pipefail
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 helper="$root/scripts/omarchy-dock-icon"
-work="$(mktemp -d)"
+state_helper="$root/scripts/paper-jam-state"
+run_helper="$root/scripts/paper-jam-run"
+work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+test_home="$work/home"
+config="$test_home/.config/omarchy/paper-jam-84"
+mkdir -p "$config"
 
-mkdir -p "$work/home"
+echo "== bundled pack roles are listed and associated offline"
+HOME="$test_home" bash "$helper" pack list | grep -q '^terminal: Terminal$'
+HOME="$test_home" bash "$helper" pack set code terminal
+jq -e '.code == {"pack":"terminal"}' "$config/dock-icons.json" >/dev/null
 
-# Fake curl: records the POST body and serves canned search JSON.
-cat > "$work/fake-curl" <<'EOF'
-#!/bin/bash
-body=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -d) body="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-printf '%s' "$body" > "$WORK/call.log"
-cat "$WORK/search.json"
-EOF
-chmod +x "$work/fake-curl"
-export CURL_CMD="$work/fake-curl"
-export WORK="$work"
+echo "== native, automatic, and clear are bounded mapping operations"
+HOME="$test_home" bash "$helper" native code
+jq -e '.code == {"mode":"native"}' "$config/dock-icons.json" >/dev/null
+HOME="$test_home" bash "$helper" auto code
+jq -e 'has("code") | not' "$config/dock-icons.json" >/dev/null
+HOME="$test_home" bash "$helper" pack set code code
+HOME="$test_home" bash "$helper" clear code
+jq -e 'has("code") | not' "$config/dock-icons.json" >/dev/null
 
-cat > "$work/search.json" <<'EOF'
-{"hits":[
-  {"appName":"Figma","appSlug":"figma","objectID":"i3FsrkYvf6",
-   "iOSUrl":"https://s3-new.macosicons.com/macosicons/parse/Figma_i3FsrkYvf6_iOS.png",
-   "lowResPngUrl":"https://s3-new.macosicons.com/macosicons/parse/low_res_Figma_i3FsrkYvf6.png",
-   "downloads":18},
-  {"appName":"Orphan","appSlug":"orphan","objectID":"x","downloads":1}
-]}
-EOF
+echo "== app IDs accept 160 ASCII bytes and reject 161"
+id_160=$(printf '%160s' '' | tr ' ' a)
+HOME="$test_home" bash "$helper" pack set "$id_160" files >/dev/null
+HOME="$test_home" bash "$helper" auto "$id_160" >/dev/null
+id_161="${id_160}a"
+if HOME="$test_home" bash "$helper" pack set "$id_161" files >"$work/id-over.log" 2>&1; then
+  echo "app ID accepted 161 bytes" >&2
+  exit 1
+fi
 
-echo "== search filters hits and prints JSON"
-HOME="$work/home" bash "$helper" search figma > "$work/out.json"
-python3 - "$work/out.json" <<'PY'
+echo "== bounded reader accepts exactly 1 MiB and rejects one byte over"
+python3 - "$config/dock-icons.json" <<'PY'
 import json, sys
-data = json.load(open(sys.argv[1]))
-assert len(data) == 1, f"expected 1 hit with iOSUrl, got {data}"
-hit = data[0]
-assert hit["appName"] == "Figma", hit
-assert hit["objectID"] == "i3FsrkYvf6", hit
-assert hit["iOSUrl"].startswith("https://"), hit
-assert hit["lowResPngUrl"], hit
+path = sys.argv[1]
+raw = json.dumps({"code": {"pack": "code"}}, separators=(",", ":")).encode()
+with open(path, "wb") as handle:
+    handle.write(raw)
+    handle.write(b" " * ((1024 * 1024) - len(raw)))
 PY
-grep -q '"query": "figma"' "$work/call.log" || { echo "search body missing query"; exit 1; }
+python3 "$state_helper" read "$config/dock-icons.json" "$config/dock-pinned.json" "$config/dock-settings.json" >"$work/exact.json"
+jq -e '.icons.code == {"pack":"code"}' "$work/exact.json" >/dev/null
+printf ' ' >>"$config/dock-icons.json"
+python3 "$state_helper" read "$config/dock-icons.json" "$config/dock-pinned.json" "$config/dock-settings.json" >"$work/over.json"
+jq -e '.icons == {}' "$work/over.json" >/dev/null
 
-echo "== set --file downloads nothing but maps and rounds the icon"
-if command -v magick >/dev/null; then tool="magick"; else tool="convert"; fi
-"$tool" -size 64x64 xc:red png:"$work/icon.png"
-HOME="$work/home" bash "$helper" set code --file "$work/icon.png"
-test -f "$work/home/.config/omarchy/icons/code.png" || { echo "icon file missing"; exit 1; }
-grep -q '"code"' "$work/home/.config/omarchy/dock-icons.json" || { echo "mapping missing"; exit 1; }
+echo "== malformed, symlink, and FIFO inputs fail closed without blocking"
+printf '{broken' >"$config/dock-icons.json"
+python3 "$state_helper" read "$config/dock-icons.json" "$config/dock-pinned.json" "$config/dock-settings.json" | jq -e '.icons == {}' >/dev/null
+printf '%s\n' '{"outside":{"pack":"games"}}' >"$work/outside.json"
+rm "$config/dock-icons.json"
+ln -s "$work/outside.json" "$config/dock-icons.json"
+python3 "$state_helper" read "$config/dock-icons.json" "$config/dock-pinned.json" "$config/dock-settings.json" | jq -e '.icons == {}' >/dev/null
+if HOME="$test_home" bash "$helper" pack set code files >"$work/symlink-write.log" 2>&1; then
+  echo "mapping writer accepted a symlink" >&2
+  exit 1
+fi
+grep -q 'outside' "$work/outside.json"
+rm "$config/dock-icons.json"
+mkfifo "$config/dock-icons.json"
+python3 "$state_helper" read "$config/dock-icons.json" "$config/dock-pinned.json" "$config/dock-settings.json" | jq -e '.icons == {}' >/dev/null
+rm "$config/dock-icons.json"
 
-echo "== list reports the mapped icon"
-cat > "$work/home/.config/omarchy/alumina-dock-pinned.json" <<'EOF'
-{"version":1,"pinned":["code"],"order":["code"]}
-EOF
-HOME="$work/home" bash "$helper" list | grep -q "^code: code.png$" || { echo "list output wrong"; exit 1; }
+echo "== shaped state enforces record and multibyte field ceilings"
+python3 - "$config/dock-icons.json" "$config/dock-pinned.json" "$config/dock-settings.json" <<'PY'
+import json, sys
+icons, pins, settings = sys.argv[1:]
+with open(icons, "w", encoding="utf-8") as handle:
+    json.dump({f"app-{index}": {"pack": "files"} for index in range(257)}, handle)
+with open(pins, "w", encoding="utf-8") as handle:
+    json.dump({"pinned": [f"app-{index}" for index in range(129)], "order": []}, handle)
+with open(settings, "w", encoding="utf-8") as handle:
+    json.dump({"autoHide": False, "screenName": "é" * 81}, handle)
+PY
+python3 "$state_helper" read "$config/dock-icons.json" "$config/dock-pinned.json" "$config/dock-settings.json" >"$work/shaped.json"
+jq -e '(.icons | length) == 256 and (.pins.pinned | length) == 128 and .settings.autoHide == false' "$work/shaped.json" >/dev/null
+python3 - "$work/shaped.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+assert len(data["settings"]["screenName"].encode("utf-8")) <= 160
+PY
 
-echo "== clear removes the mapping and the file"
-HOME="$work/home" bash "$helper" clear code
-! grep -q '"code"' "$work/home/.config/omarchy/dock-icons.json" || { echo "mapping not cleared"; exit 1; }
-! test -f "$work/home/.config/omarchy/icons/code.png" || { echo "icon file not removed"; exit 1; }
+echo "== list emits only the shaped pinned set"
+printf '%s\n' '{"code":{"pack":"terminal"}}' >"$config/dock-icons.json"
+printf '%s\n' '{"pinned":["code"],"order":["code"]}' >"$config/dock-pinned.json"
+HOME="$test_home" bash "$helper" list | grep -q '^code: Paper Jam terminal$'
+
+echo "== helper controller escalates deadline and unload cancellation to SIGKILL"
+deadline_pid="$work/deadline-child.pid"
+if python3 "$run_helper" 500 100 -- python3 -c 'import os, pathlib, signal, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)' "$deadline_pid" >"$work/deadline.log" 2>&1; then
+  echo "deadline controller accepted a stalled helper" >&2
+  exit 1
+fi
+grep -q 'helper exceeded its deadline' "$work/deadline.log"
+[[ -s $deadline_pid ]]
+if kill -0 "$(<"$deadline_pid")" 2>/dev/null; then
+  echo "deadline controller left its TERM-ignoring child alive" >&2
+  exit 1
+fi
+
+cancel_pid="$work/cancel-child.pid"
+python3 "$run_helper" 10000 100 -- python3 -c 'import os, pathlib, signal, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)' "$cancel_pid" &
+controller_pid=$!
+for _ in {1..100}; do
+  [[ -s $cancel_pid ]] && break
+  sleep 0.02
+done
+[[ -s $cancel_pid ]]
+kill -TERM "$controller_pid"
+if wait "$controller_pid"; then
+  echo "cancelled controller returned success" >&2
+  exit 1
+else
+  status=$?
+  (( status == 143 )) || {
+    echo "cancelled controller returned unexpected status $status" >&2
+    exit 1
+  }
+fi
+if kill -0 "$(<"$cancel_pid")" 2>/dev/null; then
+  echo "cancelled controller left its TERM-ignoring child alive" >&2
+  exit 1
+fi
+
+if [[ $(uname -s) == "Linux" ]]; then
+  echo "== Linux parent-death gate contains SIGKILL before and after readiness"
+  killed_pid="$work/killed-child.pid"
+  python3 "$run_helper" 10000 100 -- python3 -c 'import os, pathlib, signal, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)' "$killed_pid" &
+  killed_controller=$!
+  for _ in {1..100}; do
+    [[ -s $killed_pid ]] && break
+    sleep 0.02
+  done
+  [[ -s $killed_pid ]]
+  kill -KILL "$killed_controller"
+  wait "$killed_controller" 2>/dev/null || true
+  for _ in {1..100}; do
+    ! kill -0 "$(<"$killed_pid")" 2>/dev/null && break
+    sleep 0.02
+  done
+  ! kill -0 "$(<"$killed_pid")" 2>/dev/null || {
+    echo "SIGKILLed controller left a ready child alive" >&2
+    exit 1
+  }
+
+  pre_ready_pid="$work/pre-ready-task.pid"
+  PAPER_JAM_RUN_TEST_GATE_DELAY_MS=600 python3 "$run_helper" 10000 100 -- python3 -c 'import os, pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)' "$pre_ready_pid" &
+  pre_ready_controller=$!
+  pre_ready_child=""
+  for _ in {1..100}; do
+    if [[ -r /proc/$pre_ready_controller/task/$pre_ready_controller/children ]]; then
+      pre_ready_child=$(</proc/$pre_ready_controller/task/$pre_ready_controller/children)
+      pre_ready_child=${pre_ready_child%% *}
+    fi
+    [[ -n $pre_ready_child ]] && break
+    sleep 0.01
+  done
+  [[ -n $pre_ready_child ]]
+  kill -KILL "$pre_ready_controller"
+  wait "$pre_ready_controller" 2>/dev/null || true
+  for _ in {1..150}; do
+    ! kill -0 "$pre_ready_child" 2>/dev/null && break
+    sleep 0.02
+  done
+  ! kill -0 "$pre_ready_child" 2>/dev/null || {
+    echo "SIGKILLed controller left a pre-ready child alive" >&2
+    exit 1
+  }
+  [[ ! -e $pre_ready_pid ]] || {
+    echo "pre-ready task executed without its containment owner" >&2
+    exit 1
+  }
+fi
 
 echo "helper tests passed"

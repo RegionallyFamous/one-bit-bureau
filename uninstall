@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-PLUGIN_ID="io.github.regionallyfamous.alumina"
+PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"
 PRODUCT_NAME="Paper Jam ’84"
 THEME_NAME="paper-jam-84"
 STATE_DIR="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID"
@@ -11,6 +11,16 @@ SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
 THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
 PLUGIN_TARGET="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
+THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
+FONT_TARGET="$HOME/.local/share/fonts/paper-jam-84"
+BRANDING_TARGET="$HOME/.config/omarchy/branding"
+BRANDING_BACKUP_DIR="$STATE_DIR/backups/branding"
+COMMAND_TARGET="$HOME/.local/bin/paper-jam"
+BRANDING_MAX_BYTES=$((1024 * 1024))
+
+if [[ -n ${PAPER_JAM_UNINSTALL_TEMP:-} && $PAPER_JAM_UNINSTALL_TEMP == "${BASH_SOURCE[0]}" ]]; then
+  trap 'rm -f -- "$PAPER_JAM_UNINSTALL_TEMP"' EXIT
+fi
 
 command -v omarchy >/dev/null || {
   echo "Omarchy is unavailable; no changes were made." >&2
@@ -20,22 +30,55 @@ command -v jq >/dev/null || {
   echo "jq is unavailable; no changes were made." >&2
   exit 1
 }
-[[ -f $STATE_FILE ]] || {
+command -v fc-cache >/dev/null || {
+  echo "fontconfig is unavailable; no changes were made." >&2
+  exit 1
+}
+command -v python3 >/dev/null || {
+  echo "Python 3 is unavailable; no changes were made." >&2
+  exit 1
+}
+[[ -f $STATE_FILE && ! -L $STATE_FILE ]] || {
   echo "$PRODUCT_NAME has no ownership record at $STATE_FILE; refusing to remove unowned files." >&2
   exit 1
 }
 
 jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NAME" '
-  .schemaVersion == 1 and
+  .schemaVersion == 2 and
   .pluginId == $id and
   .product == $product and
   .theme == $theme and
   (.pluginOwned | type == "boolean") and
   (.themeOwned | type == "boolean") and
+  (.fontOwned | type == "boolean") and
+  (.brandingOwned | type == "boolean") and
+  (.commandOwned | type == "boolean") and
+  (.installed | type == "object") and
+  (.installed.pluginOrigin | type == "string") and
+  (.installed.pluginCommit | type == "string") and
+  (.installed.themeSourceId | type == "string") and
+  (.installed.themeSourceUrl | type == "string") and
+  (.installed.themeSourceCommit | type == "string") and
+  (
+    if .installed.themeSourceId == "" then
+      .installed.themeSourceUrl == "" and .installed.themeSourceCommit == ""
+    else
+      .themeOwned == true and
+      (.installed.themeSourceId | test("^[a-z0-9]+(-[a-z0-9]+)*-[a-f0-9]{12}$")) and
+      .installed.themeSourceUrl == "https://github.com/RegionallyFamous/paper-jam-84.git" and
+      (.installed.themeSourceCommit | length > 0)
+    end
+  ) and
+  (.installed.fontTreeHash | type == "string") and
+  (.installed.aboutHash | type == "string") and
+  (.installed.screensaverHash | type == "string") and
+  (.installed.commandHash | type == "string") and
   (.previous | type == "object") and
   (.previous.theme | type == "string") and
   (.previous.barPosition | type == "string") and
-  (.previous.barTransparent | type == "boolean")
+  (.previous.barTransparent | type == "boolean") and
+  (.previous.aboutPresent | type == "boolean") and
+  (.previous.screensaverPresent | type == "boolean")
 ' "$STATE_FILE" >/dev/null || {
   echo "$PRODUCT_NAME install-state record is invalid; refusing to remove anything." >&2
   exit 1
@@ -43,9 +86,173 @@ jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NA
 
 PLUGIN_OWNED=$(jq -r '.pluginOwned' "$STATE_FILE")
 THEME_OWNED=$(jq -r '.themeOwned' "$STATE_FILE")
+FONT_OWNED=$(jq -r '.fontOwned' "$STATE_FILE")
+BRANDING_OWNED=$(jq -r '.brandingOwned' "$STATE_FILE")
+COMMAND_OWNED=$(jq -r '.commandOwned' "$STATE_FILE")
+FONT_TREE_HASH=$(jq -r '.installed.fontTreeHash' "$STATE_FILE")
+THEME_SOURCE_ID=$(jq -r '.installed.themeSourceId' "$STATE_FILE")
+THEME_SOURCE_URL=$(jq -r '.installed.themeSourceUrl' "$STATE_FILE")
+ABOUT_HASH=$(jq -r '.installed.aboutHash' "$STATE_FILE")
+SCREENSAVER_HASH=$(jq -r '.installed.screensaverHash' "$STATE_FILE")
+COMMAND_HASH=$(jq -r '.installed.commandHash' "$STATE_FILE")
 PREVIOUS_THEME=$(jq -r '.previous.theme // ""' "$STATE_FILE")
 PREVIOUS_BAR_POSITION=$(jq -r '.previous.barPosition // "top"' "$STATE_FILE")
 PREVIOUS_BAR_TRANSPARENT=$(jq -r '.previous.barTransparent // false' "$STATE_FILE")
+PREVIOUS_ABOUT_PRESENT=$(jq -r '.previous.aboutPresent' "$STATE_FILE")
+PREVIOUS_SCREENSAVER_PRESENT=$(jq -r '.previous.screensaverPresent' "$STATE_FILE")
+
+hash_file() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+safe_copy_regular() {
+  local source="$1" destination="$2" max_bytes="$3"
+  python3 - "$source" "$destination" "$max_bytes" <<'PY'
+import os
+import signal
+import stat
+import sys
+
+source, destination, raw_limit = sys.argv[1:]
+limit = int(raw_limit)
+def deadline(_signum, _frame):
+    raise TimeoutError("bounded restore exceeded its 10-second deadline")
+signal.signal(signal.SIGALRM, deadline)
+signal.alarm(10)
+flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+source_fd = os.open(source, flags)
+try:
+    source_stat = os.fstat(source_fd)
+    if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_size > limit:
+        raise SystemExit(1)
+    chunks = []
+    total = 0
+    while True:
+        chunk = os.read(source_fd, min(65536, limit + 1 - total))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise SystemExit(1)
+        chunks.append(chunk)
+finally:
+    os.close(source_fd)
+
+parent = os.path.dirname(destination)
+name = os.path.basename(destination)
+directory_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
+if hasattr(os, "O_NOFOLLOW"):
+    directory_flags |= os.O_NOFOLLOW
+parent_fd = os.open(parent, directory_flags)
+temporary = f".{name}.paper-jam-{os.getpid()}"
+output_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+if hasattr(os, "O_NOFOLLOW"):
+    output_flags |= os.O_NOFOLLOW
+try:
+    output_fd = os.open(temporary, output_flags, 0o600, dir_fd=parent_fd)
+    try:
+        for chunk in chunks:
+            view = memoryview(chunk)
+            while view:
+                written = os.write(output_fd, view)
+                view = view[written:]
+        os.fsync(output_fd)
+    finally:
+        os.close(output_fd)
+    os.replace(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+finally:
+    try:
+        os.unlink(temporary, dir_fd=parent_fd)
+    except FileNotFoundError:
+        pass
+    os.close(parent_fd)
+PY
+}
+
+safe_hash_regular() {
+  local source="$1" max_bytes="$2"
+  python3 - "$source" "$max_bytes" <<'PY'
+import hashlib
+import os
+import signal
+import stat
+import sys
+
+source, raw_limit = sys.argv[1:]
+limit = int(raw_limit)
+def deadline(_signum, _frame):
+    raise TimeoutError("bounded hash exceeded its 10-second deadline")
+signal.signal(signal.SIGALRM, deadline)
+signal.alarm(10)
+flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+fd = os.open(source, flags)
+digest = hashlib.sha256()
+total = 0
+try:
+    source_stat = os.fstat(fd)
+    if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_size > limit:
+        raise SystemExit(1)
+    while True:
+        chunk = os.read(fd, min(65536, limit + 1 - total))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise SystemExit(1)
+        digest.update(chunk)
+finally:
+    os.close(fd)
+print(digest.hexdigest())
+PY
+}
+
+font_tree_hash() {
+  local directory="$1"
+  [[ -f $directory/DepartureMono-1.500.otf && -f $directory/MonaspaceKryptonNF-Regular-1.400.otf ]] || return 1
+  [[ $(find "$directory" -maxdepth 1 -type f | wc -l | tr -d ' ') == 2 ]] || return 1
+  {
+    hash_file "$directory/DepartureMono-1.500.otf"
+    hash_file "$directory/MonaspaceKryptonNF-Regular-1.400.otf"
+  } | hash_file /dev/stdin
+}
+
+BRANDING_BACKUP_RETAINED=false
+restore_branding_file() {
+  local current="$1" backup="$2" previous_present="$3" installed_hash="$4"
+  local current_hash=""
+  if [[ -L $current || ( -e $current && ! -f $current ) ]]; then
+    BRANDING_BACKUP_RETAINED=true
+    return
+  fi
+  if [[ $previous_present == true && ( ! -f $backup || -L $backup ) ]]; then
+    BRANDING_BACKUP_RETAINED=true
+    return
+  fi
+  if [[ -f $current ]]; then
+    current_hash=$(safe_hash_regular "$current" "$BRANDING_MAX_BYTES" 2>/dev/null || true)
+  fi
+  if [[ $current_hash == "$installed_hash" ]]; then
+    if [[ $previous_present == true ]]; then
+      safe_copy_regular "$backup" "$current" "$BRANDING_MAX_BYTES"
+      rm -f -- "$backup"
+    else
+      rm -f -- "$current"
+    fi
+  elif [[ ! -e $current && ! -L $current && $previous_present == true && -f $backup ]]; then
+    safe_copy_regular "$backup" "$current" "$BRANDING_MAX_BYTES"
+    rm -f -- "$backup"
+  elif [[ $previous_present == true && -f $backup ]]; then
+    BRANDING_BACKUP_RETAINED=true
+  fi
+}
 
 current_theme=""
 if [[ -f $THEME_STATE ]]; then
@@ -53,6 +260,69 @@ if [[ -f $THEME_STATE ]]; then
 fi
 current_position=$(jq -r '.bar.position // "top"' "$SHELL_CONFIG" 2>/dev/null || echo top)
 current_transparent=$(jq -r '.bar.transparent // false' "$SHELL_CONFIG" 2>/dev/null || echo false)
+
+if [[ $current_theme == "$THEME_NAME" && -n $PREVIOUS_THEME ]]; then
+  omarchy theme set "$PREVIOUS_THEME"
+fi
+if [[ $current_position == "top" && $PREVIOUS_BAR_POSITION != "top" ]]; then
+  omarchy bar position "$PREVIOUS_BAR_POSITION"
+fi
+if [[ $current_transparent == "false" && $PREVIOUS_BAR_TRANSPARENT != "false" ]]; then
+  omarchy bar transparent "$PREVIOUS_BAR_TRANSPARENT"
+fi
+
+if [[ $BRANDING_OWNED == "true" ]]; then
+  if [[ -L $BRANDING_TARGET || ( -e $BRANDING_TARGET && ! -d $BRANDING_TARGET ) ]]; then
+    BRANDING_BACKUP_RETAINED=true
+  else
+    restore_branding_file "$BRANDING_TARGET/about.txt" "$BRANDING_BACKUP_DIR/about.txt" "$PREVIOUS_ABOUT_PRESENT" "$ABOUT_HASH"
+    restore_branding_file "$BRANDING_TARGET/screensaver.txt" "$BRANDING_BACKUP_DIR/screensaver.txt" "$PREVIOUS_SCREENSAVER_PRESENT" "$SCREENSAVER_HASH"
+  fi
+fi
+
+if [[ $FONT_OWNED == "true" && -d $FONT_TARGET ]]; then
+  current_font_hash=$(font_tree_hash "$FONT_TARGET" || true)
+  if [[ -n $current_font_hash && $current_font_hash == "$FONT_TREE_HASH" ]]; then
+    rm -rf -- "$FONT_TARGET"
+    fc-cache -f >/dev/null
+  else
+    echo "$PRODUCT_NAME preserved modified files in $FONT_TARGET" >&2
+  fi
+fi
+
+if [[ $THEME_OWNED == "true" ]]; then
+  if [[ -e $THEME_TARGET ]]; then
+    if [[ -n $THEME_SOURCE_ID ]]; then
+      source_path="$THEME_SOURCES_DIR/$THEME_SOURCE_ID"
+      [[ -d $source_path/.git && ! -L $source_path ]] || {
+        echo "$PRODUCT_NAME recorded theme source is missing or unsafe; refusing to detach it." >&2
+        exit 1
+      }
+      actual_source_url=$(git -C "$source_path" config --get remote.origin.url 2>/dev/null || true)
+      [[ $actual_source_url == "$THEME_SOURCE_URL" ]] || {
+        echo "$PRODUCT_NAME recorded theme source URL does not match the installed source; refusing to detach it." >&2
+        exit 1
+      }
+      [[ -L $THEME_TARGET ]] || {
+        echo "$PRODUCT_NAME theme is not linked from its recorded source; refusing to detach it." >&2
+        exit 1
+      }
+      expected_theme_path=$(realpath "$source_path/themes/$THEME_NAME" 2>/dev/null || true)
+      actual_theme_path=$(realpath "$THEME_TARGET" 2>/dev/null || true)
+      [[ -n $expected_theme_path && $actual_theme_path == "$expected_theme_path" ]] || {
+        echo "$PRODUCT_NAME theme link is not owned by its recorded source; refusing to detach it." >&2
+        exit 1
+      }
+      omarchy theme source detach "$THEME_SOURCE_ID" "$THEME_NAME" --json >/dev/null
+    else
+      omarchy theme remove "$THEME_NAME"
+    fi
+  fi
+  [[ ! -e $THEME_TARGET ]] || {
+    echo "$PRODUCT_NAME could not remove its theme; the ownership record was retained." >&2
+    exit 1
+  }
+fi
 
 if [[ $PLUGIN_OWNED == "true" ]]; then
   omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
@@ -65,35 +335,29 @@ if [[ $PLUGIN_OWNED == "true" ]]; then
   }
 fi
 
-if [[ $current_theme == "$THEME_NAME" && -n $PREVIOUS_THEME ]]; then
-  omarchy theme set "$PREVIOUS_THEME"
-fi
-if [[ $current_position == "top" && $PREVIOUS_BAR_POSITION != "top" ]]; then
-  omarchy bar position "$PREVIOUS_BAR_POSITION"
-fi
-if [[ $current_transparent == "false" && $PREVIOUS_BAR_TRANSPARENT != "false" ]]; then
-  omarchy bar transparent "$PREVIOUS_BAR_TRANSPARENT"
-fi
-
-if [[ $THEME_OWNED == "true" ]]; then
-  if [[ -e $THEME_TARGET ]]; then
-    omarchy theme remove "$THEME_NAME"
+if [[ $COMMAND_OWNED == "true" && -f $COMMAND_TARGET ]]; then
+  current_command_hash=$(hash_file "$COMMAND_TARGET")
+  if [[ $current_command_hash == "$COMMAND_HASH" ]]; then
+    rm -f -- "$COMMAND_TARGET"
+  else
+    echo "$PRODUCT_NAME preserved modified command at $COMMAND_TARGET" >&2
   fi
-  [[ ! -e $THEME_TARGET ]] || {
-    echo "$PRODUCT_NAME could not remove its theme; the ownership record was retained." >&2
-    exit 1
-  }
 fi
 
 rm -f "$STATE_FILE"
+rmdir "$BRANDING_BACKUP_DIR" 2>/dev/null || true
+rmdir "$STATE_DIR/backups" 2>/dev/null || true
 rmdir "$STATE_DIR" 2>/dev/null || true
 
 echo
 echo "$PRODUCT_NAME was removed and the settings it still owned were restored."
 echo "User data was retained:"
 echo "  your configured Desktop directory"
-echo "  $HOME/.config/omarchy/alumina-dock-pinned.json"
-echo "  $HOME/.config/omarchy/alumina-dock-settings.json"
-echo "  $HOME/.config/omarchy/desktop-icon-positions.json"
-echo "  $HOME/.config/omarchy/dock-icons.json"
-echo "  $HOME/.config/omarchy/icons"
+echo "  $HOME/.config/omarchy/paper-jam-84/dock-pinned.json"
+echo "  $HOME/.config/omarchy/paper-jam-84/dock-settings.json"
+echo "  $HOME/.config/omarchy/paper-jam-84/desktop-icon-positions.json"
+echo "  $HOME/.config/omarchy/paper-jam-84/dock-icons.json"
+echo "  $HOME/.config/omarchy/paper-jam-84/icons"
+if [[ $BRANDING_BACKUP_RETAINED == true ]]; then
+  echo "  previous branding backup retained at $BRANDING_BACKUP_DIR"
+fi

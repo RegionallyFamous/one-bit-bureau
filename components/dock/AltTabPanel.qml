@@ -104,7 +104,7 @@ PanelWindow {
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.namespace: "alumina-dock-alt-tab"
+  WlrLayershell.namespace: "paper-jam-84-dock-alt-tab"
   WlrLayershell.keyboardFocus: root.active ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
   anchors { top: true; bottom: true; left: true; right: true }
   mask: Region { item: dockSurface }
@@ -194,6 +194,10 @@ PanelWindow {
       focus: true
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) {
+        if (event.modifiers & Qt.MetaModifier) {
+          event.accepted = false
+          return
+        }
         if (event.key === Qt.Key_Escape) {
           root.cancel(); event.accepted = true; return
         }

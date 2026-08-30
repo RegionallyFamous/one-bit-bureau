@@ -35,3 +35,25 @@ test("resolves safe custom icon filenames", () => {
   assert.equal(resolver.customIconFile(icons, "chrome-web.whatsapp.com__-Default"), "whatsapp.webp")
   assert.equal(resolver.customIconFile(icons, "bad"), "")
 })
+
+test("resolves explicit pack and native overrides", () => {
+  const icons = {
+    code: { pack: "terminal" },
+    browser: { mode: "native" },
+    broken: { pack: "not-a-role" }
+  }
+  assert.equal(resolver.customIconPack(icons, "code.desktop"), "terminal")
+  assert.equal(resolver.customIconMode(icons, "browser"), "native")
+  assert.equal(resolver.customIconPack(icons, "broken"), "")
+  assert.equal(resolver.hasCustomOverride(icons, "code"), true)
+  assert.equal(resolver.hasCustomOverride(icons, "browser"), true)
+})
+
+test("associates common Linux apps with Paper Jam roles", () => {
+  assert.equal(resolver.automaticPackRole({ id: "org.gnome.Nautilus" }), "files")
+  assert.equal(resolver.automaticPackRole({ id: "com.mitchellh.ghostty" }), "terminal")
+  assert.equal(resolver.automaticPackRole({ id: "google-chrome" }), "browser")
+  assert.equal(resolver.automaticPackRole({ id: "com.valvesoftware.Steam" }), "games")
+  assert.equal(resolver.automaticPackRole({ id: "md.obsidian.Obsidian" }), "notes")
+  assert.equal(resolver.automaticPackRole({ id: "org.example.Encode" }), "")
+})

@@ -1,0 +1,114 @@
+#!/bin/bash
+
+set -euo pipefail
+
+PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"
+PRODUCT_NAME="Paper Jam ’84"
+THEME_NAME="paper-jam-84"
+EXPECTED_REPO_URL="https://github.com/RegionallyFamous/paper-jam-84.git"
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+STATE_FILE="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
+THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
+THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
+ASSUME_YES=0
+RECONCILE=0
+COMMAND_TARGET="$HOME/.local/bin/paper-jam"
+
+fail() {
+  echo "paper-jam update: $*" >&2
+  exit 1
+}
+
+hash_file() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --yes | -y) ASSUME_YES=1 ;;
+    --reconcile) RECONCILE=1 ;;
+    -h | --help)
+      echo "Usage: paper-jam update [--yes]"
+      exit 0
+      ;;
+    *) fail "unknown option: $1" ;;
+  esac
+  shift
+done
+
+command -v omarchy >/dev/null || fail "Omarchy is required"
+command -v jq >/dev/null || fail "jq is required"
+[[ -d $PLUGIN_DIR/.git ]] || fail "this installation is not Git-managed; reinstall from the public repository"
+[[ -f $STATE_FILE && ! -L $STATE_FILE ]] || fail "ownership record is missing or unsafe"
+jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NAME" --arg repo "$EXPECTED_REPO_URL" '
+  .schemaVersion == 2 and
+  .pluginId == $id and
+  .product == $product and
+  .theme == $theme and
+  .pluginOwned == true and
+  .themeOwned == true and
+  (.installed | type == "object") and
+  .installed.pluginOrigin == $repo and
+  (.installed.pluginCommit | type == "string" and length > 0) and
+  (.installed.themeSourceId | type == "string" and length > 0) and
+  .installed.themeSourceUrl == $repo and
+  (.installed.themeSourceCommit | type == "string" and length > 0) and
+  (.installed.commandHash | type == "string" and length > 0)
+' "$STATE_FILE" >/dev/null || fail "ownership record is invalid or is not a source-owned public installation"
+
+source_id=$(jq -er '.installed.themeSourceId' "$STATE_FILE")
+source_url=$(jq -er '.installed.themeSourceUrl' "$STATE_FILE")
+[[ $source_id =~ ^[a-z0-9]+(-[a-z0-9]+)*-[a-f0-9]{12}$ ]] || fail "recorded theme source ID is invalid"
+source_path="$THEME_SOURCES_DIR/$source_id"
+[[ -d $source_path/.git && ! -L $source_path ]] || fail "recorded theme source checkout is missing or unsafe"
+actual_source_url=$(git -C "$source_path" config --get remote.origin.url 2>/dev/null || true)
+[[ $actual_source_url == "$source_url" && $source_url == "$EXPECTED_REPO_URL" ]] || fail "recorded theme source does not own the installed repository"
+[[ -L $THEME_TARGET ]] || fail "Paper Jam theme is not linked from its recorded source"
+expected_theme_path=$(realpath "$source_path/themes/$THEME_NAME" 2>/dev/null || true)
+actual_theme_path=$(realpath "$THEME_TARGET" 2>/dev/null || true)
+[[ -n $expected_theme_path && $actual_theme_path == "$expected_theme_path" ]] || fail "Paper Jam theme link is not owned by its recorded source"
+
+if (( ! RECONCILE )); then
+  [[ -z $(git -C "$PLUGIN_DIR" status --porcelain) ]] || fail "plugin checkout has local changes; commit or remove them before updating"
+  arguments=(plugin update "$PLUGIN_ID")
+  (( ! ASSUME_YES )) || arguments+=(--yes)
+  omarchy "${arguments[@]}"
+  exec bash "$PLUGIN_DIR/update" --reconcile
+fi
+
+active_theme=""
+theme_state="$HOME/.local/state/omarchy/current/theme.name"
+[[ ! -f $theme_state ]] || active_theme=$(<"$theme_state")
+
+theme_json=$(omarchy theme source update "$source_id" --json) || fail "theme source update failed"
+theme_commit=$(jq -er '.source.commit' <<<"$theme_json") || fail "theme source update returned no commit"
+plugin_commit=$(git -C "$PLUGIN_DIR" rev-parse HEAD)
+[[ $theme_commit == "$plugin_commit" ]] || fail "plugin and theme stopped at different commits; rerun the update"
+
+if [[ $active_theme == "$THEME_NAME" ]]; then
+  omarchy theme set "$THEME_NAME"
+fi
+
+old_command_hash=$(jq -r '.installed.commandHash' "$STATE_FILE")
+new_command_hash="$old_command_hash"
+if [[ -f $COMMAND_TARGET && $(hash_file "$COMMAND_TARGET") == "$old_command_hash" ]]; then
+  command_temporary="$COMMAND_TARGET.tmp"
+  cp -- "$PLUGIN_DIR/paper-jam" "$command_temporary"
+  chmod 755 "$command_temporary"
+  mv "$command_temporary" "$COMMAND_TARGET"
+  new_command_hash=$(hash_file "$COMMAND_TARGET")
+fi
+
+temporary="$STATE_FILE.tmp"
+jq --arg pluginCommit "$plugin_commit" --arg themeCommit "$theme_commit" --arg commandHash "$new_command_hash" '
+  .installed.pluginCommit = $pluginCommit |
+  .installed.themeSourceCommit = $themeCommit |
+  .installed.commandHash = $commandHash
+' "$STATE_FILE" >"$temporary"
+mv "$temporary" "$STATE_FILE"
+
+echo "Paper Jam ’84 is up to date at $plugin_commit."

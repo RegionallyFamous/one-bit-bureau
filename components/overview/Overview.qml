@@ -14,7 +14,7 @@ Item {
 
     property var shell: null
     property var manifest: null
-    readonly property string pluginId: String((root.manifest && root.manifest.id) || "io.github.regionallyfamous.alumina")
+    readonly property string pluginId: String((root.manifest && root.manifest.id) || "io.github.regionallyfamous.paper-jam-84")
     readonly property string pluginDir: String((root.manifest && root.manifest.__sourceDir)
         ? root.manifest.__sourceDir + "/components/overview"
         : (Quickshell.env("HOME") + "/.config/omarchy/plugins/" + root.pluginId + "/components/overview"))
@@ -157,17 +157,12 @@ Item {
     readonly property int previewAnimationDuration: root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 90
     readonly property int previewFadeDuration: root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 70
     readonly property int previewAnimationEasing: Easing.Linear
-    property bool backgroundBlurPrimed: false
-    property bool backgroundBlurFailed: false
     property bool dismissNotifyShell: false
-    // 0 idle, 1 restoring the desktop blur while the surface is transparent.
-    property int backgroundBlurReleasePhase: 0
     property real motionProgress: 0
     property real motionTarget: 0
     // Cards bind to this instead of motionProgress so the animation only
     // notifies them twice, not once per frame.
     readonly property bool motionSettled: root.motionProgress >= 0.999
-    property int lastRequestedBlur: -1
     property var iconCache: ({})
     property int modelRevision: 0
     property var sessionToplevels: []
@@ -228,30 +223,12 @@ Item {
         root.selectedIndex = Math.max(0, root.filteredToplevels.indexOf(Hyprland.activeToplevel));
     }
 
-    onEffectiveBackgroundBlurChanged: {
-        if (!root.surfaceMounted)
-            return;
-        if (!backgroundBlurSession.running && root.effectiveBackgroundBlur > 0 && !root.backgroundBlurFailed) {
-            root.backgroundBlurPrimed = false;
-            backgroundBlurSession.running = true;
-        } else {
-            root.scheduleBackgroundBlurUpdate();
-        }
-    }
-
     function open(payload) {
-        var blurRestoreInFlight = root.backgroundBlurReleasePhase === 1 && backgroundBlurSession.running;
-        if (!blurRestoreInFlight)
-            root.backgroundBlurReleasePhase = 0;
         root.closeSettings();
         root.filterText = "";
         root.workspaceScope = "all";
         root.dismissNotifyShell = false;
         if (root.surfaceMounted) {
-            if (blurRestoreInFlight) {
-                root.openingPending = true;
-                return;
-            }
             root.opened = true;
             root.animateMotionTo(1);
             root.refreshHyprlandState();
@@ -271,14 +248,7 @@ Item {
         root.selectedIndex = Math.max(0, root.filteredToplevels.indexOf(Hyprland.activeToplevel));
         root.hoveredIndex = -1;
         root.clearPreview();
-        root.backgroundBlurPrimed = false;
-        root.backgroundBlurFailed = false;
-        if (root.effectiveBackgroundBlur > 0) {
-            if (!blurRestoreInFlight)
-                backgroundBlurSession.running = true;
-        } else {
-            root.prepareOpenSurface();
-        }
+        root.prepareOpenSurface();
     }
 
     function close() {
@@ -292,8 +262,6 @@ Item {
         root.clearPreview();
         root.opened = false;
         root.dismissNotifyShell = root.dismissNotifyShell || notifyShell;
-        if (root.backgroundBlurReleasePhase > 0)
-            return;
         if (root.surfaceMounted) {
             root.animateMotionTo(0);
             return;
@@ -301,9 +269,6 @@ Item {
         overviewMotionAnimation.stop();
         root.motionTarget = 0;
         root.motionProgress = 0;
-        root.backgroundBlurPrimed = false;
-        root.backgroundBlurReleasePhase = 0;
-        backgroundBlurSession.running = false;
         root.clearOverviewScreen();
         root.finishDismiss();
     }
@@ -316,31 +281,9 @@ Item {
         (root.opened || root.openingPending) ? root.dismiss() : root.open("{}");
     }
 
-    function requestedBackgroundBlur() {
-        return Math.max(0, Math.round(root.effectiveBackgroundBlur));
-    }
-
-    function writeBackgroundBlur(size) {
-        backgroundBlurSession.write(String(size) + "\n");
-    }
-
-    function scheduleBackgroundBlurUpdate() {
-        if (backgroundBlurSession.running && !backgroundBlurUpdate.running)
-            backgroundBlurUpdate.start();
-    }
-
     function prepareOpenSurface() {
         if (!root.openingPending)
             return;
-        if (root.effectiveBackgroundBlur > 0 && !root.backgroundBlurFailed) {
-            if (!backgroundBlurSession.running) {
-                root.backgroundBlurPrimed = false;
-                backgroundBlurSession.running = true;
-                return;
-            }
-            if (!root.backgroundBlurPrimed)
-                return;
-        }
         if (!root.overviewScreenPinned)
             root.overviewScreenName = root.focusedMonitorName || root.keyboardScreenName;
         root.surfaceMounted = true;
@@ -388,15 +331,7 @@ Item {
     function completeMotion() {
         root.motionProgress = root.motionTarget;
         if (root.motionTarget > 0) {
-            root.scheduleBackgroundBlurUpdate();
             Qt.callLater(root.focusKeyboardWindow);
-            return;
-        }
-        backgroundBlurUpdate.stop();
-        if (backgroundBlurSession.running) {
-            root.backgroundBlurReleasePhase = 1;
-            root.backgroundBlurPrimed = false;
-            backgroundBlurSession.write("close\n");
             return;
         }
         root.releaseBlurredSurface();
@@ -404,9 +339,7 @@ Item {
 
     function releaseBlurredSurface() {
         root.surfaceMounted = false;
-        root.backgroundBlurPrimed = false;
         root.clearOverviewScreen();
-        root.backgroundBlurReleasePhase = 0;
         root.finishDismiss();
     }
 
@@ -1313,6 +1246,10 @@ Item {
     }
 
     function handleKey(event, layout) {
+        if (event.modifiers & Qt.MetaModifier) {
+            event.accepted = false;
+            return;
+        }
         if (root.settingsOpen) {
             if (event.key === Qt.Key_Escape) {
                 if (root.footerHideConfirmationOpen)
@@ -1423,97 +1360,11 @@ Item {
     }
 
     Timer {
-        id: backgroundBlurUpdate
-        interval: 16
-        onTriggered: {
-            if (!backgroundBlurSession.running)
-                return;
-            var requested = root.requestedBackgroundBlur();
-            if (requested === root.lastRequestedBlur)
-                return;
-            root.lastRequestedBlur = requested;
-            root.writeBackgroundBlur(requested);
-        }
-    }
-
-    Timer {
         id: hotCornerRearm
         interval: 100
         onTriggered: {
             if (!root.hotCornerHovered())
                 root.hotCornerArmed = true;
-        }
-    }
-
-    Process {
-        id: backgroundBlurSession
-        command: ["/bin/bash", root.pluginDir + "/background-blur-session"]
-        stdinEnabled: true
-        onStarted: {
-            var initialBlur = root.requestedBackgroundBlur();
-            root.lastRequestedBlur = initialBlur;
-            root.writeBackgroundBlur(initialBlur);
-        }
-        stdout: SplitParser {
-            onRead: function (line) {
-                var applied = Number(line);
-                if (!isFinite(applied))
-                    return;
-                if (applied < 0) {
-                    if (root.backgroundBlurReleasePhase > 0) {
-                        root.backgroundBlurReleasePhase = 0;
-                        backgroundBlurSession.running = false;
-                        if (root.surfaceMounted) {
-                            root.surfaceMounted = false;
-                            root.backgroundBlurPrimed = false;
-                            root.clearOverviewScreen();
-                        }
-                        if (root.openingPending) {
-                            root.backgroundBlurFailed = true;
-                            root.prepareOpenSurface();
-                        } else {
-                            root.finishDismiss();
-                        }
-                        return;
-                    }
-                    root.backgroundBlurFailed = true;
-                    root.prepareOpenSurface();
-                    return;
-                }
-                if (applied === 0 && root.backgroundBlurReleasePhase === 1) {
-                    root.backgroundBlurReleasePhase = 0;
-                    if (root.openingPending) {
-                        root.lastRequestedBlur = root.requestedBackgroundBlur();
-                        root.writeBackgroundBlur(root.lastRequestedBlur);
-                    } else {
-                        backgroundBlurSession.running = false;
-                        root.releaseBlurredSurface();
-                    }
-                    return;
-                }
-                if (root.openingPending) {
-                    root.backgroundBlurReleasePhase = 0;
-                    root.backgroundBlurPrimed = true;
-                    root.prepareOpenSurface();
-                }
-            }
-        }
-        onExited: function (exitCode, exitStatus) {
-            root.backgroundBlurPrimed = false;
-            root.lastRequestedBlur = -1;
-            if (root.backgroundBlurReleasePhase > 0) {
-                root.backgroundBlurReleasePhase = 0;
-                if (root.surfaceMounted) {
-                    root.surfaceMounted = false;
-                    root.clearOverviewScreen();
-                }
-                if (!root.surfaceMounted && !root.openingPending)
-                    root.finishDismiss();
-            }
-            if (root.openingPending) {
-                root.backgroundBlurFailed = true;
-                root.prepareOpenSurface();
-            }
         }
     }
 
@@ -1530,13 +1381,13 @@ Item {
                 root.selectedIndex = index;
         }
         function onRawEvent(event) {
-            if (event && event.name === "custom" && event.data === "regionallyfamous.alumina.overview:toggle")
+            if (event && event.name === "custom" && event.data === "regionallyfamous.paper-jam-84.overview:toggle")
                 root.toggle();
         }
     }
 
     IpcHandler {
-        target: "regionallyfamous.alumina.overview"
+        target: "regionallyfamous.paper-jam-84.overview"
         function open(): string {
             // Must not be root.toggle(): that makes "open" a duplicate of
             // "toggle", so calling open on an already-open overview closes it.
@@ -1710,7 +1561,7 @@ Item {
                 }
             }
             exclusionMode: ExclusionMode.Ignore
-            WlrLayershell.namespace: "alumina-overview-hot-corner"
+            WlrLayershell.namespace: "paper-jam-84-overview-hot-corner"
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.exclusiveZone: -1
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -1744,7 +1595,7 @@ Item {
             }
             color: Color.background
             exclusionMode: ExclusionMode.Ignore
-            WlrLayershell.namespace: "alumina-window-overview"
+            WlrLayershell.namespace: "paper-jam-84-window-overview"
             WlrLayershell.layer: WlrLayer.Overlay
             HyprlandWindow.opacity: root.motionProgress
             BackgroundEffect.blurRegion: null

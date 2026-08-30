@@ -1,6 +1,8 @@
 #!/bin/bash
 
 # omarchy-test-lab:timeout=300
+# The Test Lab installs this file as test/acceptance.d/plugin-test.sh beside
+# Omarchy's base-test.sh and stages this repository at fixtures/plugin.
 
 set -Eeuo pipefail
 
@@ -104,11 +106,46 @@ omarchy plugin enable "$PLUGIN_ID" --section left --after omarchy.menu >/dev/nul
 wait_until "Paper Jam is enabled" 15 \
   bash -c "omarchy plugin list --json | jq -e --arg id '$PLUGIN_ID' 'any(.[]; .id == \$id and .enabled)'"
 wait_until "Paper Jam desktop files are mounted" 20 layer_on_screen desktop-icons
-wait_until "Paper Jam dock is mounted" 20 layer_on_screen alumina-dock
-wait_until "Paper Jam overview hot corner is resident" 20 layer_on_screen alumina-overview-hot-corner
-omarchy-shell regionallyfamous.alumina.dock setAutoHide false >/dev/null
+wait_until "Paper Jam dock is mounted" 20 layer_on_screen paper-jam-84-dock
+wait_until "Paper Jam overview hot corner is resident" 20 layer_on_screen paper-jam-84-overview-hot-corner
+omarchy-shell regionallyfamous.paper-jam-84.dock setAutoHide false >/dev/null
 wait_until "Paper Jam dock auto-hide is disabled for visual proof" 10 \
-  bash -c "[[ \$(omarchy-shell regionallyfamous.alumina.dock getAutoHide) == 'false' ]]"
+  bash -c "[[ \$(omarchy-shell regionallyfamous.paper-jam-84.dock getAutoHide) == 'false' ]]"
+
+run_helper="$PLUGIN_DIR/components/dock/scripts/paper-jam-run"
+kill_ready_pid_file="$ARTIFACTS/paper-jam-kill-ready.pid"
+python3 "$run_helper" 10000 100 -- python3 -c 'import os, pathlib, signal, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)' "$kill_ready_pid_file" &
+kill_ready_controller=$!
+for _ in {1..100}; do
+  [[ -s $kill_ready_pid_file ]] && break
+  sleep 0.02
+done
+[[ -s $kill_ready_pid_file ]] || fail "Paper Jam containment reaches its ready gate"
+kill_ready_child=$(<"$kill_ready_pid_file")
+kill -KILL "$kill_ready_controller"
+wait "$kill_ready_controller" 2>/dev/null || true
+wait_until "Paper Jam kernel containment reaps a ready task after controller SIGKILL" 10 \
+  bash -c "! kill -0 '$kill_ready_child' 2>/dev/null"
+
+pre_ready_pid_file="$ARTIFACTS/paper-jam-kill-before-ready.pid"
+PAPER_JAM_RUN_TEST_GATE_DELAY_MS=600 python3 "$run_helper" 10000 100 -- python3 -c 'import os, pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)' "$pre_ready_pid_file" &
+pre_ready_controller=$!
+pre_ready_child=""
+for _ in {1..100}; do
+  if [[ -r /proc/$pre_ready_controller/task/$pre_ready_controller/children ]]; then
+    pre_ready_child=$(</proc/$pre_ready_controller/task/$pre_ready_controller/children)
+    pre_ready_child=${pre_ready_child%% *}
+  fi
+  [[ -n $pre_ready_child ]] && break
+  sleep 0.01
+done
+[[ -n $pre_ready_child ]] || fail "Paper Jam exposes the pre-ready containment fixture"
+kill -KILL "$pre_ready_controller"
+wait "$pre_ready_controller" 2>/dev/null || true
+wait_until "Paper Jam fail-closed gate reaps a pre-ready task after controller SIGKILL" 10 \
+  bash -c "! kill -0 '$pre_ready_child' 2>/dev/null"
+[[ ! -e $pre_ready_pid_file ]] || fail "Paper Jam never executes a task whose containment owner died before readiness"
+pass "Paper Jam contains controller death before and after readiness"
 
 omarchy theme set paper-jam-84 >/dev/null
 wait_until "Paper Jam ’84 is active" 30 \
@@ -127,20 +164,34 @@ sleep 3
 omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 
 omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
-wait_until "Paper Jam overview opens" 20 layer_on_screen alumina-window-overview
+wait_until "Paper Jam overview opens" 20 layer_on_screen paper-jam-84-window-overview
 wait_until "Paper Jam overview instructions paint" 20 screen_contains "navigate"
 sleep 2
 screenshot "success-paper-jam-02-overview"
 
 omarchy-shell shell hide "$PLUGIN_ID" >/dev/null
-wait_until "Paper Jam overview layer closes" 20 layer_absent alumina-window-overview
+wait_until "Paper Jam overview layer closes" 20 layer_absent paper-jam-84-window-overview
 wait_until "Paper Jam overview pixels clear" 10 screen_lacks "navigate"
 
+cp "$FIXTURE/test/stubborn-state-helper.py" "$PLUGIN_DIR/components/dock/scripts/paper-jam-state"
+stubborn_pid_file="$HOME/.config/omarchy/paper-jam-84/stubborn-state-helper.pid"
+for _ in {1..100}; do
+  [[ -s $stubborn_pid_file ]] && break
+  sleep 0.02
+done
+[[ -s $stubborn_pid_file ]] || fail "Paper Jam starts the active-unload containment fixture"
+stubborn_pid=$(<"$stubborn_pid_file")
 omarchy plugin disable "$PLUGIN_ID" >/dev/null
-wait_until "Paper Jam dock unloads" 20 layer_absent alumina-dock
+wait_until "Paper Jam dock unloads" 20 layer_absent paper-jam-84-dock
 wait_until "Paper Jam desktop service unloads" 20 layer_absent desktop-icons
-wait_until "Paper Jam hot corner unloads" 20 layer_absent alumina-overview-hot-corner
-hyprctl -j binds | jq -e 'all(.[]; ((.command // "") + " " + (.arg // "")) | contains("regionallyfamous.alumina.dock") | not)' >/dev/null || fail "Paper Jam leaves no dead global app-switcher bindings"
+wait_until "Paper Jam hot corner unloads" 20 layer_absent paper-jam-84-overview-hot-corner
+wait_until "Paper Jam reaps an active TERM-ignoring helper on unload" 10 \
+  bash -c "! kill -0 '$stubborn_pid' 2>/dev/null"
+if pgrep -f "paper-jam-run.*$PLUGIN_DIR" >/dev/null 2>&1; then
+  fail "Paper Jam leaves no helper controller behind after unload"
+fi
+pass "Paper Jam contains and reaps active helpers on unload"
+hyprctl -j binds | jq -e 'all(.[]; ((.command // "") + " " + (.arg // "")) | contains("regionallyfamous.paper-jam-84.dock") | not)' >/dev/null || fail "Paper Jam leaves no dead global app-switcher bindings"
 pass "Paper Jam leaves global app-switcher bindings untouched"
 screenshot "success-paper-jam-03-disabled-stock-shell"
 

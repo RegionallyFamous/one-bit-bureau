@@ -10,3 +10,12 @@ Paper Jam ’84 combines four MIT-licensed Omarchy plugins into one maintained e
 | Active application widget | https://github.com/crmne/omarchy-active-window | `b4cedda42d75d28a1960e93f10d0e9ce74ca9f9c` | Copyright 2026 Carmine Paolino |
 
 Bundle-specific changes include unified IDs and storage paths, interpreter-explicit helper launches, companion theme integration, Object-First Raster behavior and surface styling, and documentation. The Bitmap Workbench wallpaper and generic desktop-object atlas are original ImageGen-assisted raster artwork; their untouched generated masters, prompts, and reduced runtime assets are retained under `artwork/` and `components/desktop/assets/`. The plugin icon remains original project artwork under `components/overview/assets/`. No Apple source code, logos, icons, fonts, desktop patterns, sounds, or wallpaper artwork are included.
+
+Paper Jam also redistributes two unmodified fonts from their tagged upstream releases:
+
+| Font | Version | License | Upstream |
+|---|---:|---|---|
+| Departure Mono | 1.500 | MIT | https://github.com/rektdeckard/departure-mono |
+| Monaspace Krypton NF | 1.400 | SIL Open Font License 1.1 | https://github.com/githubnext/monaspace |
+
+The exact license texts, binary checksums, and fontconfig family names are recorded under `fonts/`. These fonts are independent third-party works; Paper Jam claims no authorship over them.

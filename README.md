@@ -1,29 +1,37 @@
 # Paper Jam ’84
 
-Paper Jam ’84 is one installable Omarchy experience: real desktop files, a bottom application dock, a searchable window overview, active-application context in the top rail, and one matching `paper-jam-84` native theme.
+Paper Jam ’84 is one installable Omarchy experience: real desktop files, a bottom application dock, a searchable window overview, active-application context in the top bar, a native theme, original bitmap branding, a bundled app-icon pack, and two legally redistributable retro monospace fonts.
 
-It borrows the original Macintosh interface method rather than Apple’s artwork or exact trade dress. Select the object before acting, keep spatial landmarks stable, show immediate feedback, leave unavailable commands discoverable, and make the safe action obvious. The visual system uses original raster artwork, opaque paper-and-carbon surfaces, square geometry, restrained modern color, and a two-color illustrated workbench.
+It borrows the original Macintosh interface method rather than Apple artwork or exact trade dress. Select the object before acting, keep spatial landmarks stable, show immediate feedback, leave unavailable commands discoverable, and make the safe action obvious. The visual system uses original raster artwork, opaque paper-and-carbon surfaces, square geometry, and a two-color illustrated workbench.
 
-The tested modern Alumina edition remains preserved at the `alumina-modern-v1` Git tag. Paper Jam keeps the internal plugin ID `io.github.regionallyfamous.alumina`, IPC targets, layer namespaces, and existing `alumina-*` state filenames so upgrades do not discard user state.
+![The twelve original Paper Jam app-role icons](docs/app-icon-pack.png)
+
+The earlier modern Alumina edition remains preserved at the `alumina-modern-v1` Git tag. This unpublished vintage product now has a clean public identity throughout: repository `RegionallyFamous/paper-jam-84`, plugin ID `io.github.regionallyfamous.paper-jam-84`, and namespaced runtime state under `~/.config/omarchy/paper-jam-84/`. Setup non-destructively copies any local Alumina-era pins, settings, icon mappings, icon files, and desktop positions forward when the new destination does not already exist.
 
 ## What is included
 
-- Real files and folders from the configured XDG Desktop directory on every display, with single-click selection, double-click open, keyboard opening, drag/drop, Trash, safe launcher confirmation, persistent positions, and original bitmap object icons—including a dedicated picture-file icon instead of live photo thumbnails.
-- A bottom application dock seeded with Files, Chromium, and Foot, plus running indicators, auto-hide, pinning, reordering, custom icons, window previews, and an optional app-switcher HUD.
-- A searchable, keyboard-navigable contact-sheet window overview with live previews and a top-left hot corner.
-- The active application owner and secondary window title beside the Omarchy menu.
-- The `paper-jam-84` native theme, with an original two-color 4K Bitmap Workbench wallpaper and fully opaque square shell surfaces.
-- Preserved ImageGen masters, prompts, and deterministic raster reductions under `artwork/`.
+- Real files and folders from the configured XDG Desktop directory on every display, with selection, keyboard opening, drag/drop, Trash, safe launcher confirmation, persistent positions, and original bitmap object icons—including a dedicated picture-file icon rather than a literal photo tile.
+- A bottom dock with launch/focus, running indicators, auto-hide, pinning, reordering, previews, one-output ownership, and an optional app-switcher HUD.
+- Twelve original offline Paper Jam app-role icons, automatic matching for common Linux desktop IDs, manual association, an explicit native-icon override, and compatibility with migrated local icon mappings.
+- A searchable, keyboard-navigable contact-sheet overview with live window previews and a top-left hot corner.
+- A native bar widget placed beside the Omarchy menu; Paper Jam leaves the rest of Omarchy’s top bar intact.
+- The `paper-jam-84` theme with a 4K Bitmap Workbench background, opaque square shell surfaces, and a branded unlock mark plus honest 1920×1080 unlock preview.
+- Original About and screensaver text branding generated through Omarchy’s own image-to-text pipeline.
+- Monaspace Krypton NF 1.400 and Departure Mono 1.500, with exact upstream licenses and SHA-256 checksums under `fonts/`.
 
-The product contract and provenance guardrails live in [docs/DIRECTION.md](docs/DIRECTION.md). Imported-code provenance lives in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The product contract and provenance guardrails live in [docs/DIRECTION.md](docs/DIRECTION.md). Imported-code and font provenance lives in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## Install
+## Install: Git and Omarchy, no pipe-to-shell
 
-The public repository must ship Paper Jam on its default branch before remote installation is offered. The setup script refuses to install a different checked-out branch through a default-branch clone, preventing a partial or mismatched experience.
+Paper Jam uses Omarchy’s own validated Git plugin flow, then adopts that disabled checkout to install the matching source-owned theme and reversible companion assets:
 
-Paper Jam targets the current Omarchy Quattro plugin API and relies on Omarchy’s default runtime tools (`python3` with Gio bindings, `grim`, ImageMagick, `hyprctl`, `jq`, and `timeout`). The final supported-release claim remains gated on the disposable x86_64 runtime run described below.
+```bash
+omarchy plugin add https://github.com/RegionallyFamous/paper-jam-84.git --yes && bash "$HOME/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/setup" --adopt-plugin
+```
 
-Disable the standalone `henri.desktop-icons`, `crmne.active-window`, `expose.window-overview`, and `rosakodu.dock` plugins before setup. Paper Jam replaces those four surfaces as one coordinated package, and setup refuses an enabled conflict instead of silently producing a partial or doubled shell.
+This keeps the source auditable in a normal Git checkout, uses Omarchy’s manifest validator before any Paper Jam code runs, and avoids downloading an opaque bootstrap script. The first command leaves the validated plugin disabled; setup then presents one explicit unsandboxed-plugin warning and lists the system changes before it enables anything. Declining removes that disabled checkout. After independently reviewing the repository, a noninteractive install may append `--yes` to the setup command. Setup also verifies the canonical repository identity and commit, refuses enabled standalone replacements, records exact ownership, and rolls back a partial transaction.
+
+Paper Jam targets the current Omarchy Quattro plugin API and relies on Omarchy’s default runtime tools (`python3` with Gio bindings, `hyprctl`, `jq`, Git, coreutils, and fontconfig). Disable `henri.desktop-icons`, `crmne.active-window`, `expose.window-overview`, and `rosakodu.dock` first; setup refuses an enabled conflict instead of silently doubling shell surfaces.
 
 For development from this checkout:
 
@@ -31,80 +39,91 @@ For development from this checkout:
 bash setup --local
 ```
 
-Setup stages a minimal plugin payload, removes repository/test debris, validates it, and atomically moves it into place. It then installs the one matching theme, enables the active-application widget, puts the bar at the top, makes it opaque, applies the theme, and creates the already-configured XDG Desktop directory when needed. It does not rewrite `XDG_DESKTOP_DIR`.
+## What setup changes
 
-Setup refuses existing plugin/theme collisions and records exactly what it created plus the previous theme and bar settings. A failure rolls back the partial install. Uninstall restores a previous setting only while Paper Jam still owns its current value.
+- Installs and enables `io.github.regionallyfamous.paper-jam-84` with its native bar widget in the left section after `omarchy.menu`.
+- Installs `paper-jam-84` through Omarchy’s theme-source ownership system, puts the bar at the top, makes it opaque, and applies the theme.
+- Installs both bundled fonts under `~/.local/share/fonts/paper-jam-84/` and refreshes fontconfig, without selecting a font or rewriting terminal configuration.
+- Backs up and applies Paper Jam About/screensaver branding. Removal restores the exact prior bytes only while Paper Jam still owns the active files; a later user edit is preserved.
+- Installs the `paper-jam` coordinator into `~/.local/bin/` and creates the already-configured XDG Desktop directory when needed. It does not rewrite `XDG_DESKTOP_DIR`, Hyprland bindings, or input policy.
+- Ships unlock branding inside the theme but does not run privileged Plymouth/initramfs commands. Choose it through Omarchy’s Style → Unlock surface when desired.
 
-## Familiar controls
+## The Paper Jam command
 
-| Intent | Paper Jam / Omarchy control |
+```bash
+paper-jam status
+paper-jam update
+paper-jam remove
+paper-jam overview
+paper-jam icon pack list
+paper-jam icon pack set org.gnome.Nautilus files
+paper-jam icon native firefox
+paper-jam icon auto firefox
+paper-jam font list
+paper-jam font use krypton
+```
+
+`paper-jam update` updates only this Git-managed plugin and its recorded theme source, checks that both reach the same commit, and reapplies the theme only when it was already active. `paper-jam font use krypton` delegates to Omarchy’s supported font setter; Krypton is the recommended whole-desktop choice because it includes Nerd Font symbols. Departure Mono is the more aggressively pixel-shaped alternate and does not include those symbols.
+
+## Omarchy navigation remains Omarchy navigation
+
+Paper Jam adds mouse-friendly discovery without replacing Omarchy’s keyboard-first model. Focused Paper Jam surfaces explicitly pass every `Super`-modified chord through to the compositor, so the native tiling, workspace, grouping, popped-window, fullscreen, and scratchpad commands remain authoritative.
+
+| Intent | Control |
 |---|---|
-| Select a desktop object | Single click |
-| Open a desktop object | Double-click, or select it and press `Return` |
-| Launch an application | `Super + Space` |
-| Switch windows | Omarchy’s existing `Alt + Tab` behavior |
-| Show all windows | Move to the top-left hot corner, or run `omarchy-shell shell toggle io.github.regionallyfamous.alumina '{}'` |
-| Preview a selected window | Press `Space` in the overview |
-| Quick Look a selected file | Press `Space` in Files |
-| Change wallpaper | `Super + Ctrl + Space` |
-| Open system controls | Use the right side of the top rail |
-| Move between workspaces | Omarchy workspace shortcuts |
+| Omarchy menu | `Super + Space` |
+| Terminal / browser | `Super + Return` / `Super + Shift + Return` |
+| Move focus / swap windows | `Super + Arrow` / `Super + Shift + Arrow` |
+| Toggle stack, float, fullscreen | `Super + J`, `Super + T`, `Super + F` |
+| Toggle workspace layout / group / popped window | `Super + L`, `Super + G`, `Super + O` |
+| Scratchpad | `Super + Grave` or `Super + S` |
+| Select / open a desktop object | Single click; then `Return`, or double-click |
+| Show all windows | Top-left hot corner or `paper-jam overview` |
+| Preview a selected overview window | `Space` |
+| Change background | `Super + Ctrl + Space` |
 
-## Optional persistent bindings
-
-Paper Jam deliberately does not replace global Alt+Tab bindings at runtime. That keeps disabling or removing the plugin from leaving dead compositor shortcuts. To opt into its app-switcher HUD on `Alt + Grave`, add this to `~/.config/hypr/bindings.lua`:
+Paper Jam does not replace global Alt+Tab. An optional Paper Jam HUD can live on the non-conflicting `Alt + Grave` chord by adding this user-owned snippet to `~/.config/hypr/bindings.lua`:
 
 ```lua
-o.bind("ALT + GRAVE", "Paper Jam app switcher next", "omarchy-shell -q regionallyfamous.alumina.dock altTabNext")
-o.bind("ALT + SHIFT + GRAVE", "Paper Jam app switcher previous", "omarchy-shell -q regionallyfamous.alumina.dock altTabPrev")
+o.bind("ALT + GRAVE", "Paper Jam app switcher next", "omarchy-shell -q regionallyfamous.paper-jam-84.dock altTabNext")
+o.bind("ALT + SHIFT + GRAVE", "Paper Jam app switcher previous", "omarchy-shell -q regionallyfamous.paper-jam-84.dock altTabPrev")
 ```
 
-For a persistent overview shortcut:
+An optional overview binding can use `Ctrl + Up` without taking a `Super` chord:
 
 ```lua
-o.bind("CTRL + UP", "Paper Jam window overview", hl.dsp.event("regionallyfamous.alumina.overview:toggle"))
+o.bind("CTRL + UP", "Paper Jam window overview", hl.dsp.event("regionallyfamous.paper-jam-84.overview:toggle"))
 ```
 
-Then run `hyprctl reload`.
+## Official Omarchy contracts covered
 
-Paper Jam also leaves `~/.config/hypr/input.lua` alone. Natural scrolling, click-finger behavior, and workspace gestures remain the user’s input-policy choice.
+Paper Jam follows the documented native boundaries for [themes](https://omarchy.org/manual/themes/), [backgrounds](https://omarchy.org/manual/backgrounds/), [branding](https://omarchy.org/manual/branding/), [fonts](https://omarchy.org/manual/fonts/), [the top bar](https://omarchy.org/manual/the-top-bar/), and [navigation](https://omarchy.org/manual/navigation/). Theme colors drive Omarchy’s normal app and shell templates; backgrounds remain selectable; unlock assets use the documented filenames; the bar widget uses native placement and `shell.json`; fonts remain fontconfig/Omarchy-managed; and Paper Jam does not seize the system’s navigation language.
 
 ## Network and permissions
 
-The plugin runs with the current user’s shell privileges. It reads the configured Desktop directory, writes desktop-position and dock-state files under `~/.config/omarchy/`, launches selected files through Gio, and calls standard Omarchy/Hyprland helpers. Copied `.desktop` launchers remain untrusted unless they came from canonical application directories; trusting one requires the explicit confirmation surface.
+The plugin runs with the current user’s shell privileges. It reads the configured Desktop directory, writes user state only under `~/.config/omarchy/paper-jam-84/`, launches selected files through Gio, and calls standard Omarchy/Hyprland helpers. Copied `.desktop` launchers remain untrusted unless they came from canonical application directories; trusting one requires explicit confirmation.
 
-The optional dock icon search contacts macOSicons.com only after the user opens Manage Icons and searches. Applying an arbitrary icon URL downloads the selected image into the user’s Omarchy icon directory. No network call is required for normal dock, desktop, overview, or theme operation.
+The bundled app-icon pack and automatic associations work entirely offline. Manage Icons filters the twelve original Paper Jam roles locally and can switch any app back to its native icon. Paper Jam does not send app names to an icon service or download third-party artwork.
 
 ## Known boundaries
 
-- The dock owns one persisted output and keeps every dock surface on that output. Set it with `omarchy-shell regionallyfamous.alumina.dock setScreen DP-1`; if that output disconnects, Paper Jam safely falls back to the first available output and returns when it reconnects.
-- Linux client-side decorations remain application-owned, so the plugin cannot make every title bar match.
-- The dock is a modern launcher translated into the Paper Jam system, not a claim of historical 1984 behavior.
-- Runtime release evidence still requires the disposable x86_64 Omarchy guest; the PNGs under `docs/` are clearly labeled static design proofs.
+- The dock owns one persisted output. Set it with `paper-jam dock setScreen DP-1`; if that output disconnects, Paper Jam falls back safely and returns when it reconnects.
+- Linux client-side decorations remain application-owned, so no shell plugin can make every title bar match.
+- The dock is a modern launcher translated into Paper Jam’s object-first system, not a claim of historical 1984 behavior.
+- PNGs under `docs/` are labeled static design proofs. Public runtime claims remain gated on the disposable x86_64 Omarchy acceptance run and captures from the exact release artifact.
 
 ## Validate
-
-From this checkout:
 
 ```bash
 bash tests/static.sh
 ```
 
-The local gate covers manifest validation, shell/helper syntax, desktop trust/path policy tests, dock model and lifecycle-contract tests, strict theme validation, template rendering, source safety, and unresolved legacy identities. A public release also requires `bash test/omarchy-acceptance.sh` inside the disposable x86_64 Omarchy guest and real runtime captures from the exact release artifact.
+The local gate covers manifest and source safety, helper syntax, desktop trust/path policy, dock lifecycle and app association, setup/uninstall rollback, branding/font ownership, namespace migration, strict theme validation, headless template rendering, and navigation pass-through contracts. The graphical gate is `bash test/omarchy-acceptance.sh` inside the disposable x86_64 Omarchy guest.
 
-## Update and remove
-
-Git-managed public installs update through Omarchy’s normal plugin and theme update commands after the release repository exists:
+## Remove
 
 ```bash
-omarchy plugin update io.github.regionallyfamous.alumina
-omarchy theme update
+paper-jam remove
 ```
 
-Remove an installation created by the setup script with:
-
-```bash
-bash uninstall
-```
-
-Uninstall refuses to remove anything without a valid ownership record. It preserves Desktop files, dock pins, custom icons, and desktop positions, and restores only Paper Jam-owned theme/bar changes that the user has not since changed.
+Removal is ownership-aware. It restores prior theme, bar, and branding state only while Paper Jam still owns the active value; detaches only the theme child owned by the recorded Git source; removes unmodified bundled fonts and command; and preserves Desktop files, pins, icon choices, custom icons, and desktop positions.

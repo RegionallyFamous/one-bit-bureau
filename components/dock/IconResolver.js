@@ -12,6 +12,23 @@ var FALLBACK_MAP = {
     "omarchy-discord": "Discord"
 }
 
+var PACK_ALIASES = {
+    files: ["nautilus", "dolphin", "thunar", "pcmanfm", "nemo", "cosmic files", "file manager"],
+    terminal: ["foot", "kitty", "alacritty", "ghostty", "wezterm", "konsole", "kgx", "gnome console", "xterm"],
+    browser: ["chromium", "chrome", "firefox", "brave", "vivaldi", "epiphany", "helium", "zen browser"],
+    code: ["code", "codium", "cursor", "zed", "sublime text", "intellij", "pycharm", "webstorm", "neovim"],
+    mail: ["thunderbird", "geary", "evolution", "mailspring", "proton mail"],
+    chat: ["discord", "slack", "signal", "telegram", "mattermost", "element", "whatsapp"],
+    music: ["spotify", "rhythmbox", "lollypop", "amberol", "strawberry", "audacious", "music"],
+    video: ["vlc", "mpv", "celluloid", "clapper", "totem", "obs studio", "video"],
+    calendar: ["calendar", "morgen", "fantastical"],
+    settings: ["settings", "control center", "pavucontrol", "blueman", "nwg look"],
+    games: ["steam", "lutris", "heroic", "bottles", "games"],
+    notes: ["obsidian", "logseq", "joplin", "standard notes", "notes"]
+}
+
+var PACK_ROLES = Object.keys(PACK_ALIASES)
+
 function sanitizeName(value) {
     return String(value || "").replace(/\.desktop$/i, "").replace(/[-_]+/g, " ").trim()
 }
@@ -21,7 +38,7 @@ function normalizeId(value) {
     return id.endsWith(".desktop") ? id.slice(0, -8) : id
 }
 
-function customIconFile(customIcons, id) {
+function customIconEntry(customIcons, id) {
     var key = normalizeId(id)
     var value = customIcons && customIcons[key]
     if (!value && customIcons) {
@@ -45,10 +62,64 @@ function customIconFile(customIcons, id) {
             }
         }
     }
+    return value || null
+}
+
+function customIconFile(customIcons, id) {
+    var value = customIconEntry(customIcons, id)
     if (!value) return ""
     var file = typeof value === "string" ? value : value.file
     file = String(file || "").trim()
     return /^[A-Za-z0-9._-]+$/.test(file) ? file : ""
+}
+
+function customIconPack(customIcons, id) {
+    var value = customIconEntry(customIcons, id)
+    if (!value || typeof value !== "object") return ""
+    var pack = String(value.pack || "").trim()
+    return PACK_ROLES.indexOf(pack) !== -1 ? pack : ""
+}
+
+function customIconMode(customIcons, id) {
+    var value = customIconEntry(customIcons, id)
+    if (!value || typeof value !== "object") return ""
+    var mode = String(value.mode || "").trim()
+    return mode === "native" ? mode : ""
+}
+
+function hasCustomOverride(customIcons, id) {
+    return customIconFile(customIcons, id) !== ""
+        || customIconPack(customIcons, id) !== ""
+        || customIconMode(customIcons, id) !== ""
+}
+
+function searchableIdentity(item) {
+    var data = item || {}
+    var values = [
+        data.id,
+        data.desktopId,
+        data.name,
+        data.displayName,
+        data.icon,
+        data.iconName,
+        data.appIcon
+    ]
+    return " " + values.map(function(value) {
+        return normalizeId(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+    }).filter(Boolean).join(" ") + " "
+}
+
+function automaticPackRole(item) {
+    var identity = searchableIdentity(item)
+    for (var roleIndex = 0; roleIndex < PACK_ROLES.length; roleIndex++) {
+        var role = PACK_ROLES[roleIndex]
+        var aliases = PACK_ALIASES[role]
+        for (var aliasIndex = 0; aliasIndex < aliases.length; aliasIndex++) {
+            var needle = " " + aliases[aliasIndex].replace(/[^a-z0-9]+/g, " ").trim() + " "
+            if (identity.indexOf(needle) !== -1) return role
+        }
+    }
+    return ""
 }
 
 function resolveIcon(item) {
@@ -69,9 +140,16 @@ function resolveIcon(item) {
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         FALLBACK_MAP: FALLBACK_MAP,
+        PACK_ALIASES: PACK_ALIASES,
+        PACK_ROLES: PACK_ROLES,
         sanitizeName: sanitizeName,
         normalizeId: normalizeId,
+        customIconEntry: customIconEntry,
         customIconFile: customIconFile,
+        customIconPack: customIconPack,
+        customIconMode: customIconMode,
+        hasCustomOverride: hasCustomOverride,
+        automaticPackRole: automaticPackRole,
         resolveIcon: resolveIcon
     }
 }

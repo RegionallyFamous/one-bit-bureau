@@ -10,7 +10,7 @@ import "AppIconModel.js" as AppIconModel
 
 BarWidget {
   id: root
-  moduleName: "io.github.regionallyfamous.alumina"
+  moduleName: "io.github.regionallyfamous.paper-jam-84"
 
   readonly property var waylandToplevel: ToplevelManager.activeToplevel
   readonly property var hyprlandToplevel: Hyprland.activeToplevel

@@ -14,22 +14,19 @@ Item {
   property var pluginRegistry: null
   property var manifest: null
   property string home: Quickshell.env("HOME")
-  property string iconDir: home + "/.config/omarchy/icons"
-  property string iconMapPath: home + "/.config/omarchy/dock-icons.json"
-  property string pinPath: home + "/.config/omarchy/alumina-dock-pinned.json"
+  property string iconDir: home + "/.config/omarchy/paper-jam-84/icons"
+  property string iconMapPath: home + "/.config/omarchy/paper-jam-84/dock-icons.json"
+  property string packDir: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir) + "/components/dock/assets/app-icons"
+    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/dock/assets/app-icons"
+  property string pinPath: home + "/.config/omarchy/paper-jam-84/dock-pinned.json"
   property string tempPinPath: pinPath + ".tmp"
-  property string settingsPath: home + "/.config/omarchy/alumina-dock-settings.json"
+  property string settingsPath: home + "/.config/omarchy/paper-jam-84/dock-settings.json"
   property string tempSettingsPath: settingsPath + ".tmp"
   property var pinnedIds: []
   property var dockOrder: []
   property bool pinFileLoaded: false
-  // Our temp+rename writes make the pin-file watcher fire before FileView's
-  // async re-read finishes, so onFileChanged can observe stale text(). The
-  // reload() path re-reads fresh, and this window skips watcher events that
-  // belong to our own save cycles entirely.
-  property double ownWriteUntil: 0
   property bool settingsLoaded: false
-  property double settingsWriteUntil: 0
   property var appEntries: []
   property var runningIds: []
   // Most-recently-used app ids, front = most recent. Maintained from focus
@@ -89,19 +86,15 @@ Item {
   property real tooltipCenterX: 0
   property var customIcons: ({})
   property int customIconRevision: 0
-  property var nativeIconCache: ({})
-  property var nativeIconPending: ({})
-  property var nativeIconQueue: []
-  property var currentNativeIconJob: null
-  property int nativeIconRevision: 0
-  // Keep the helper inside the plugin so installation needs no mutation of
-  // ~/.local/bin. IconPickerPanel invokes it explicitly through bash.
-  property string helperPath: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) + "/components/dock/scripts/omarchy-dock-icon"
-    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.alumina/components/dock/scripts/omarchy-dock-icon"
   property string focusHelperPath: manifest && manifest.__sourceDir
     ? String(manifest.__sourceDir) + "/components/dock/scripts/focus-window"
-    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.alumina/components/dock/scripts/focus-window"
+    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/dock/scripts/focus-window"
+  property string stateHelperPath: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir) + "/components/dock/scripts/paper-jam-state"
+    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/dock/scripts/paper-jam-state"
+  property string runHelperPath: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir) + "/components/dock/scripts/paper-jam-run"
+    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/dock/scripts/paper-jam-run"
 
   // Layout & drag state. The Repeater model (dockItems) is the stable identity
   // list of ids, replaced only when the id set changes; reorders go through
@@ -131,7 +124,7 @@ Item {
   property bool dragInsideDock: true
 
   IpcHandler {
-    target: "regionallyfamous.alumina.dock"
+    target: "regionallyfamous.paper-jam-84.dock"
     function toggle() { root.enabled = !root.enabled }
     function show() { root.enabled = true }
     function hide() { root.enabled = false }
@@ -164,7 +157,6 @@ Item {
       autoHide: root.autoHide,
       screenName: root.preferredScreenName
     })
-    root.settingsWriteUntil = Date.now() + 2000
     DockModel.markSettingsWritten(content)
     settingsWriter.path = root.tempSettingsPath
     settingsWriter.setText(content)
@@ -356,7 +348,7 @@ Item {
       root.appEntries = rows.map(function(row) { return row && row.entry ? row.entry : row })
       root.appLibraryReady = true
     } catch (error) {
-      console.warn("alumina.raster: app library refresh failed", error)
+      console.warn("paper-jam-84: app library refresh failed", error)
     }
     refreshItems()
   }
@@ -487,7 +479,7 @@ Item {
         // Existing windows must be focused through Hyprland's IPC path.
         var hyprWindow = root.hyprlandWindowForItem(item)
         if (!root.focusExistingWindow(hyprWindow))
-          console.warn("regionallyfamous.alumina.dock: could not resolve running window for " + item.id)
+          console.warn("regionallyfamous.paper-jam-84.dock: could not resolve running window for " + item.id)
         return
       } catch (error) {}
     }
@@ -610,7 +602,6 @@ Item {
 
   function savePinned() {
     var content = DockModel.serializePinned(root.pinnedIds, root.dockOrder)
-    root.ownWriteUntil = Date.now() + 2000
     DockModel.markWritten(content)
     tempWriter.path = root.tempPinPath
     tempWriter.setText(content)
@@ -696,7 +687,7 @@ Item {
     // exactly what received the drag instead of a coordinate mapping
     // re-derived at release time.
     var inside = root.dragInsideDock
-    console.log("alumina.raster finishDrag", JSON.stringify({ id: id, inside: inside, localX: surfacePosition.x, localY: surfacePosition.y, surfaceW: dockSurface.width, surfaceH: dockSurface.height, cursorX: root.cursorXInRow() }))
+    console.log("paper-jam-84 finishDrag", JSON.stringify({ id: id, inside: inside, localX: surfacePosition.x, localY: surfacePosition.y, surfaceW: dockSurface.width, surfaceH: dockSurface.height, cursorX: root.cursorXInRow() }))
     var wasPinned = root.pinnedIds.indexOf(id) !== -1
     var persist = false
 
@@ -708,7 +699,7 @@ Item {
       // Reorder the session dock — never the pinned list. Dragging never
       // promotes a running app into a persistent pin.
       var newOrder = DockModel.moveInOrder(root.dockOrder, id, idx)
-      console.log("alumina.raster reorder", JSON.stringify({ id: id, idx: idx, wasPinned: wasPinned, dockOrderBefore: root.dockOrder, newOrder: newOrder, pinnedBefore: root.pinnedIds, runningIds: root.runningIds }))
+      console.log("paper-jam-84 reorder", JSON.stringify({ id: id, idx: idx, wasPinned: wasPinned, dockOrderBefore: root.dockOrder, newOrder: newOrder, pinnedBefore: root.pinnedIds, runningIds: root.runningIds }))
       if (newOrder.join("|") !== root.dockOrder.join("|")) {
         root.dockOrder = newOrder
         // Snap the dropped delegate straight to its new slot. Without this the
@@ -765,7 +756,7 @@ Item {
     root.ghostScale = 1.18
     root.ghostSource = ""
     } catch (error) {
-      console.warn("alumina.raster finishDrag error", error)
+      console.warn("paper-jam-84 finishDrag error", error)
       root.floatingId = ""
       root.tempDrag = { id: "", index: -1 }
       root.refreshItems()
@@ -865,63 +856,14 @@ Item {
     return output
   }
 
-  // Live window thumbnails --------------------------------------------------
-  // grim captures the composited output, so a window that is buried under
-  // another window cannot be captured correctly (the thumbnail would show
-  // whatever is on top). Instead, a thumbnail is captured when a window
-  // becomes active (it is on top then) and cached by address. Previews reuse
-  // the cache; windows without a cached thumbnail are captured on hover as a
-  // best-effort fallback. Windows on other workspaces or minimized windows
-  // that were never active fall back to the icon card.
+  // Window preview cards ----------------------------------------------------
+  // Cards use the associated app icon. This stays truthful for minimized,
+  // occluded, and other-workspace windows without launching capture jobs.
   function snapshotWindows() {
-    root.currentThumbBatch++
-    root.snapshotPending = 0
-    var focused = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : -1
-    for (var i = 0; i < root.previewWindows.length; i++) {
-      var w = root.previewWindows[i]
-      if (!w.address) continue
-      if (root.thumbCache[w.address] || root.inFlightAddrs[w.address]) continue
-      // Skip only when we positively know the window cannot be captured.
-      if (w.minimized === true) continue
-      if (w.mapped === false) continue
-      if (w.workspaceId !== undefined && w.workspaceId >= 0 && w.workspaceId !== focused) continue
-      if (!w.w || !w.h) continue
-      root.captureForSnapshot({ address: w.address, x: w.x, y: w.y, w: w.w, h: w.h })
-    }
-    if (root.snapshotPending === 0) root.applyThumbnails()
-  }
-
-  function captureForSnapshot(job) {
-    root.snapshotPending++
-    root.inFlightAddrs[job.address] = true
-    var proc = captureProcess.createObject(root, {
-      jobAddress: job.address,
-      jobBatch: root.currentThumbBatch,
-      command: ["timeout", "--kill-after=1s", "3s", "bash", "-c", root.thumbnailCommand(job)]
-    })
-    proc.running = true
-  }
-
-  function captureActive(info) {
-    if (!info || !info.address) return
-    if (root.inFlightAddrs[info.address]) return
-    root.inFlightAddrs[info.address] = true
-    var proc = captureProcess.createObject(root, {
-      jobAddress: info.address,
-      jobBatch: -1,
-      command: ["timeout", "--kill-after=1s", "3s", "bash", "-c", root.thumbnailCommand(info)]
-    })
-    proc.running = true
-  }
-
-  function thumbnailCommand(job) {
-    var dir = Util.shellQuote(root.thumbnailDir)
-    var target = Util.shellQuote(root.thumbnailDir + "/" + job.address + ".png")
-    var tmp = Util.shellQuote(root.thumbnailDir + "/" + job.address + ".png.tmp")
-    var geometry = job.x + "," + job.y + " " + job.w + "x" + job.h
-    return "mkdir -p " + dir
-      + "; grim -g \"" + geometry + "\" - | magick - -resize 304x184^ -gravity center -extent 304x184 png:" + tmp
-      + " && mv " + tmp + " " + target
+    // Window cards intentionally use app icons. Avoiding compositor capture
+    // keeps hover deterministic and leaves no screenshot pipeline to outlive
+    // a plugin reload.
+    root.applyThumbnails()
   }
 
   function applyThumbnails() {
@@ -931,7 +873,6 @@ Item {
       var w = root.previewWindows[i]
       var copy = {}
       for (var k in w) copy[k] = w[k]
-      if (root.thumbCache[w.address]) copy.thumbPath = root.thumbnailDir + "/" + w.address + ".png"
       next.push(copy)
     }
     root.previewWindows = next
@@ -946,8 +887,7 @@ Item {
   }
 
   function thumbnailFor(w) {
-    if (!w || !w.thumbPath) return ""
-    return Util.fileUrl(w.thumbPath)
+    return ""
   }
 
   function activatePreviewWindow(data) {
@@ -962,7 +902,7 @@ Item {
       var value = JSON.parse(String(content || "{}"))
       if (value && typeof value === "object" && !Array.isArray(value)) parsed = value
     } catch (error) {
-      console.warn("alumina.raster: invalid dock-icons.json")
+      console.warn("paper-jam-84: invalid dock-icons.json")
     }
     root.customIcons = parsed
     root.customIconRevision++
@@ -980,69 +920,34 @@ Item {
     // Accept either a live item object or a plain id string (delegates pass
     // their model id after the identity/state split).
     var id = typeof item === "string" ? item : item && item.id
-    // Touch the revision so the DockItem override binding re-evaluates once a
-    // native icon finishes normalization below.
-    var nativeRevision = root.nativeIconRevision
     var customSource = root.customIconSourceFor(id)
     if (customSource) return customSource
     var entry = DockModel.entryFor(id, root.appEntries)
+    var manualPack = IconResolver.customIconPack(root.customIcons, id)
+    var nativeOnly = IconResolver.customIconMode(root.customIcons, id) === "native"
+    var packRole = manualPack || (!nativeOnly ? IconResolver.automaticPackRole({
+      id: id,
+      desktopId: entry.desktopId,
+      name: entry.name,
+      displayName: entry.displayName,
+      icon: entry.icon,
+      iconName: entry.iconName,
+      appIcon: entry.appIcon
+    }) : "")
+    if (packRole) return Util.fileUrl(root.packDir + "/" + packRole + ".png")
     var iconName = entry.icon || entry.iconName || entry.appIcon || ""
     if (root.shell && root.shell.appLibrary && iconName && typeof root.shell.appLibrary.iconSource === "function") {
       var resolved = root.shell.appLibrary.iconSource(iconName)
       if (resolved && String(resolved).indexOf("application-x-executable") === -1)
-        return root.nativeIconSourceFor(resolved)
+        return resolved
       var fallbackName = IconResolver.resolveIcon(entry)
       if (fallbackName && fallbackName !== iconName) {
         resolved = root.shell.appLibrary.iconSource(fallbackName)
         if (resolved && String(resolved).indexOf("application-x-executable") === -1)
-          return root.nativeIconSourceFor(resolved)
+          return resolved
       }
     }
     return ""
-  }
-
-  // Theme icons carry their own transparent margin (often only 70-95% painted
-  // area), so they render visibly smaller than the full-bleed macOS custom
-  // icons. Normalize native file-backed icons through the same trim + rounded
-  // corner pipeline as the custom icons, cached in the icon directory.
-  function nativeIconSourceFor(resolved) {
-    var url = String(resolved || "")
-    if (url.indexOf("file://") !== 0) return url
-    var srcPath = url.slice(7)
-    var hash = (DockModel.hashContent(srcPath) >>> 0).toString(36)
-    var target = root.iconDir + "/.native-" + hash + ".png"
-    if (root.nativeIconCache[hash] === target) return Util.fileUrl(target)
-    if (!root.nativeIconPending[hash]) {
-      root.nativeIconPending[hash] = true
-      root.nativeIconQueue.push({ hash: hash, src: srcPath, target: target })
-      if (!nativeIconProcess.running) root.pumpNativeIconQueue()
-    }
-    return url
-  }
-
-  function nativeIconCommand(srcPath, targetPath) {
-    var src = Util.shellQuote(srcPath)
-    var target = Util.shellQuote(targetPath)
-    var dir = Util.shellQuote(root.iconDir)
-    return "mkdir -p " + dir
-      + "; tool=magick; command -v magick >/dev/null 2>&1 || tool=convert"
-      + "; if [ -f " + target + " ]; then exit 0; fi"
-      + "; tmp=$(mktemp --suffix=.png); trap 'rm -f \"$tmp\"' EXIT"
-      + "; \"$tool\" " + src + " -resize 512x512 -trim +repage \"$tmp\""
-      + "; w=$(identify -format '%w' \"$tmp\"); h=$(identify -format '%h' \"$tmp\")"
-      + "; r=$(( (w < h ? w : h) * 22 / 100 ))"
-      + "; \"$tool\" \"$tmp\" -alpha on"
-      + " \\( -size \"${w}x${h}\" xc:none -fill white"
-      + " -draw \"roundrectangle 0,0 $((w-1)),$((h-1)) $r,$r\" \\)"
-      + " -compose DstIn -composite " + target
-  }
-
-  function pumpNativeIconQueue() {
-    if (!root.nativeIconQueue.length || nativeIconProcess.running) return
-    var job = root.nativeIconQueue.shift()
-    root.currentNativeIconJob = job
-    nativeIconProcess.command = ["bash", "-c", root.nativeIconCommand(job.src, job.target)]
-    nativeIconProcess.running = true
   }
 
   Timer { id: conflictNotice; interval: 30000 }
@@ -1057,11 +962,6 @@ Item {
   property bool previewVisible: false
   property real previewCenterX: 0
   property real previewBottomY: 0
-  property string thumbnailDir: home + "/.cache/omarchy-dock/thumbs"
-  property var thumbCache: ({})
-  property int currentThumbBatch: 1
-  property int snapshotPending: 0
-  property var inFlightAddrs: ({})
   property bool pendingPreviewShow: false
 
   Timer {
@@ -1088,45 +988,79 @@ Item {
     onTriggered: root.hidePreview()
   }
 
-  FileView {
-    id: customIconsFile
-    path: root.iconMapPath
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.loadCustomIcons(text())
-    onFileChanged: customIconsFile.reload()
-    onLoadFailed: root.loadCustomIcons("{}")
+  function applyStateSnapshot(content) {
+    var snapshot = null
+    try {
+      snapshot = JSON.parse(String(content || ""))
+    } catch (error) {
+      return
+    }
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return
+
+    root.loadCustomIcons(JSON.stringify(snapshot.icons || {}))
+
+    var pinContent = JSON.stringify(snapshot.pins || {})
+    if (!root.pinFileLoaded) {
+      root.pinFileLoaded = true
+      root.pinnedIds = DockModel.parsePinned(pinContent, DockModel.DEFAULT_PINNED)
+    } else if (DockModel.shouldReprocess(pinContent)) {
+      root.pinnedIds = DockModel.parsePinned(pinContent, root.pinnedIds)
+    }
+    root.dockOrder = DockModel.parseOrder(pinContent, root.dockOrder)
+    root.refreshItems()
+
+    var settingsContent = JSON.stringify(snapshot.settings || {})
+    var parsed = DockModel.parseSettings(settingsContent, {
+      autoHide: true,
+      screenName: root.preferredScreenName
+    })
+    if (!root.settingsLoaded || DockModel.shouldReprocessSettings(settingsContent)) {
+      root.settingsLoaded = true
+      root.autoHide = parsed.autoHide
+      root.preferredScreenName = parsed.screenName
+    }
+    if (!root.preferredScreenName && root.dockScreen) {
+      root.preferredScreenName = String(root.dockScreen.name || "")
+      root.saveSettings()
+    }
+    if (!root.autoHide) root.autoHidden = false
   }
 
-  FileView {
-    id: pinFile
-    path: root.pinPath
-    watchChanges: true
-    printErrors: false
-    onLoaded: {
-      if (!root.pinFileLoaded) {
-        root.pinFileLoaded = true
-        root.pinnedIds = DockModel.parsePinned(text(), DockModel.DEFAULT_PINNED)
-      } else {
-        // Reloaded after a change: apply only content we did not write.
-        if (!DockModel.shouldReprocess(text())) return
-        console.log("alumina.raster pinFileApplied", JSON.stringify({ pinned: root.pinnedIds }))
-        root.pinnedIds = DockModel.parsePinned(text(), root.pinnedIds)
-      }
-      root.dockOrder = DockModel.parseOrder(text(), root.dockOrder)
-      root.refreshItems()
+  function reloadBoundedState() {
+    if (stateReaderProcess.running || !root.stateHelperPath || !root.runHelperPath) return
+    stateReaderProcess.command = [
+      "python3", root.runHelperPath, "2200", "250", "--",
+      "python3", root.stateHelperPath, "read",
+      root.iconMapPath, root.pinPath, root.settingsPath
+    ]
+    stateReaderProcess.running = true
+    stateReaderDeadline.restart()
+  }
+
+  Timer {
+    id: stateReaderPoll
+    interval: 1000
+    repeat: true
+    running: true
+    triggeredOnStart: true
+    onTriggered: root.reloadBoundedState()
+  }
+
+  Timer {
+    id: stateReaderDeadline
+    interval: 2500
+    onTriggered: {
+      if (stateReaderProcess.running) stateReaderProcess.running = false
     }
-    onFileChanged: {
-      // Watcher events for our own save cycles are stale-text races; skip
-      // them and let the reload()/onLoaded path handle real external edits.
-      if (Date.now() < root.ownWriteUntil) return
-      pinFile.reload()
+  }
+
+  Process {
+    id: stateReaderProcess
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyStateSnapshot(text)
     }
-    onLoadFailed: {
-      root.pinFileLoaded = true
-      root.pinnedIds = DockModel.DEFAULT_PINNED.slice()
-      root.refreshItems()
-    }
+    onExited: stateReaderDeadline.stop()
   }
 
   FileView {
@@ -1141,46 +1075,6 @@ Item {
     printErrors: false
   }
 
-  FileView {
-    id: settingsFile
-    path: root.settingsPath
-    watchChanges: true
-    printErrors: false
-    onLoaded: {
-      var parsed = DockModel.parseSettings(text(), {
-        autoHide: true,
-        screenName: root.preferredScreenName
-      })
-      if (!root.settingsLoaded) {
-        root.settingsLoaded = true
-        root.autoHide = parsed.autoHide
-        root.preferredScreenName = parsed.screenName
-      } else {
-        if (!DockModel.shouldReprocessSettings(text())) return
-        root.autoHide = parsed.autoHide
-        root.preferredScreenName = parsed.screenName
-      }
-      if (!root.preferredScreenName && root.dockScreen) {
-        root.preferredScreenName = String(root.dockScreen.name || "")
-        root.saveSettings()
-      }
-      // If auto-hide is turned off, ensure the dock is fully revealed.
-      if (!root.autoHide) root.autoHidden = false
-    }
-    onFileChanged: {
-      if (Date.now() < root.settingsWriteUntil) return
-      settingsFile.reload()
-    }
-    onLoadFailed: {
-      root.settingsLoaded = true
-      root.autoHide = true
-      if (root.dockScreen) {
-        root.preferredScreenName = String(root.dockScreen.name || "")
-        root.saveSettings()
-      }
-    }
-  }
-
   Process {
     id: renameProcess
     command: ["mv", root.tempPinPath, root.pinPath]
@@ -1190,54 +1084,6 @@ Item {
   Process {
     id: settingsRenameProcess
     command: ["mv", root.tempSettingsPath, root.settingsPath]
-  }
-
-  Component {
-    id: captureProcess
-    Process {
-      id: self
-      required property string jobAddress
-      required property int jobBatch
-      onExited: function(exitCode) {
-        if (exitCode === 0) root.thumbCache[self.jobAddress] = true
-        if (self.jobBatch === root.currentThumbBatch) {
-          root.snapshotPending--
-          if (root.snapshotPending === 0) root.applyThumbnails()
-        }
-        delete root.inFlightAddrs[self.jobAddress]
-        self.destroy()
-      }
-    }
-  }
-
-  property string activeThumbAddress: ""
-
-  function activeToplevelInfo() {
-    try {
-      var t = Hyprland.activeToplevel
-      if (!t) return null
-      var ipc = t.lastIpcObject || {}
-      var pos = root.array2(ipc.at)
-      var size = root.array2(ipc.size)
-      return { address: String(t.address || ""), x: pos[0], y: pos[1], w: size[0], h: size[1] }
-    } catch (error) {}
-    return null
-  }
-
-  Process {
-    id: nativeIconProcess
-    onExited: function(exitCode) {
-      var job = root.currentNativeIconJob
-      root.currentNativeIconJob = null
-      if (job) {
-        delete root.nativeIconPending[job.hash]
-        if (exitCode === 0) {
-          root.nativeIconCache[job.hash] = job.target
-          root.nativeIconRevision++
-        }
-      }
-      root.pumpNativeIconQueue()
-    }
   }
 
   Connections {
@@ -1251,13 +1097,6 @@ Item {
       // only tracks apps the dock knows about.
       var mruId = root.dockIdForHyprlandWindow(Hyprland.activeToplevel)
       if (mruId && root.runningIds.indexOf(mruId) !== -1) root.touchMru(mruId)
-      // Capture a thumbnail whenever the active window changes: it is on top
-      // at that moment, so the grim capture is not occluded by other windows.
-      var info = root.activeToplevelInfo()
-      if (info && info.address && info.address !== root.activeThumbAddress) {
-        root.activeThumbAddress = info.address
-        root.captureActive(info)
-      }
     }
   }
 
@@ -1270,15 +1109,7 @@ Item {
       if (root.previewVisible && root.previewAppId) {
         var wins = root.gatherWindowsForApp(root.previewAppId)
         if (!wins.length) root.hidePreview()
-        else {
-          var thumbs = {}
-          var existing = root.previewWindows
-          for (var i = 0; i < existing.length; i++)
-            if (existing[i].thumbPath) thumbs[existing[i].address] = existing[i].thumbPath
-          for (var j = 0; j < wins.length; j++)
-            if (thumbs[wins[j].address]) wins[j].thumbPath = thumbs[wins[j].address]
-          root.previewWindows = wins
-        }
+        else root.previewWindows = wins
       }
     }
   }
@@ -1299,9 +1130,18 @@ Item {
     Qt.callLater(function() { root.dockReady = true })
   }
 
+  Component.onDestruction: {
+    stateReaderPoll.stop()
+    stateReaderDeadline.stop()
+    stateReaderProcess.running = false
+    renameProcess.running = false
+    settingsRenameProcess.running = false
+    layerRuleProcess.running = false
+  }
+
   Process {
     id: layerRuleProcess
-    command: ["hyprctl", "eval", "hl.layer_rule({ match = { namespace = \"alumina-dock-alt-tab\" }, no_anim = true, animation = \"none\" })"]
+    command: ["hyprctl", "eval", "hl.layer_rule({ match = { namespace = \"paper-jam-84-dock-alt-tab\" }, no_anim = true, animation = \"none\" })"]
   }
 
   PanelWindow {
@@ -1311,7 +1151,7 @@ Item {
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.namespace: "alumina-dock"
+    WlrLayershell.namespace: "paper-jam-84-dock"
     anchors { top: true; bottom: true; left: true; right: true }
     mask: Region { item: dockSurface }
 
@@ -1549,7 +1389,10 @@ Item {
     shell: root.shell
     customIcons: root.customIcons
     iconSourceFor: function(id) { return root.iconSourceFor(id) }
-    helperPath: root.helperPath
+    stateHelperPath: root.stateHelperPath
+    runHelperPath: root.runHelperPath
+    iconMapPath: root.iconMapPath
+    packDir: root.packDir
     onOpenChanged: if (!open) root.pickerOpen = false
   }
 
@@ -1610,7 +1453,7 @@ Item {
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Background
-    WlrLayershell.namespace: "alumina-dock-spacer"
+    WlrLayershell.namespace: "paper-jam-84-dock-spacer"
     WlrLayershell.exclusiveZone: root.autoHide ? 0 : (root.enabled ? root.dockHeight + root.bottomMargin : 0)
     anchors { bottom: true; left: true; right: true }
     implicitHeight: root.dockHeight + root.bottomMargin
@@ -1630,7 +1473,7 @@ Item {
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.namespace: "alumina-dock-edge"
+    WlrLayershell.namespace: "paper-jam-84-dock-edge"
     anchors { bottom: true; left: true; right: true }
     implicitHeight: root.edgeHeight
     mask: Region { item: edgeMouse }
@@ -1668,7 +1511,7 @@ Item {
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.namespace: "alumina-dock-drag"
+    WlrLayershell.namespace: "paper-jam-84-dock-drag"
     anchors { top: true; bottom: true; left: true; right: true }
     mask: Region { item: ghostAnchor }
 
