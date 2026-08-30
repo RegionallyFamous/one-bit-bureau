@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.2 — 2026-08-30
+
+### Product changes
+
+- Added the memorable first-party installer at `https://bureau.regionallyfamous.com/install`, backed by a tiny public Cloudflare Worker with no data bindings, cookies, third-party page assets, or mystery redirect service.
+- Kept Omarchy’s canonical Git validation and One-Bit Bureau’s explicit unsandboxed-plugin confirmation in the quick path, with the complete audit-first Git commands still documented beside it.
+- Added safe already-installed handling, canonical source and release shortcuts, a script-free retro landing page, strict response security headers, and sampled operational observability.
+
+### Release verification
+
+- Added Worker type, route, method, redirect, response-header, exact-installer-byte, shell-syntax, and mocked Omarchy lifecycle tests.
+- Passed the complete plugin/theme static gate after the installer additions and verified the production Custom Domain, certificate, canonical redirects, error methods, and byte-identical live shell payload.
+
 ## 1.0.1 — 2026-08-30
 
 ### Product changes

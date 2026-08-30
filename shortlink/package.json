@@ -1,0 +1,23 @@
+{
+  "name": "one-bit-bureau-shortlink",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "test": "npm run types && npm run typecheck && npm run test:worker && npm run test:installer",
+    "test:installer": "bash test/install-test.sh",
+    "test:worker": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11",
+    "wrangler": "4.127.1"
+  }
+}

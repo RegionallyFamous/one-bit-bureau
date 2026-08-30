@@ -20,10 +20,11 @@ sha256() {
 }
 
 "$OMARCHY_ROOT/bin/omarchy-plugin-validate" "$ROOT"
-bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/update" "$ROOT/one-bit-bureau" "$ROOT/test/omarchy-acceptance.sh"
+bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/update" "$ROOT/one-bit-bureau" "$ROOT/test/omarchy-acceptance.sh" "$ROOT/shortlink/src/install.sh" "$ROOT/shortlink/test/install-test.sh"
 bash "$ROOT/tests/install-roundtrip.sh"
 bash "$ROOT/tests/update-ownership.sh"
 bash "$ROOT/tests/coordinator-motion.sh"
+bash "$ROOT/shortlink/test/install-test.sh"
 bash -n "$ROOT/components/overview/activate-window" "$ROOT/components/dock/scripts/one-bit-bureau-icon" "$ROOT/components/dock/scripts/focus-window"
 for dock_helper in "$ROOT/components/dock/scripts/one-bit-bureau-state" "$ROOT/components/dock/scripts/one-bit-bureau-run" "$ROOT/test/stubborn-state-helper.py"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$dock_helper"

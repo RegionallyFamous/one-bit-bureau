@@ -21,15 +21,23 @@ The product identity is consistent throughout: repository `RegionallyFamous/one-
 
 The product contract and provenance guardrails live in [docs/DIRECTION.md](docs/DIRECTION.md). Imported-code and font provenance lives in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## Install: Git and Omarchy, no pipe-to-shell
+## Install: one memorable address
 
-One-Bit Bureau uses Omarchy’s own validated Git plugin flow, then adopts that disabled checkout to install the matching commit-locked theme and reversible companion assets:
+The short installer lives at the first-party, memorable `bureau.regionallyfamous.com` address:
+
+```bash
+bash <(curl -fsSL https://bureau.regionallyfamous.com/install)
+```
+
+The served bootstrap is the small, public [`shortlink/src/install.sh`](shortlink/src/install.sh) file in this repository. It calls Omarchy’s own validated Git plugin flow, then runs the matching setup from that checkout; it does not bypass the existing trust prompt. Inspect the exact response before running it with `curl -fsSL https://bureau.regionallyfamous.com/install`.
+
+For an audit-first install with no fetched bootstrap, use the complete commands directly:
 
 ```bash
 omarchy plugin add https://github.com/RegionallyFamous/one-bit-bureau.git --yes && bash "$HOME/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/setup" --adopt-plugin
 ```
 
-This keeps the source auditable in a normal Git checkout, uses Omarchy’s manifest validator before any One-Bit Bureau code runs, and avoids downloading an opaque bootstrap script. The first command leaves the validated plugin disabled; setup then presents one explicit unsandboxed-plugin warning and lists the system changes before it enables anything. Declining removes that disabled checkout. After independently reviewing the repository, a noninteractive install may append `--yes` to the setup command. Setup also verifies the canonical repository identity and commit, refuses enabled standalone replacements, records exact ownership, and rolls back a partial transaction.
+Both paths keep the source auditable in a normal Git checkout and use Omarchy’s manifest validator before any One-Bit Bureau code runs. The first command leaves the validated plugin disabled; setup then presents one explicit unsandboxed-plugin warning and lists the system changes before it enables anything. Declining removes that disabled checkout. After independently reviewing the repository, a noninteractive install may append `--yes` to the quick command or the setup command. Setup also verifies the canonical repository identity and commit, refuses enabled standalone replacements, records exact ownership, and rolls back a partial transaction.
 
 One-Bit Bureau targets the current Omarchy Quattro plugin API and relies on Omarchy’s default runtime tools (`python3` with Gio bindings, `hyprctl`, `jq`, Git, coreutils, and fontconfig). Disable `henri.desktop-icons`, `crmne.active-window`, `expose.window-overview`, and `rosakodu.dock` first; setup refuses an enabled conflict instead of silently doubling shell surfaces.
 
@@ -118,10 +126,13 @@ The bundled app-icon pack and automatic associations work entirely offline. A co
 ## Validate
 
 ```bash
+npm --prefix shortlink ci
+npm --prefix shortlink test
+rm -rf shortlink/node_modules
 bash tests/static.sh
 ```
 
-The local gate covers manifest and source safety, helper syntax, desktop trust/path policy, dock lifecycle and app association, setup/uninstall rollback, branding/font ownership, canonical identity regression checks, strict theme validation, headless template rendering, and navigation pass-through contracts. The graphical gate is `bash test/omarchy-acceptance.sh` inside the disposable x86_64 Omarchy guest.
+The Worker gate runs first because the generated dependency tree contains executable tooling and therefore must not remain inside a repository that is also a safe Omarchy theme source. The plugin/theme gate covers manifest and source safety, helper syntax, desktop trust/path policy, dock lifecycle and app association, setup/uninstall rollback, branding/font ownership, canonical identity regression checks, the shell bootstrap, strict theme validation, headless template rendering, and navigation pass-through contracts. The graphical gate is `bash test/omarchy-acceptance.sh` inside the disposable x86_64 Omarchy guest.
 
 ## Remove
 

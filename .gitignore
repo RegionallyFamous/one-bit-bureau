@@ -6,3 +6,6 @@
 __pycache__/
 .qmlcache/
 *.log
+node_modules/
+.wrangler/
+shortlink/worker-configuration.d.ts

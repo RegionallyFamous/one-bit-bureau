@@ -9,6 +9,8 @@
 - Confirm all twelve rendered app icons match `pack.json`, the font family names and checksums match `fonts/README.md`, and both license texts ship.
 - Confirm the desktop policy exposes only regular local PNG, JPEG, WebP, and BMP files at or below 32 MiB as previews; SVG, GIF, oversized, remote, inline, missing, and disallowed-path inputs must fall back without being decoded by the shell.
 - Confirm the repository contains no symlinks or executable files; this is required because the same repository is also an Omarchy theme source.
+- Run `npm --prefix shortlink ci`, `npm --prefix shortlink test`, remove the generated `shortlink/node_modules`, and then run the repository static gate. Confirm the Worker typecheck, routes, methods, redirects, bootstrap behavior, and plugin/theme source-safety checks all pass.
+- Compare the live `https://bureau.regionallyfamous.com/install` bytes with `shortlink/src/install.sh`, run `bash -n` against the live response, and verify the landing page, canonical source/release redirects, 404/405 behavior, HTTPS certificate, and response security headers.
 - Review every bundled upstream diff and refresh `THIRD_PARTY_NOTICES.md` when importing updates.
 
 ## Exact public lifecycle in a disposable Omarchy guest
