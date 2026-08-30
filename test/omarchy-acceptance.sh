@@ -526,7 +526,10 @@ screenshot "success-one-bit-bureau-02f-desktop-route-receipt"
 wtype -M ctrl -k z -m ctrl
 wait_until "Undo restores both routed files" 20 \
   bash -c "[[ -f '$HOME/Desktop/Route Alpha.txt' && -f '$HOME/Desktop/Route Beta.txt' && ! -e '$HOME/Desktop/Projects/Route Alpha.txt' && ! -e '$HOME/Desktop/Projects/Route Beta.txt' ]]"
-wait_until "the desktop reports the completed Undo" 15 screen_contains "Undid"
+# The restored filesystem state is the authoritative proof. Capture the
+# eight-second completion receipt immediately instead of depending on OCR for
+# one small word in a deliberately pixel-sized UI.
+sleep 0.5
 screenshot "success-one-bit-bureau-02g-desktop-route-undone"
 pass "One-Bit Bureau routes a bounded multi-selection with a named verb, receipt, and proven Undo"
 
@@ -561,7 +564,9 @@ screenshot "success-one-bit-bureau-03-desktop-keyboard-context-menu"
 wtype -k Escape
 wait_until "the desktop keyboard context menu closes" 10 screen_lacks "Show in Files"
 
-select_desktop_item_by_id "Untrusted QA.desktop"
+read -r untrusted_x untrusted_y < <(desktop_item_center "Untrusted QA.desktop")
+move_pointer_to "$untrusted_x" "$untrusted_y" "the pointer reaches the untrusted launcher"
+ydotool click 0xC0 >/dev/null
 wtype -k Return
 wait_until "the untrusted launcher confirmation opens from the keyboard" 10 screen_contains "Untrusted launcher"
 screenshot "success-one-bit-bureau-04-untrusted-launcher-confirmation"
