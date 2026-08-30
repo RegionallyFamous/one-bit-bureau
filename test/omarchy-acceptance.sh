@@ -432,6 +432,7 @@ wait_until "the icon picker closes through its stable dock API" 10 \
   fail "the dock opens Manage Icons through its public IPC method"
 wait_until "Manage Icons IPC opens manager mode" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconPickerOpen) == 'true' && \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconPickerMode) == 'manage' ]]"
+sleep 1
 screenshot "success-one-bit-bureau-07-icon-manager-ipc"
 wtype -k Escape
 wait_until "Escape closes Manage Icons" 10 \
@@ -478,6 +479,7 @@ wait_until "One-Bit Bureau's app switcher opens" 10 layer_on_screen one-bit-bure
 [[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock getAltTabActive) == "true" ]] ||
   fail "the dock reports its app switcher active"
 wtype -k Right
+sleep 1
 screenshot "success-one-bit-bureau-11-app-switcher-keyboard"
 wtype -k Escape
 wait_until "Escape cancels One-Bit Bureau's app switcher" 10 layer_absent one-bit-bureau-dock-alt-tab
@@ -494,6 +496,7 @@ wait_until "One-Bit Bureau overview pixels clear" 10 screen_lacks "navigate"
 
 omarchy-shell shell summon omarchy.menu '{"menu":"root"}' >/dev/null
 wait_until "the One-Bit Bureau themed Omarchy menu opens" 15 layer_on_screen omarchy-menu
+sleep 1
 screenshot "success-one-bit-bureau-13-omarchy-menu"
 wtype -k Escape
 wait_until "Escape closes the Omarchy menu" 10 layer_absent omarchy-menu
@@ -505,7 +508,8 @@ wait_until "the ANSI palette proof opens" 20 window_present '^one-bit-bureau-qa-
 sleep 2
 screenshot "success-one-bit-bureau-14-terminal-ansi"
 
-omarchy-notification-send "One-Bit Bureau" "Opaque paper notification proof" >/dev/null
+omarchy-notification-wait 10 || fail "the Omarchy notification server is ready"
+omarchy-notification-send -u normal "One-Bit Bureau" "Opaque paper notification proof" -t 30000 >/dev/null
 wait_until "the One-Bit Bureau notification appears" 15 screen_contains "Opaque paper"
 screenshot "success-one-bit-bureau-15-notification"
 omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
