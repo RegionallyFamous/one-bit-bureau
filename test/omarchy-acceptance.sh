@@ -534,6 +534,7 @@ screenshot "success-one-bit-bureau-02g-desktop-route-undone"
 pass "One-Bit Bureau routes a bounded multi-selection with a named verb, receipt, and proven Undo"
 
 select_desktop_item_by_id "Route Alpha.txt"
+read -r route_alpha_x route_alpha_y < <(desktop_item_center "Route Alpha.txt")
 read -r route_reject_x route_reject_y < <(desktop_item_center "Untrusted QA.desktop")
 move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the rejected-route source"
 ydotool click 0x40 >/dev/null
