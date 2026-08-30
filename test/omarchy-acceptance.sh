@@ -120,6 +120,34 @@ move_pointer_to() {
   fail "$description"
 }
 
+drag_pointer_to() {
+  local target_x="$1"
+  local target_y="$2"
+  local description="$3"
+  local current_x current_y delta_x delta_y step_x step_y remaining
+
+  # Feed the QML drag handler a short stream of motion events. A single large
+  # synthetic jump can move the compositor cursor without giving MouseArea a
+  # useful intermediate position at which to cross its drag threshold.
+  for (( remaining = 20; remaining > 0; remaining-- )); do
+    current_x=$(hyprctl -j cursorpos | jq -er '.x | round')
+    current_y=$(hyprctl -j cursorpos | jq -er '.y | round')
+    delta_x=$((target_x - current_x))
+    delta_y=$((target_y - current_y))
+    step_x=$((delta_x / remaining))
+    step_y=$((delta_y / remaining))
+    if (( step_x == 0 && delta_x != 0 )); then
+      step_x=$((delta_x > 0 ? 1 : -1))
+    fi
+    if (( step_y == 0 && delta_y != 0 )); then
+      step_y=$((delta_y > 0 ? 1 : -1))
+    fi
+    ydotool mousemove -- "$step_x" "$step_y" >/dev/null || fail "$description"
+    sleep 0.04
+  done
+  move_pointer_to "$target_x" "$target_y" "$description"
+}
+
 focus_empty_desktop() {
   local target_x target_y
   target_x=$(hyprctl -j monitors | jq -er '.[0] | (.x + (.width / .scale) / 2) | floor')
@@ -484,7 +512,8 @@ read -r route_alpha_x route_alpha_y < <(desktop_item_center "Route Alpha.txt")
 read -r route_target_x route_target_y < <(desktop_item_center "Projects")
 move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the selected routing group"
 ydotool click 0x40 >/dev/null
-move_pointer_to "$route_target_x" "$route_target_y" "the selected group reaches Projects"
+sleep 0.1
+drag_pointer_to "$route_target_x" "$route_target_y" "the selected group reaches Projects"
 wait_until "the named route slip resolves two items into Projects" 10 screen_contains "2 items"
 screenshot "success-one-bit-bureau-02e-desktop-route-slip"
 ydotool click 0x80 >/dev/null
