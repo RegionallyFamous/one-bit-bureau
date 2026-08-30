@@ -20,7 +20,9 @@ test("workspace moving stays behind a validated argument-array dispatcher", () =
   assert.match(helper, /\^0x\[0-9a-fA-F\]\+\$/)
   assert.match(helper, /hyprctl -j clients/)
   assert.match(helper, /hyprctl -j workspaces/)
+  assert.match(helper, /hl\.dsp\.window\.move\(\{ workspace = \\"\$workspace_id\\", follow = false, window = \\"address:\$address\\" \}\)/)
   assert.match(helper, /hyprctl dispatch movetoworkspacesilent "\$workspace_id,address:\$address"/)
+  assert.ok(helper.indexOf("hl.dsp.window.move") < helper.indexOf("movetoworkspacesilent"))
 })
 
 test("workspace UI keeps pointer and keyboard action parity", () => {

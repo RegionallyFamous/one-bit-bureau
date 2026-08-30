@@ -652,10 +652,12 @@ omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 
 mapfile -t ledger_addresses < <(hyprctl -j clients | jq -er '.[] | select(.class == "one-bit-bureau-qa-ledger") | .address' | sort)
 (( ${#ledger_addresses[@]} == 2 )) || fail "the Window Ledger proof exposes two stable addresses"
-hyprctl dispatch workspace 2 >/dev/null
+hyprctl dispatch 'hl.dsp.focus({ workspace = "2" })' >/dev/null 2>&1 ||
+  hyprctl dispatch workspace 2 >/dev/null
 sleep 0.5
 "$PLUGIN_DIR/components/overview/move-window-to-workspace" "${ledger_addresses[1]}" 2 >/dev/null
-hyprctl dispatch workspace 1 >/dev/null
+hyprctl dispatch 'hl.dsp.focus({ workspace = "1" })' >/dev/null 2>&1 ||
+  hyprctl dispatch workspace 1 >/dev/null
 wait_until "the Window Ledger tracks one proof window on Workspace 2" 15 \
   bash -c "hyprctl -j clients | jq -e --arg address '${ledger_addresses[1]}' 'any(.[]; .address == \$address and .workspace.id == 2)' >/dev/null"
 wait_until "the dock aggregates both proof windows under one app" 15 \

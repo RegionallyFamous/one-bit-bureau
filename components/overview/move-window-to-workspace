@@ -27,4 +27,5 @@ if ! hyprctl -j workspaces | jq -e --argjson workspace "$workspace_id" \
   exit 66
 fi
 
-hyprctl dispatch movetoworkspacesilent "$workspace_id,address:$address" >/dev/null
+hyprctl dispatch "hl.dsp.window.move({ workspace = \"$workspace_id\", follow = false, window = \"address:$address\" })" >/dev/null 2>&1 ||
+  hyprctl dispatch movetoworkspacesilent "$workspace_id,address:$address" >/dev/null
