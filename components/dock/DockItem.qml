@@ -19,6 +19,7 @@ Item {
   property bool tooltipVisible: false
   property string iconSourceOverride: ""
   property point pressPosition: Qt.point(0, 0)
+  readonly property bool iconReady: icon.status === Image.Ready
 
   signal dragMoved(var itemData, point position)
   signal dragFinished(var itemData, point position)

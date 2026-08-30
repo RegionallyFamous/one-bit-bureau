@@ -23,6 +23,8 @@ test("seeds a useful first-run dock", () => {
   const expected = ["org.gnome.Nautilus", "chromium", "foot"]
   assert.deepEqual(Array.from(model.DEFAULT_PINNED), expected)
   assert.deepEqual(Array.from(model.parsePinned("", model.DEFAULT_PINNED)), expected)
+  assert.deepEqual(Array.from(model.parsePinned("{}", model.DEFAULT_PINNED)), expected)
+  assert.deepEqual(Array.from(model.parsePinned('{"pinned":[]}', model.DEFAULT_PINNED)), [])
 })
 
 test("parses and normalizes pinned ids", () => {

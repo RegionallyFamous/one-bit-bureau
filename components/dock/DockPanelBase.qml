@@ -138,6 +138,8 @@ Item {
       root.saveSettings()
     }
     function getAutoHide(): bool { return root.autoHide }
+    function getItemCount(): int { return root.dockItems.length }
+    function getReadyIconCount(): int { return root.readyIconCount() }
     function setScreen(name: string): bool {
       var requested = String(name || "").slice(0, 160)
       for (var i = 0; i < Quickshell.screens.length; i++) {
@@ -415,6 +417,16 @@ Item {
   function appIconNameFor(id) {
     var entry = DockModel.entryFor(id, root.appEntries)
     return entry.icon || entry.iconName || ""
+  }
+
+  function readyIconCount() {
+    var count = 0
+    for (var id in root.delegateById) {
+      var delegate = root.delegateById[id]
+      if (delegate && delegate.iconReady)
+        count++
+    }
+    return count
   }
 
   // New delegates seed their animated properties from the item's last visual
@@ -1212,6 +1224,7 @@ Item {
             property alias targetScale: dockItem.targetScale
             property alias targetLift: dockItem.targetLift
             property alias targetOpacity: dockItem.targetOpacity
+            readonly property bool iconReady: dockItem.iconReady
 
             Behavior on x {
               enabled: wrapper.animating

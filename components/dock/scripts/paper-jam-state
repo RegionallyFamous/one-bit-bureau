@@ -229,7 +229,7 @@ def main() -> None:
         icons_path, pins_path, settings_path = sys.argv[2:]
         shaped = {
             "icons": shape_icons(read_json(icons_path, 1024 * 1024, {})),
-            "pins": shape_pins(read_json(pins_path, 64 * 1024, {})),
+            "pins": shape_pins(read_json(pins_path, 64 * 1024, None)),
             "settings": shape_settings(read_json(settings_path, 16 * 1024, {})),
         }
         encoded = json.dumps(shaped, ensure_ascii=False, separators=(",", ":"))

@@ -12,6 +12,12 @@ test_home="$work/home"
 config="$test_home/.config/omarchy/paper-jam-84"
 mkdir -p "$config"
 
+echo "== missing pin state remains distinguishable from an explicitly empty dock"
+python3 "$state_helper" read "$config/dock-icons.json" "$config/dock-pinned.json" "$config/dock-settings.json" | jq -e '.pins == {}' >/dev/null
+printf '%s\n' '{"version":1,"pinned":[],"order":[]}' >"$config/dock-pinned.json"
+python3 "$state_helper" read "$config/dock-icons.json" "$config/dock-pinned.json" "$config/dock-settings.json" | jq -e '.pins.pinned == []' >/dev/null
+rm "$config/dock-pinned.json"
+
 echo "== bundled pack roles are listed and associated offline"
 HOME="$test_home" bash "$helper" pack list | grep -q '^terminal: Terminal$'
 HOME="$test_home" bash "$helper" pack set code terminal

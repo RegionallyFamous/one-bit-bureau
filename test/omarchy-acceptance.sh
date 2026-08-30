@@ -20,6 +20,18 @@ screen_lacks() {
   ! screen_contains "$1"
 }
 
+dock_has_seeded_items() {
+  local count
+  count=$(omarchy-shell regionallyfamous.paper-jam-84.dock getItemCount 2>/dev/null || true)
+  [[ $count =~ ^[0-9]+$ ]] && (( count >= 3 ))
+}
+
+dock_has_rendered_icons() {
+  local count
+  count=$(omarchy-shell regionallyfamous.paper-jam-84.dock getReadyIconCount 2>/dev/null || true)
+  [[ $count =~ ^[0-9]+$ ]] && (( count >= 3 ))
+}
+
 collect_diagnostics() {
   {
     echo "==> plugin catalog"
@@ -113,6 +125,8 @@ wait_until "Paper Jam overview hot corner is resident" 20 layer_on_screen paper-
 omarchy-shell regionallyfamous.paper-jam-84.dock setAutoHide false >/dev/null
 wait_until "Paper Jam dock auto-hide is disabled for visual proof" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.paper-jam-84.dock getAutoHide) == 'false' ]]"
+wait_until "Paper Jam seeds a useful first-run dock" 15 dock_has_seeded_items
+wait_until "Paper Jam renders every seeded dock icon" 15 dock_has_rendered_icons
 
 run_helper="$PLUGIN_DIR/components/dock/scripts/paper-jam-run"
 kill_ready_pid_file="$ARTIFACTS/paper-jam-kill-ready.pid"

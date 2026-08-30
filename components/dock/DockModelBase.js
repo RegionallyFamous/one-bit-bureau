@@ -35,7 +35,10 @@ function parsePinned(text, fallback) {
     if (!source) return (fallback || DEFAULT_PINNED).slice()
     try {
         var parsed = JSON.parse(source)
-        var values = toArray(parsed)
+        var values
+        if (Array.isArray(parsed)) values = parsed
+        else if (parsed && Array.isArray(parsed.pinned)) values = parsed.pinned
+        else return (fallback || DEFAULT_PINNED).slice()
         var result = []
         values.forEach(function(value) {
             var id = normalizeId(value)
