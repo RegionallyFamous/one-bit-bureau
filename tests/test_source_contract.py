@@ -137,6 +137,22 @@ class PluginSourceContractTest(unittest.TestCase):
             'o.window({ tag = "terminal" }, { opacity = "1.0 1.0" })', source
         )
 
+    def test_dock_settings_reject_stale_startup_snapshots(self) -> None:
+        source = (ROOT / "components/dock/DockPanelBase.qml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("property int settingsMutationRevision: 0", source)
+        self.assertIn("property bool settingsWritePending: false", source)
+        self.assertIn(
+            "Number(settingsRevision) === root.settingsMutationRevision", source
+        )
+        self.assertIn(
+            "stateReaderProcess.running || root.settingsWritePending", source
+        )
+        self.assertIn(
+            "root.applyStateSnapshot(text, root.stateReaderSettingsRevision)", source
+        )
+
     def test_desktop_drop_routes_copied_and_moved_launchers_through_safe_helper(self) -> None:
         source = (ROOT / "components/desktop/bin/desktop-index").read_text(
             encoding="utf-8"

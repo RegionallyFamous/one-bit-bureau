@@ -27,6 +27,9 @@ Item {
   property var dockOrder: []
   property bool pinFileLoaded: false
   property bool settingsLoaded: false
+  property int settingsMutationRevision: 0
+  property int stateReaderSettingsRevision: 0
+  property bool settingsWritePending: false
   property var appEntries: []
   property var runningIds: []
   // Most-recently-used app ids, front = most recent. Maintained from focus
@@ -203,11 +206,14 @@ Item {
   }
 
   function saveSettings() {
-    var content = DockModel.serializeSettings({
+    var settings = {
       autoHide: root.autoHide,
       screenName: root.preferredScreenName
-    })
-    DockModel.markSettingsWritten(content)
+    }
+    var content = DockModel.serializeSettings(settings)
+    root.settingsMutationRevision += 1
+    root.settingsWritePending = true
+    DockModel.markSettingsWritten(DockModel.serializeSettingsSnapshot(settings))
     settingsWriter.path = root.tempSettingsPath
     settingsWriter.setText(content)
     Qt.callLater(function() { settingsRenameProcess.running = true })
@@ -1093,7 +1099,7 @@ Item {
     onTriggered: root.hidePreview()
   }
 
-  function applyStateSnapshot(content) {
+  function applyStateSnapshot(content, settingsRevision) {
     var snapshot = null
     try {
       snapshot = JSON.parse(String(content || ""))
@@ -1114,25 +1120,33 @@ Item {
     root.dockOrder = DockModel.parseOrder(pinContent, root.dockOrder)
     root.refreshItems()
 
-    var settingsContent = JSON.stringify(snapshot.settings || {})
-    var parsed = DockModel.parseSettings(settingsContent, {
-      autoHide: true,
-      screenName: root.preferredScreenName
-    })
-    if (!root.settingsLoaded || DockModel.shouldReprocessSettings(settingsContent)) {
-      root.settingsLoaded = true
-      root.autoHide = parsed.autoHide
-      root.preferredScreenName = parsed.screenName
+    // A state read may have started before an IPC/UI settings mutation. Never
+    // let that stale snapshot roll the user's choice back while the atomic
+    // settings write is landing on disk.
+    var settingsSnapshotIsCurrent = Number(settingsRevision) === root.settingsMutationRevision
+      && !root.settingsWritePending
+    if (settingsSnapshotIsCurrent) {
+      var settingsContent = JSON.stringify(snapshot.settings || {})
+      var parsed = DockModel.parseSettings(settingsContent, {
+        autoHide: true,
+        screenName: root.preferredScreenName
+      })
+      if (!root.settingsLoaded || DockModel.shouldReprocessSettings(settingsContent)) {
+        root.settingsLoaded = true
+        root.autoHide = parsed.autoHide
+        root.preferredScreenName = parsed.screenName
+      }
+      if (!root.preferredScreenName && root.dockScreen) {
+        root.preferredScreenName = String(root.dockScreen.name || "")
+        root.saveSettings()
+      }
+      if (!root.autoHide) root.autoHidden = false
     }
-    if (!root.preferredScreenName && root.dockScreen) {
-      root.preferredScreenName = String(root.dockScreen.name || "")
-      root.saveSettings()
-    }
-    if (!root.autoHide) root.autoHidden = false
   }
 
   function reloadBoundedState() {
-    if (stateReaderProcess.running || !root.stateHelperPath || !root.runHelperPath) return
+    if (stateReaderProcess.running || root.settingsWritePending || !root.stateHelperPath || !root.runHelperPath) return
+    root.stateReaderSettingsRevision = root.settingsMutationRevision
     stateReaderProcess.command = [
       "python3", root.runHelperPath, "2200", "250", "--",
       "python3", root.stateHelperPath, "read",
@@ -1163,7 +1177,7 @@ Item {
     id: stateReaderProcess
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.applyStateSnapshot(text)
+      onStreamFinished: root.applyStateSnapshot(text, root.stateReaderSettingsRevision)
     }
     onExited: stateReaderDeadline.stop()
   }
@@ -1189,6 +1203,10 @@ Item {
   Process {
     id: settingsRenameProcess
     command: ["mv", root.tempSettingsPath, root.settingsPath]
+    onExited: {
+      root.settingsWritePending = false
+      root.reloadBoundedState()
+    }
   }
 
   Connections {

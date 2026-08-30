@@ -254,9 +254,11 @@ test("settings parse and serialize autoHide and dock output", () => {
 
 test("settings write guard ignores matching content", () => {
   model.resetSettingsGuard()
-  model.markSettingsWritten('{"autoHide":true}\n')
-  assert.equal(model.shouldReprocessSettings('{"autoHide":true}\n'), false)
+  const settings = { autoHide: true, screenName: "DP-2" }
+  model.markSettingsWritten(model.serializeSettingsSnapshot(settings))
+  assert.equal(model.shouldReprocessSettings('{"autoHide":true,"screenName":"DP-2"}'), false)
   assert.equal(model.shouldReprocessSettings('{"autoHide":false}\n'), true)
+  assert.equal(model.serializeSettingsSnapshot({ autoHide: false }), '{"autoHide":false}')
 })
 
 test("auto-hide state machine: shouldHideDock and shouldScheduleHide require ready, engaged, suppressed", () => {

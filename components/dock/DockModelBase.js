@@ -391,6 +391,15 @@ function serializeSettings(settings) {
     return JSON.stringify({ version: 1, autoHide: value, screenName: screenName }, null, 2) + "\n"
 }
 
+function serializeSettingsSnapshot(settings) {
+    var value = settings && typeof settings.autoHide === "boolean" ? settings.autoHide : true
+    var screenName = settings && typeof settings.screenName === "string"
+        ? settings.screenName.slice(0, 160) : ""
+    var snapshot = { autoHide: value }
+    if (screenName) snapshot.screenName = screenName
+    return JSON.stringify(snapshot)
+}
+
 function shouldReprocessSettings(content) {
     return hashContent(content) !== lastSettingsHash
 }
@@ -450,6 +459,7 @@ if (typeof module !== "undefined" && module.exports) {
         resetWrittenGuard: resetWrittenGuard,
         parseSettings: parseSettings,
         serializeSettings: serializeSettings,
+        serializeSettingsSnapshot: serializeSettingsSnapshot,
         shouldReprocessSettings: shouldReprocessSettings,
         markSettingsWritten: markSettingsWritten,
         resetSettingsGuard: resetSettingsGuard,
