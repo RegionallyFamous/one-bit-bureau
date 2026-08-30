@@ -161,6 +161,11 @@ class DesktopQmlContractTest(unittest.TestCase):
         self.assertIn("!panel.routeEligibilityResolved || !panel.routeValid", SERVICE)
         self.assertIn("panel.dragCanceled = true", SERVICE)
 
+    def test_drop_target_tracks_the_dragged_object_without_smoothing_lag(self) -> None:
+        self.assertIn("drag.smoothed: false", SERVICE)
+        self.assertIn("iconRoot.x + iconRoot.width / 2", SERVICE)
+        self.assertIn("iconRoot.y + iconRoot.height / 2", SERVICE)
+
     def test_desktop_exposes_shared_inspector_coordinator_contract(self) -> None:
         self.assertIn("property var inspectorSubject: null", SERVICE)
         self.assertIn("property bool inspectorOpen: false", SERVICE)

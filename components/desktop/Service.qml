@@ -2262,6 +2262,10 @@ Item {
             cursorShape: Qt.PointingHandCursor
             drag.target: panel.host.isTrash(iconRoot.modelData) ? null : iconRoot
             drag.axis: Drag.XAndYAxis
+            // Drop routing is calculated from the object's actual bounds.
+            // Exact pointer tracking keeps a brisk drag from lagging one cell
+            // behind and resolving against the wrong desktop object.
+            drag.smoothed: false
             drag.threshold: 36
             drag.minimumX: 0
             drag.minimumY: 0
