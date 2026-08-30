@@ -68,7 +68,7 @@ The [everyday-use guide](https://github.com/RegionallyFamous/one-bit-bureau/wiki
   </tr>
 </table>
 
-These are real 1280×800 captures from passed disposable x86_64 Omarchy run `bxzg552bm4`, using Omarchy commit `2c593dbb` and public plugin commit `1e4aa8c`. The same run passed the exact public install, activate, update, remove, rollback, and user-data-preservation lifecycle.
+These are real 1280×800 captures retained from passed disposable x86_64 Omarchy run `9d36kxlcrt`, using Omarchy commit `2c593dbb` and public runtime commit `4af531c`. That run produced 37 review frames and passed the exact public install, activate, update, remove, rollback, and user-data-preservation lifecycle. The later documentation commit only packages these unchanged evidence pixels and copy.
 
 ### The rest of the system
 
