@@ -29,6 +29,13 @@ THEME_SOURCE_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/theme-sour
 ORIGINAL_THEME=$(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)
 ORIGINAL_BAR_POSITION=$(jq -r '.bar.position // "top"' "$HOME/.config/omarchy/shell.json" 2>/dev/null || echo top)
 ORIGINAL_BAR_TRANSPARENT=$(jq -r '.bar.transparent // false' "$HOME/.config/omarchy/shell.json" 2>/dev/null || echo false)
+SHOWCASE_ROOT=$(mktemp -d /tmp/one-bit-bureau-showcase.XXXXXX)
+SHOWCASE_DESKTOP_STASH="$SHOWCASE_ROOT/original-desktop"
+SHOWCASE_DESKTOP_RETIRED="$SHOWCASE_ROOT/showcase-desktop"
+SHOWCASE_FILES="$SHOWCASE_ROOT/Bureau"
+SHOWCASE_BROWSER_PROFILE="$SHOWCASE_ROOT/chromium-profile"
+SHOWCASE_LIBREOFFICE_PROFILE="$SHOWCASE_ROOT/libreoffice-profile"
+showcase_active=false
 QMLLINT_BIN=$(command -v qmllint || true)
 : "${QMLLINT_BIN:=/usr/lib/qt6/bin/qmllint}"
 
@@ -55,6 +62,10 @@ screen_lacks() {
 
 icon_manager_has_terminal() {
   screen_contains "Foot" || screen_contains "Terminal"
+}
+
+icon_manager_has_browser() {
+  screen_contains "Chromium" || screen_contains "Web"
 }
 
 notification_has_proof() {
@@ -233,6 +244,149 @@ public_plugin_absent() {
   ! omarchy plugin list --json | jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)'
 }
 
+move_directory_contents() {
+  local source="$1"
+  local destination="$2"
+  local item
+
+  mkdir -p "$destination"
+  while IFS= read -r -d '' item; do
+    mv -- "$item" "$destination/"
+  done < <(find "$source" -mindepth 1 -maxdepth 1 -print0)
+}
+
+close_showcase_apps() {
+  close_windows '^(chromium|libreoffice-writer|org.gnome.Nautilus)$' || true
+}
+
+restore_showcase_state() {
+  close_showcase_apps
+  omarchy-shell shell hide "$PLUGIN_ID" >/dev/null 2>&1 || true
+  omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
+
+  if [[ $showcase_active == true ]]; then
+    mkdir -p "$SHOWCASE_DESKTOP_RETIRED"
+    move_directory_contents "$HOME/Desktop" "$SHOWCASE_DESKTOP_RETIRED"
+    move_directory_contents "$SHOWCASE_DESKTOP_STASH" "$HOME/Desktop"
+
+    if [[ -f $SHOWCASE_ROOT/original-dock-pinned.json ]]; then
+      cp -- "$SHOWCASE_ROOT/original-dock-pinned.json" "$BUREAU_CONFIG/dock-pinned.json"
+    else
+      rm -f -- "$BUREAU_CONFIG/dock-pinned.json"
+    fi
+    if [[ -f $SHOWCASE_ROOT/original-desktop-positions.json ]]; then
+      cp -- "$SHOWCASE_ROOT/original-desktop-positions.json" "$BUREAU_CONFIG/desktop-icon-positions.json"
+    else
+      rm -f -- "$BUREAU_CONFIG/desktop-icon-positions.json"
+    fi
+    showcase_active=false
+    sleep 2
+  fi
+}
+
+prepare_showcase_desktop() {
+  local monitor_width right_x left_x top_y second_y third_y
+
+  command -v chromium >/dev/null 2>&1 || fail "the showcase has Chromium from the Omarchy base install"
+  command -v nautilus >/dev/null 2>&1 || fail "the showcase has Files from the Omarchy base install"
+  command -v libreoffice >/dev/null 2>&1 || fail "the showcase has Writer from the Omarchy base install"
+  pass "the showcase uses real applications from the Omarchy base install"
+
+  mkdir -p "$SHOWCASE_DESKTOP_STASH" "$SHOWCASE_DESKTOP_RETIRED" "$SHOWCASE_FILES"
+  if [[ -f $BUREAU_CONFIG/dock-pinned.json ]]; then
+    cp -- "$BUREAU_CONFIG/dock-pinned.json" "$SHOWCASE_ROOT/original-dock-pinned.json"
+  fi
+  if [[ -f $BUREAU_CONFIG/desktop-icon-positions.json ]]; then
+    cp -- "$BUREAU_CONFIG/desktop-icon-positions.json" "$SHOWCASE_ROOT/original-desktop-positions.json"
+  fi
+  move_directory_contents "$HOME/Desktop" "$SHOWCASE_DESKTOP_STASH"
+  showcase_active=true
+
+  mkdir -p "$HOME/Desktop/Projects" "$HOME/Desktop/Reference"
+  printf 'Welcome to One-Bit Bureau.\n\nOpen the dock, inspect a file, or move a window to another desk.\n' >"$HOME/Desktop/Welcome.txt"
+  printf 'Current work\n' >"$HOME/Desktop/Projects/Current Work.txt"
+  printf 'Reference material\n' >"$HOME/Desktop/Reference/Desk Manual.txt"
+  cp -- "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/Desk Photo.png"
+
+  mkdir -p "$SHOWCASE_FILES/Projects" "$SHOWCASE_FILES/Reference" "$SHOWCASE_FILES/Archive"
+  printf 'One-Bit Bureau field notes\n' >"$SHOWCASE_FILES/Field Notes.txt"
+  printf '# Launch checklist\n\n- Review the desk\n- Open the Window Ledger\n- Move work to Desk 2\n' >"$SHOWCASE_FILES/Launch Checklist.md"
+  cp -- "$FIXTURE/docs/assets/proof-photo.png" "$SHOWCASE_FILES/Desk Photo.png"
+
+  printf '%s\n' \
+    '{"version":1,"pinned":["org.gnome.Nautilus","chromium","libreoffice-writer","obsidian","foot"],"order":["org.gnome.Nautilus","chromium","libreoffice-writer","obsidian","foot"]}' \
+    >"$BUREAU_CONFIG/dock-pinned.json"
+
+  monitor_width=$(hyprctl -j monitors | jq -er '.[0] | (.width / .scale) | floor')
+  right_x=$((monitor_width - 144))
+  left_x=$((right_x - 120))
+  top_y=54
+  second_y=196
+  third_y=338
+  jq -n \
+    --arg screen "$monitor_name" \
+    --argjson rightX "$right_x" \
+    --argjson leftX "$left_x" \
+    --argjson topY "$top_y" \
+    --argjson secondY "$second_y" \
+    --argjson thirdY "$third_y" \
+    '{($screen): {
+      "Projects": {x: $rightX, y: $topY},
+      "Reference": {x: $rightX, y: $secondY},
+      "Welcome.txt": {x: $rightX, y: $thirdY},
+      "Desk Photo.png": {x: $leftX, y: $topY}
+    }}' >"$BUREAU_CONFIG/desktop-icon-positions.json"
+
+  wait_until "the showcase desktop contains only its four curated objects" 20 \
+    bash -c "python3 '$PLUGIN_DIR/components/desktop/bin/desktop-index' | jq -e '[.items[] | select(.kind != \"trash\") | .id] | sort == [\"Desk Photo.png\",\"Projects\",\"Reference\",\"Welcome.txt\"]' >/dev/null"
+  wait_until "the showcase dock loads five curated application icons" 20 \
+    bash -c "(( \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getItemCount) == 5 ))"
+  wait_until "the showcase dock renders all five curated application icons" 20 \
+    bash -c "(( \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getReadyIconCount) == 5 ))"
+  sleep 2
+}
+
+launch_showcase_apps() {
+  local -a chromium_flags
+
+  mkdir -p "$SHOWCASE_BROWSER_PROFILE" "$SHOWCASE_LIBREOFFICE_PROFILE"
+  timeout 30 libreoffice \
+    "-env:UserInstallation=file://$SHOWCASE_LIBREOFFICE_PROFILE" \
+    --headless --convert-to odt --outdir "$SHOWCASE_ROOT" \
+    "$FIXTURE/demo/showcase-notes.html" >/dev/null 2>&1 ||
+    fail "Writer prepares the local showcase document"
+  [[ -s $SHOWCASE_ROOT/showcase-notes.odt ]] || fail "Writer produced the showcase document"
+
+  chromium_flags=(
+    "--user-data-dir=$SHOWCASE_BROWSER_PROFILE"
+    --no-first-run
+    --no-default-browser-check
+    --disable-background-mode
+    --disable-background-networking
+    --disable-component-update
+    --disable-sync
+    --disable-translate
+    --disable-features=MediaRouter,OptimizationHints,Translate
+    --password-store=basic
+    --class=chromium
+  )
+  setsid -f chromium "${chromium_flags[@]}" --app="file://$FIXTURE/demo/site/index.html" >/dev/null 2>&1
+  wait_until "the local Bureau Field Guide opens in Chromium" 30 \
+    bash -c "hyprctl -j clients | jq -e 'any(.[]; .class == \"chromium\" and .title == \"Bureau Field Guide\")' >/dev/null"
+  setsid -f chromium "${chromium_flags[@]}" --app="file://$FIXTURE/demo/site/release-desk.html" >/dev/null 2>&1
+  setsid -f nautilus --new-window "$SHOWCASE_FILES" >/dev/null 2>&1
+  setsid -f libreoffice \
+    "-env:UserInstallation=file://$SHOWCASE_LIBREOFFICE_PROFILE" \
+    --writer --norestore --nodefault --nolockcheck "$SHOWCASE_ROOT/showcase-notes.odt" >/dev/null 2>&1
+
+  wait_until "the local Bureau Release Desk opens in Chromium" 30 \
+    bash -c "hyprctl -j clients | jq -e 'any(.[]; .class == \"chromium\" and .title == \"Bureau Release Desk\")' >/dev/null"
+  wait_until "the showcase opens the real Files application" 30 window_present '^org.gnome.Nautilus$'
+  wait_until "the showcase opens the real Writer application" 30 window_present '^libreoffice-writer$'
+  pass "the showcase opens Chromium, Files, and Writer with offline local content"
+  sleep 4
+}
+
 assert_branding_restored() {
   if [[ $ORIGINAL_ABOUT_PRESENT == true ]]; then
     cmp -s "$BASELINE_DIR/about.txt" "$HOME/.config/omarchy/branding/about.txt" || return 1
@@ -284,6 +438,7 @@ collect_diagnostics() {
 
 cleanup_one_bit_bureau() {
   trap - ERR
+  restore_showcase_state
   omarchy-shell shell hide "$PLUGIN_ID" >/dev/null 2>&1 || true
   omarchy-shell lock hidePreview >/dev/null 2>&1 || true
   omarchy-shell shell hide omarchy.menu >/dev/null 2>&1 || true
@@ -305,6 +460,9 @@ cleanup_one_bit_bureau() {
     omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
   fi
   rm -rf "$THEME_TARGET"
+  if [[ -d $SHOWCASE_ROOT && $SHOWCASE_ROOT == /tmp/one-bit-bureau-showcase.* ]]; then
+    rm -rf "$SHOWCASE_ROOT"
+  fi
 }
 
 handle_unexpected_error() {
@@ -343,15 +501,15 @@ pass "One-Bit Bureau passes the host validator"
 mkdir -p "$HOME/Desktop" "$THEMES_DIR" "$(dirname "$PLUGIN_DIR")" "$BUREAU_CONFIG"
 mkdir -p "$(dirname "$QA_DESKTOP_ENTRY")" "$(dirname "$QA_NATIVE_ICON")"
 mkdir -p "$HOME/Desktop/Projects"
-printf 'One-Bit Bureau runtime proof\n' >"$HOME/Desktop/ONE-BIT-BUREAU-QA.txt"
-printf 'Route Alpha\n' >"$HOME/Desktop/Route Alpha.txt"
-printf 'Route Beta\n' >"$HOME/Desktop/Route Beta.txt"
+printf 'Welcome to One-Bit Bureau.\n' >"$HOME/Desktop/Welcome.txt"
+printf 'Launch plan\n' >"$HOME/Desktop/Launch Plan.txt"
+printf 'Icon notes\n' >"$HOME/Desktop/Icon Notes.txt"
 cp "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/One-Bit Bureau Photo.png"
 cp "$FIXTURE/docs/assets/proof-photo.png" "$QA_NATIVE_ICON"
 printf '%s\n' \
   '[Desktop Entry]' \
   'Type=Application' \
-  'Name=Spectra QA' \
+  'Name=Spectrum' \
   "Exec=foot --app-id=$QA_APP_ID --title=Spectra-QA" \
   "Icon=$QA_NATIVE_ICON" \
   'Terminal=false' \
@@ -372,13 +530,13 @@ mkdir -p "$HOME/Downloads/applications"
 printf '%s\n' \
   '[Desktop Entry]' \
   'Type=Application' \
-  'Name=Untrusted QA' \
-  'Exec=foot --app-id=one-bit-bureau-qa-trusted --title=Trusted-Launcher' \
-  >"$HOME/Downloads/applications/untrusted-qa.desktop"
-chmod +x "$HOME/Downloads/applications/untrusted-qa.desktop"
-python3 "$FIXTURE/components/desktop/bin/add-to-desktop" "$HOME/Downloads/applications/untrusted-qa.desktop" >/dev/null
-[[ ! -x $HOME/Desktop/Untrusted\ QA.desktop ]] || fail "Downloaded launchers remain untrusted"
-python3 "$FIXTURE/components/desktop/bin/desktop-index" | jq -e '.items[] | select(.name == "Untrusted QA") | .trusted == false' >/dev/null || fail "Desktop index reports copied downloaded launcher as untrusted"
+  'Name=Bureau Terminal' \
+  'Exec=foot --app-id=one-bit-bureau-qa-trusted --title=Bureau-Terminal' \
+  >"$HOME/Downloads/applications/bureau-terminal.desktop"
+chmod +x "$HOME/Downloads/applications/bureau-terminal.desktop"
+python3 "$FIXTURE/components/desktop/bin/add-to-desktop" "$HOME/Downloads/applications/bureau-terminal.desktop" >/dev/null
+[[ ! -x $HOME/Desktop/Bureau\ Terminal.desktop ]] || fail "Downloaded launchers remain untrusted"
+python3 "$FIXTURE/components/desktop/bin/desktop-index" | jq -e '.items[] | select(.name == "Bureau Terminal") | .trusted == false' >/dev/null || fail "Desktop index reports copied downloaded launcher as untrusted"
 pass "Copied downloaded launchers remain untrusted"
 
 cp -a "$FIXTURE" "$PLUGIN_DIR"
@@ -495,11 +653,11 @@ screenshot "success-one-bit-bureau-02c-desktop-inspector"
 wtype -k Escape
 wait_until "Escape closes the desktop Inspector" 10 layer_absent regionallyfamous.one-bit-bureau.inspector
 
-for route_item in "Route Alpha.txt" "Route Beta.txt" "Projects" "Untrusted QA.desktop"; do
+for route_item in "Launch Plan.txt" "Icon Notes.txt" "Projects" "Bureau Terminal.desktop"; do
   wait_until "One-Bit Bureau saves a position for $route_item" 15 \
     bash -c "jq -e --arg id '$route_item' 'any(to_entries[]; .value[\$id] != null)' '$BUREAU_CONFIG/desktop-icon-positions.json'"
 done
-read -r route_alpha_x route_alpha_y < <(desktop_item_center "Route Alpha.txt")
+read -r route_alpha_x route_alpha_y < <(desktop_item_center "Launch Plan.txt")
 move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the first routing item"
 ydotool click 0xC0 >/dev/null
 # Use the desktop's native keyboard range selection. The Test Lab's virtual
@@ -520,12 +678,12 @@ drag_pointer_to "$route_target_x" "$route_target_y" "the selected group reaches 
 screenshot "success-one-bit-bureau-02e-desktop-route-slip"
 ydotool click 0x80 >/dev/null
 wait_until "the desktop route moves both selected files" 20 \
-  bash -c "[[ -f '$HOME/Desktop/Projects/Route Alpha.txt' && -f '$HOME/Desktop/Projects/Route Beta.txt' && ! -e '$HOME/Desktop/Route Alpha.txt' && ! -e '$HOME/Desktop/Route Beta.txt' ]]"
+  bash -c "[[ -f '$HOME/Desktop/Projects/Launch Plan.txt' && -f '$HOME/Desktop/Projects/Icon Notes.txt' && ! -e '$HOME/Desktop/Launch Plan.txt' && ! -e '$HOME/Desktop/Icon Notes.txt' ]]"
 wait_until "the desktop route receipt offers Undo" 15 screen_contains "Undo"
 screenshot "success-one-bit-bureau-02f-desktop-route-receipt"
 wtype -M ctrl -k z -m ctrl
 wait_until "Undo restores both routed files" 20 \
-  bash -c "[[ -f '$HOME/Desktop/Route Alpha.txt' && -f '$HOME/Desktop/Route Beta.txt' && ! -e '$HOME/Desktop/Projects/Route Alpha.txt' && ! -e '$HOME/Desktop/Projects/Route Beta.txt' ]]"
+  bash -c "[[ -f '$HOME/Desktop/Launch Plan.txt' && -f '$HOME/Desktop/Icon Notes.txt' && ! -e '$HOME/Desktop/Projects/Launch Plan.txt' && ! -e '$HOME/Desktop/Projects/Icon Notes.txt' ]]"
 # The restored filesystem state is the authoritative proof. Capture the
 # eight-second completion receipt immediately instead of depending on OCR for
 # one small word in a deliberately pixel-sized UI.
@@ -533,9 +691,9 @@ sleep 0.5
 screenshot "success-one-bit-bureau-02g-desktop-route-undone"
 pass "One-Bit Bureau routes a bounded multi-selection with a named verb, receipt, and proven Undo"
 
-select_desktop_item_by_id "Route Alpha.txt"
-read -r route_alpha_x route_alpha_y < <(desktop_item_center "Route Alpha.txt")
-read -r route_reject_x route_reject_y < <(desktop_item_center "Untrusted QA.desktop")
+select_desktop_item_by_id "Launch Plan.txt"
+read -r route_alpha_x route_alpha_y < <(desktop_item_center "Launch Plan.txt")
+read -r route_reject_x route_reject_y < <(desktop_item_center "Bureau Terminal.desktop")
 move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the rejected-route source"
 ydotool click 0x40 >/dev/null
 sleep 0.1
@@ -546,7 +704,7 @@ wait_until "the rejected desktop route closes" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteVisible) == 'false' ]]"
 wait_until "the desktop records the exact rejected route" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getLastRouteValid) == 'false' && \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getLastRouteReason) == 'Applications do not accept desktop files here' ]]"
-[[ -f $HOME/Desktop/Route\ Alpha.txt && -f $HOME/Desktop/Route\ Beta.txt ]] ||
+[[ -f $HOME/Desktop/Launch\ Plan.txt && -f $HOME/Desktop/Icon\ Notes.txt ]] ||
   fail "the rejected desktop route changed its sources"
 wait_until "the rejected desktop route paints a local refusal receipt" 10 screen_contains "cannot be routed"
 screenshot "success-one-bit-bureau-02i-desktop-route-rejection-receipt"
@@ -586,7 +744,7 @@ screenshot "success-one-bit-bureau-03-desktop-keyboard-context-menu"
 wtype -k Escape
 wait_until "the desktop keyboard context menu closes" 10 screen_lacks "Show in Files"
 
-read -r untrusted_x untrusted_y < <(desktop_item_center "Untrusted QA.desktop")
+read -r untrusted_x untrusted_y < <(desktop_item_center "Bureau Terminal.desktop")
 move_pointer_to "$untrusted_x" "$untrusted_y" "the pointer reaches the untrusted launcher"
 ydotool click 0xC0 >/dev/null
 wtype -k Return
@@ -594,13 +752,13 @@ wait_until "the untrusted launcher confirmation opens from the keyboard" 10 scre
 screenshot "success-one-bit-bureau-04-untrusted-launcher-confirmation"
 wtype -k Return
 wait_until "Enter safely cancels the trust prompt" 10 screen_lacks "Untrusted launcher"
-[[ ! -x $HOME/Desktop/Untrusted\ QA.desktop ]] || fail "Enter never trusts an untrusted launcher"
+[[ ! -x $HOME/Desktop/Bureau\ Terminal.desktop ]] || fail "Enter never trusts an untrusted launcher"
 
 wtype -k Return
 wait_until "the trust prompt reopens" 10 screen_contains "Untrusted launcher"
 wtype -k Tab
 wtype -k Space
-wait_until "keyboard trust marks the launcher executable" 10 test -x "$HOME/Desktop/Untrusted QA.desktop"
+wait_until "keyboard trust marks the launcher executable" 10 test -x "$HOME/Desktop/Bureau Terminal.desktop"
 wait_until "keyboard trust opens the launcher" 20 window_present '^one-bit-bureau-qa-trusted$'
 pass "One-Bit Bureau's trust flow keeps Cancel safe and requires an explicit keyboard choice"
 close_windows '^one-bit-bureau-qa-trusted$'
@@ -793,6 +951,99 @@ wait_until "the lock preview closes" 10 layer_absent omarchy-lock-preview
 # host-global graphical suite. The safe lock preview above proves this theme's
 # lock surface without risking a stranded disposable guest.
 
+# The functional proof above intentionally uses hostile launchers, synthetic
+# identities, and controllable terminal windows. Keep that evidence, then
+# stage a separate public gallery with ordinary names and real Omarchy apps so
+# release screenshots demonstrate a believable workday instead of QA debris.
+close_windows '^one-bit-bureau-qa-' || true
+wait_until "the showcase starts without synthetic proof windows" 15 \
+  bash -c "hyprctl -j clients | jq -e 'all(.[]; (.class | startswith(\"one-bit-bureau-qa-\") | not))' >/dev/null"
+prepare_showcase_desktop
+focus_empty_desktop
+screen_lacks "QA" || fail "the showcase desktop contains no QA labels"
+screenshot "success-one-bit-bureau-21-showcase-desktop"
+
+select_desktop_item_by_id "Welcome.txt"
+wtype -M ctrl -k i -m ctrl
+wait_until "the showcase opens the shared Inspector for a normal document" 15 \
+  layer_on_screen regionallyfamous.one-bit-bureau.inspector
+sleep 0.5
+screenshot "success-one-bit-bureau-22-showcase-inspector"
+wtype -k Escape
+wait_until "the showcase Inspector closes" 10 layer_absent regionallyfamous.one-bit-bureau.inspector
+
+[[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock openManageIcons) == "true" ]] ||
+  fail "the showcase opens Manage Icons"
+wait_until "the showcase icon manager opens" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconPickerMode) == 'manage' ]]"
+wtype 'chromium'
+wait_until "the showcase icon manager finds the real browser" 10 icon_manager_has_browser
+wtype -k Down
+wtype -k Return
+wait_until "the showcase opens the browser icon picker" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconPickerMode) == 'picker' ]]"
+screenshot "success-one-bit-bureau-23-showcase-icon-picker"
+omarchy-shell regionallyfamous.one-bit-bureau.dock closeManageIcons >/dev/null
+wait_until "the showcase icon picker closes" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconPickerOpen) == 'false' ]]"
+
+launch_showcase_apps
+screenshot "success-one-bit-bureau-24-showcase-apps"
+
+guide_address=$(hyprctl -j clients | jq -er '.[] | select(.class == "chromium" and .title == "Bureau Field Guide") | .address' | head -n 1)
+release_address=$(hyprctl -j clients | jq -er '.[] | select(.class == "chromium" and .title == "Bureau Release Desk") | .address' | head -n 1)
+writer_address=$(hyprctl -j clients | jq -er '.[] | select(.class == "libreoffice-writer") | .address' | head -n 1)
+[[ -n $guide_address && -n $release_address && -n $writer_address ]] ||
+  fail "the showcase exposes stable addresses for its real applications"
+
+bash "$PLUGIN_DIR/components/overview/move-window-to-workspace" "$release_address" 2 >/dev/null
+wait_until "the showcase places one browser window on Desk 2" 15 \
+  bash -c "hyprctl -j clients | jq -e --arg address '$release_address' 'any(.[]; .address == \$address and .workspace.id == 2)' >/dev/null"
+hyprctl dispatch 'hl.dsp.focus({ workspace = "1" })' >/dev/null 2>&1 ||
+  hyprctl dispatch workspace 1 >/dev/null
+wait_until "the showcase dock groups both real browser windows" 15 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getWindowCount chromium) == '2' ]]"
+[[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock openWindowListForApp chromium) == "true" ]] ||
+  fail "the showcase opens Chromium's Window Ledger"
+wait_until "the showcase Window Ledger opens" 10 layer_on_screen one-bit-bureau-window-ledger
+sleep 0.5
+screenshot "success-one-bit-bureau-25-showcase-window-ledger"
+omarchy-shell regionallyfamous.one-bit-bureau.dock closeWindowList >/dev/null
+wait_until "the showcase Window Ledger closes" 10 layer_absent one-bit-bureau-window-ledger
+
+bash "$PLUGIN_DIR/components/dock/scripts/focus-window" "$writer_address" >/dev/null
+wait_until "Writer is active before the showcase Overview opens" 10 \
+  bash -c "hyprctl -j activewindow | jq -e --arg address '$writer_address' '.address == \$address and .workspace.id == 1' >/dev/null"
+omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
+wait_until "the showcase Overview opens over real applications" 20 layer_on_screen one-bit-bureau-window-overview
+sleep 2
+screenshot "success-one-bit-bureau-26-showcase-overview"
+
+wtype -M ctrl -k Right -m ctrl
+wtype -M ctrl -M shift -k Return -m shift -m ctrl
+wait_until "the showcase Workspace Board moves Writer to Desk 2" 20 \
+  bash -c "hyprctl -j clients | jq -e --arg address '$writer_address' 'any(.[]; .address == \$address and .workspace.id == 2)' >/dev/null"
+layer_on_screen one-bit-bureau-window-overview || fail "the showcase Overview stays open after moving Writer"
+sleep 0.5
+screenshot "success-one-bit-bureau-27-showcase-workspace-board"
+omarchy-shell shell hide "$PLUGIN_ID" >/dev/null
+wait_until "the showcase Overview closes" 20 layer_absent one-bit-bureau-window-overview
+
+bash "$PLUGIN_DIR/components/dock/scripts/focus-window" "$guide_address" >/dev/null
+wait_until "the Bureau Field Guide is active for the final showcase frame" 10 \
+  bash -c "hyprctl -j activewindow | jq -e --arg address '$guide_address' '.address == \$address' >/dev/null"
+omarchy-notification-send -u normal "Desk ready" "Files, Web, Writer, and every window accounted for." -t 30000 >/dev/null
+wait_until "the showcase notification opens" 15 layer_on_screen omarchy-notifications
+wait_until "the showcase notification paints its workday message" 15 screen_contains "Desk ready"
+sleep 1
+screenshot "success-one-bit-bureau-28-showcase-notification"
+omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
+
+restore_showcase_state
+wait_until "the functional Desktop fixture returns after the showcase" 20 \
+  bash -c "[[ -f '$HOME/Desktop/Welcome.txt' && -f '$HOME/Desktop/One-Bit Bureau Photo.png' ]]"
+pass "One-Bit Bureau keeps functional proof separate from a clean real-app gallery"
+
 cp "$FIXTURE/test/stubborn-state-helper.py" "$PLUGIN_DIR/components/dock/scripts/one-bit-bureau-state"
 stubborn_pid_file="$HOME/.config/omarchy/one-bit-bureau/stubborn-state-helper.pid"
 for _ in {1..100}; do
@@ -912,7 +1163,7 @@ wait_until "the public plugin is removed" 20 public_plugin_absent
 [[ ! -e $FONT_TARGET && ! -e $COMMAND_TARGET ]] ||
   fail "public removal clears owned fonts and command"
 [[ -z $public_theme_source_state || ! -e $public_theme_source_state ]] || fail "public removal detaches the theme from its source"
-[[ -f $BUREAU_CONFIG/lifecycle-user-data.txt && -f $HOME/Desktop/ONE-BIT-BUREAU-QA.txt && -f $HOME/Desktop/One-Bit\ Bureau\ Photo.png ]] ||
+[[ -f $BUREAU_CONFIG/lifecycle-user-data.txt && -f $HOME/Desktop/Welcome.txt && -f $HOME/Desktop/One-Bit\ Bureau\ Photo.png ]] ||
   fail "public removal preserves One-Bit Bureau configuration and Desktop data"
 [[ $(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true) == "$ORIGINAL_THEME" ]] ||
   fail "public removal restores the prior theme"
