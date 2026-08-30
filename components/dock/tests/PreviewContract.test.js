@@ -70,10 +70,12 @@ test("foreign-toplevel changes refresh Hyprland class metadata before aggregatio
 })
 
 test("unmapped compositor remnants cannot survive as ghost dock applications", () => {
+  assert.match(panelBase, /function foreignToplevelValues\(\)/)
+  assert.match(panelBase, /function liveHyprlandWindows\(\)/)
   assert.match(panelBase, /function hyprlandWindowIsLive\(window\)/)
   assert.match(panelBase, /return ipc\.mapped !== false/)
-  assert.match(panelBase, /function normalizeRunning\(\)[\s\S]*?if \(!root\.hyprlandWindowIsLive\(item\)\) continue/)
-  assert.match(panelBase, /function rebuildWindowLedger\(\)[\s\S]*?if \(!root\.hyprlandWindowIsLive\(candidate\)\) continue/)
+  assert.match(panelBase, /function normalizeRunning\(\)[\s\S]*?var values = root\.foreignToplevelValues\(\)/)
+  assert.match(panelBase, /function rebuildWindowLedger\(\)[\s\S]*?var values = root\.liveHyprlandWindows\(\)/)
   assert.match(panelBase, /function onLastIpcObjectChanged\(\) \{ root\.refreshItems\(\) \}/)
 })
 

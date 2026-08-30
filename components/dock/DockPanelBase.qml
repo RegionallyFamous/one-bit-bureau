@@ -352,23 +352,26 @@ Item {
 
   function normalizeRunning() {
     var output = []
+    var values = root.foreignToplevelValues()
+    for (var i = 0; i < values.length; i++) {
+      // The foreign-toplevel model is authoritative for membership. Enrich
+      // each live object with Hyprland class metadata when available so
+      // generated Chromium ids still resolve to their canonical launcher.
+      var hyprlandWindow = root.hyprlandWindowFor(values[i])
+      var id = hyprlandWindow
+        ? root.dockIdForHyprlandWindow(hyprlandWindow)
+        : root.desktopIdForWindow(values[i])
+      if (id && output.indexOf(id) === -1) output.push(id)
+    }
+    return output
+  }
+
+  function foreignToplevelValues() {
+    var output = []
     try {
-      // Hyprland supplies the live class and initial class alongside the
-      // Wayland app id, which lets the resolver skip generated identities.
-      var values = Hyprland.toplevels.values
+      var values = ToplevelManager.toplevels.values
       for (var i = 0; i < values.length; i++) {
-        var item = values[i]
-        if (!root.hyprlandWindowIsLive(item)) continue
-        var id = root.dockIdForHyprlandWindow(item)
-        if (id && output.indexOf(id) === -1) output.push(id)
-      }
-    } catch (error) {}
-    if (output.length) return output
-    try {
-      var fallbackValues = ToplevelManager.toplevels.values
-      for (var j = 0; j < fallbackValues.length; j++) {
-        var fallbackId = root.desktopIdForWindow(fallbackValues[j])
-        if (fallbackId && output.indexOf(fallbackId) === -1) output.push(fallbackId)
+        if (values[i]) output.push(values[i])
       }
     } catch (error) {}
     return output
@@ -418,10 +421,9 @@ Item {
     var output = []
     var wanted = String(id || "")
     try {
-      var values = Hyprland.toplevels.values
+      var values = root.liveHyprlandWindows()
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
-        if (!root.hyprlandWindowIsLive(candidate)) continue
         if (root.dockIdForHyprlandWindow(candidate) !== wanted) continue
         var ipc = candidate.lastIpcObject || {}
         var workspace = candidate.workspace || ipc.workspace || null
@@ -451,10 +453,9 @@ Item {
   function rebuildWindowLedger() {
     var grouped = {}
     try {
-      var values = Hyprland.toplevels.values
+      var values = root.liveHyprlandWindows()
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
-        if (!root.hyprlandWindowIsLive(candidate)) continue
         var id = root.dockIdForHyprlandWindow(candidate)
         if (!id) continue
         if (!grouped[id]) grouped[id] = []
@@ -524,6 +525,7 @@ Item {
       var values = Hyprland.toplevels.values
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
+        if (candidate.wayland === window) return candidate
         if (!root.hyprlandWindowIsLive(candidate)) continue
         var ids = []
         if (candidate.wayland && candidate.wayland.appId) ids.push(String(candidate.wayland.appId).toLowerCase())
@@ -539,14 +541,28 @@ Item {
     return fallback
   }
 
+  function liveHyprlandWindows() {
+    var output = []
+    var seenAddresses = []
+    var values = root.foreignToplevelValues()
+    for (var i = 0; i < values.length; i++) {
+      var candidate = root.hyprlandWindowFor(values[i])
+      if (!candidate) continue
+      var address = WindowLedger.normalizeAddress(candidate.address)
+      if (address && seenAddresses.indexOf(address) !== -1) continue
+      if (address) seenAddresses.push(address)
+      output.push(candidate)
+    }
+    return output
+  }
+
   function hyprlandWindowForItem(item) {
     if (!item) return null
     var fallback = null
     try {
-      var values = Hyprland.toplevels.values
+      var values = root.liveHyprlandWindows()
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
-        if (!root.hyprlandWindowIsLive(candidate)) continue
         var ids = []
         if (candidate.wayland && candidate.wayland.appId) ids.push(String(candidate.wayland.appId).toLowerCase())
         var ipc = candidate.lastIpcObject || {}
@@ -1160,7 +1176,7 @@ Item {
     if (!data) return false
     var address = WindowLedger.normalizeAddress(data.address)
     try {
-      var values = Hyprland.toplevels.values
+      var values = root.liveHyprlandWindows()
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
         if (WindowLedger.normalizeAddress(candidate.address) !== address) continue
