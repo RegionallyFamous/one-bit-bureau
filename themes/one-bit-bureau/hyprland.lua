@@ -33,3 +33,7 @@ hl.config({
     },
   },
 })
+
+-- Omarchy's default terminal tag carries its own translucent window rule,
+-- which takes precedence over the global decoration opacity above.
+o.window({ tag = "terminal" }, { opacity = "1.0 1.0" })

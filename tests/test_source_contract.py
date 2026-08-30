@@ -127,6 +127,16 @@ class PluginSourceContractTest(unittest.TestCase):
         self.assertIn("screenName: root.preferredScreenName", source)
         self.assertIn("function setScreen(name: string): bool", source)
 
+    def test_theme_keeps_terminal_paper_fully_opaque(self) -> None:
+        source = (ROOT / "themes/one-bit-bureau/hyprland.lua").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("active_opacity = 1.0", source)
+        self.assertIn("inactive_opacity = 1.0", source)
+        self.assertIn(
+            'o.window({ tag = "terminal" }, { opacity = "1.0 1.0" })', source
+        )
+
     def test_desktop_drop_routes_copied_and_moved_launchers_through_safe_helper(self) -> None:
         source = (ROOT / "components/desktop/bin/desktop-index").read_text(
             encoding="utf-8"
