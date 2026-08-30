@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-08-30
 
 ### Product changes
 
@@ -12,10 +12,10 @@
 - Added real desktop files, a bottom dock, a searchable window overview, active-application context, safe object-first launcher handling, and pass-through behavior for Omarchy's native `Super` navigation chords.
 - Added no-follow, size-capped, record-capped state loading and bounded helper lifetimes; no external icon search, fallback screenshot process, or ImageMagick job runs in the shell.
 - Bundled Monaspace Krypton NF 1.400 and Departure Mono 1.500 with upstream licenses and checksums. Setup registers them without changing the selected Omarchy font.
-- Added original About and screensaver branding with ownership-aware restoration, plus a Git-native `one-bit-bureau` coordinator, source-owned theme lifecycle, commit-aligned updates, and ownership-aware removal.
+- Added original About and screensaver branding with ownership-aware restoration, plus a Git-native `one-bit-bureau` coordinator, capability-matched theme ownership, commit-aligned updates, and ownership-aware removal.
 - Added `one-bit-bureau motion reduce|full|status` around the native inline `reducedMotion` setting so One-Bit Bureau surfaces can remove nonessential transitions without adding a parallel preference store.
 
 ### Release verification
 
 - Implemented keyboard navigation, visible focus, assistive-technology labels, practical hit targets, and reduced-motion behavior across the desktop, dock, overview, settings, and icon manager; the disposable runtime pass remains the release gate.
-- Expanded the disposable-guest acceptance test to exercise the exact public Git install, adopt, activate, update, and removal path. Runtime evidence and rollback results will be recorded only after that test runs against the final public release commit.
+- Passed the disposable x86_64 Omarchy guest test for the exact public Git install, adopt, activate, update, and removal path, alongside desktop, dock, overview, keyboard, notification, lock, opacity, accessibility, and helper-containment checks.

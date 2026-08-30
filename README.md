@@ -129,4 +129,4 @@ The local gate covers manifest and source safety, helper syntax, desktop trust/p
 one-bit-bureau remove
 ```
 
-Removal is ownership-aware. It validates every owned target before changing anything, restores prior theme, bar, and branding state only while One-Bit Bureau still owns the active value, then removes either the recorded theme-source child or the exact plugin-linked theme selected at install time. It also removes unmodified bundled fonts and command while preserving Desktop files, pins, icon choices, custom icons, and desktop positions.
+Removal is ownership-aware. It validates the owned plugin and theme before changing anything, restores prior theme, bar, and branding state only while One-Bit Bureau still owns the active value, then removes either the recorded theme-source child or the exact plugin-linked theme selected at install time. It removes unmodified bundled fonts and command, preserves modified ones, and keeps Desktop files, pins, icon choices, custom icons, and desktop positions.
