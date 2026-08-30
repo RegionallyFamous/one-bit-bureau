@@ -59,7 +59,10 @@ The [everyday-use guide](https://github.com/RegionallyFamous/one-bit-bureau/wiki
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/runtime-inspector-desktop.png" alt="The shared One-Bit Bureau Inspector showing identity, facts, launcher trust, and safe actions for a desktop object"><br><sub>One shared Inspector for desktop objects, applications, and windows</sub></td>
+    <td colspan="2"><img src="docs/screenshots/runtime-apps.png" alt="A curated One-Bit Bureau workday with two local web desks, a Writer document, a grayscale three-file Files list, and five matching dock icons"><br><sub>A real-app workday staged as one composition: Web, Writer, Files, and no first-run debris</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/runtime-inspector-desktop.png" alt="The shared One-Bit Bureau Inspector showing identity, facts, and safe actions for a desktop object"><br><sub>One shared Inspector for desktop objects, applications, and windows</sub></td>
     <td width="50%"><img src="docs/screenshots/runtime-route-receipt-undo.png" alt="A One-Bit Bureau desktop receipt stating that two items moved to Projects and offering Undo"><br><sub>A local result receipt offers Undo only when reversal is proven</sub></td>
   </tr>
   <tr>
@@ -68,7 +71,7 @@ The [everyday-use guide](https://github.com/RegionallyFamous/one-bit-bureau/wiki
   </tr>
 </table>
 
-These are real 1280×800 captures retained from passed disposable x86_64 Omarchy run `9d36kxlcrt`, using Omarchy commit `2c593dbb` and public runtime commit `4af531c`. That run produced 37 review frames and passed the exact public install, activate, update, remove, rollback, and user-data-preservation lifecycle. The later documentation commit only packages these unchanged evidence pixels and copy.
+These are real 1280×800 captures retained from passed disposable x86_64 Omarchy run `krlnvwgvq9`, using Omarchy commit `2c593dbb` and public runtime commit `bafae649`. That run produced 45 review frames and passed the exact public install, activate, update, remove, rollback, and user-data-preservation lifecycle. Its gallery also asserted exactly four intended application windows and exactly three authored Files artifacts before capture. This documentation revision only packages those unchanged evidence pixels and copy.
 
 ### The rest of the system
 
@@ -78,7 +81,7 @@ These are real 1280×800 captures retained from passed disposable x86_64 Omarchy
     <td width="50%"><img src="docs/screenshots/runtime-overview.png" alt="One-Bit Bureau searchable window overview with ordinary workspaces 1 and 2"><br><sub>Searchable, keyboard-navigable windows and workspaces</sub></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="docs/screenshots/runtime-notification.png" alt="One-Bit Bureau terminal palette, notification, top bar, dock, and wallpaper"><br><sub>Whole-desktop theme across terminals, notifications, top bar, dock, and wallpaper</sub></td>
+    <td colspan="2"><img src="docs/screenshots/runtime-notification.png" alt="A One-Bit Bureau workday with a desktop-ready notification, Field Guide, grayscale Files list, top bar, dock, and wallpaper"><br><sub>The final workday state stays coherent across notifications, top bar, dock, applications, and wallpaper</sub></td>
   </tr>
 </table>
 
