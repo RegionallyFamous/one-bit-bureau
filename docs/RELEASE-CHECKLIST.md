@@ -24,11 +24,11 @@
 
 - Verify the desktop service with an empty folder, many files, a long filename, a trusted launcher, an untrusted launcher, Trash, drag/drop, and two displays.
 - Verify one click selects, a second click does not accidentally open, double-click and Return open, and clicking empty ground clears selection.
-- Verify safe local photographs render as their real, unmodified thumbnails; selecting one changes only its enclosing rule and name rail. Verify unsupported and unsafe images use the authored one-bit picture fallback, which reverses with its name rail, while meaningful application icons remain recognizable.
+- Verify safe local photographs render as stable grayscale desktop thumbnails; selecting one changes only its enclosing rule and name rail, the source file remains byte-identical, and opening it shows the original color image. Verify unsupported and unsafe images use the authored one-bit picture fallback, which reverses with its name rail.
 - Verify untrusted launchers default to Cancel, and both Enter and Escape cancel without executing the launcher.
 - Verify the clean first-run dock seeds Files, Chromium, and Foot; all three use their One-Bit Bureau associations, painted-alpha crops, 48px boxes, and a shared optical center without clipping or crowding.
 - Verify dock launch, focus-existing-window, pin/unpin, reorder, auto-hide, previews, icon management, and the opt-in app-switcher binding in floating and tiled layouts.
-- Verify automatic app-icon associations for Files, terminal, browser, and one communication app; then verify manual pack, native, and automatic modes without network access.
+- Verify automatic app-icon associations for Files, terminal, browser, and one communication app. Add an unmatched app and confirm its automatic native fallback is grayscale in the dock, drag ghost, preview fallback, app switcher, and icon manager; then confirm explicit Native mode restores the original color and custom files plus manual pack choices render as supplied, all without network access.
 - Verify dock and desktop menus preserve their row order while unavailable commands remain visible and dimmed.
 - Verify overview hot corner, summon/hide IPC, keyboard navigation, search, preview, close-window action, workspace changes, and two displays.
 - Verify overview selection inverts only the ownership rail, the preview body remains stable, and the active window retains its separate double-rule marker.

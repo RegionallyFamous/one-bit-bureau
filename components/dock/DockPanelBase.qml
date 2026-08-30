@@ -116,6 +116,7 @@ Item {
   property var visualCache: ({})
   property var delegateById: ({})
   property string ghostSource: ""
+  property bool ghostGrayscale: false
   property real ghostX: 0
   property real ghostY: 0
   property real ghostScale: 1.18
@@ -177,6 +178,13 @@ Item {
     function getNormalizedPackIconCount(): int { return root.normalizedPackIconCount() }
     function getIconSize(): int { return root.iconSize }
     function getMaxIconCenterOffset(): int { return Math.round(root.maxIconCenterOffset()) }
+    function getIconReadyForApp(appId: string): bool {
+      var id = String(appId || "").replace(/\.desktop$/, "").slice(0, 256)
+      var delegate = root.delegateById[id]
+      return !!(delegate && delegate.iconReady)
+    }
+    function getIconGrayscale(appId: string): bool { return root.iconUsesAutomaticNativeFallback(appId) }
+    function getIconBounds(appId: string): string { return root.iconBounds(appId) }
     function getReducedMotion(): bool { return root.reducedMotion }
     function openManageIcons(): bool { return root.openIconManager() }
     function closeManageIcons(): bool { return root.closeIconManager() }
@@ -503,6 +511,20 @@ Item {
     return maximum
   }
 
+  function iconBounds(appId) {
+    var id = String(appId || "").replace(/\.desktop$/, "").slice(0, 256)
+    var delegate = root.delegateById[id]
+    if (!delegate || !delegate.focusTarget) return ""
+    var target = delegate.focusTarget
+    var point = target.mapToItem(null, 0, 0)
+    return [
+      Math.round(point.x),
+      Math.round(point.y),
+      Math.round(target.width),
+      Math.round(target.height)
+    ].join(",")
+  }
+
   // New delegates seed their animated properties from the item's last visual
   // state so a structural rebuild never pops.
   function seedFor(id) {
@@ -774,6 +796,7 @@ Item {
       root.floatingId = item.id
       root.tempDrag = { id: item.id, index: -1 }
       root.ghostSource = root.iconSourceFor(item)
+      root.ghostGrayscale = root.iconUsesAutomaticNativeFallback(item)
       root.ghostScale = 1.18
       root.ghostOpacity = 1
       root.tooltipVisible = false
@@ -866,6 +889,7 @@ Item {
     root.ghostOpacity = 1
     root.ghostScale = 1.18
     root.ghostSource = ""
+    root.ghostGrayscale = false
     } catch (error) {
       console.warn("one-bit-bureau finishDrag error", error)
       root.floatingId = ""
@@ -876,6 +900,7 @@ Item {
       root.ghostOpacity = 1
       root.ghostScale = 1.18
       root.ghostSource = ""
+      root.ghostGrayscale = false
     }
   }
 
@@ -1027,6 +1052,32 @@ Item {
     return Util.fileUrl(root.iconDir + "/" + file) + "?v=" + root.customIconRevision
   }
 
+  function iconIdentityFor(id, entry) {
+    return {
+      id: id,
+      desktopId: entry.desktopId,
+      name: entry.name,
+      displayName: entry.displayName,
+      icon: entry.icon,
+      iconName: entry.iconName,
+      appIcon: entry.appIcon
+    }
+  }
+
+  // Automatic matching is the authored One-Bit path. When no role matches,
+  // preserve the native artwork's shape but remove its color so an uncommon
+  // app still belongs on the Bureau shelf. Custom files, manual pack choices,
+  // and the explicit Native mode remain exactly as the user chose them.
+  function iconUsesAutomaticNativeFallback(item) {
+    var id = typeof item === "string" ? item : item && item.id
+    if (!id) return false
+    var entry = DockModel.entryFor(id, root.appEntries)
+    return IconResolver.iconPresentationMode(
+      root.customIcons,
+      root.iconIdentityFor(id, entry)
+    ) === "native-grayscale"
+  }
+
   function iconSourceFor(item) {
     // Accept either a live item object or a plain id string (delegates pass
     // their model id after the identity/state split).
@@ -1036,15 +1087,9 @@ Item {
     var entry = DockModel.entryFor(id, root.appEntries)
     var manualPack = IconResolver.customIconPack(root.customIcons, id)
     var nativeOnly = IconResolver.customIconMode(root.customIcons, id) === "native"
-    var packRole = manualPack || (!nativeOnly ? IconResolver.automaticPackRole({
-      id: id,
-      desktopId: entry.desktopId,
-      name: entry.name,
-      displayName: entry.displayName,
-      icon: entry.icon,
-      iconName: entry.iconName,
-      appIcon: entry.appIcon
-    }) : "")
+    var packRole = manualPack || (!nativeOnly
+      ? IconResolver.automaticPackRole(root.iconIdentityFor(id, entry))
+      : "")
     if (packRole) return Util.fileUrl(root.packDir + "/" + packRole + ".png")
     var iconName = entry.icon || entry.iconName || entry.appIcon || ""
     if (root.shell && root.shell.appLibrary && iconName && typeof root.shell.appLibrary.iconSource === "function") {
@@ -1373,6 +1418,7 @@ Item {
               iconSize: root.iconSize
               animationEnabled: wrapper.animating && !root.reducedMotion
               iconSourceOverride: root.iconSourceFor(modelData)
+              grayscaleIcon: root.iconUsesAutomaticNativeFallback(modelData)
               onItemLeftClicked: function(clickedItem) { root.handleClick(clickedItem) }
               onItemRightClicked: function(clickedItem, position) { root.openMenu(clickedItem, position, dockItem) }
               onDragMoved: function(draggedItem, position) {
@@ -1526,6 +1572,7 @@ Item {
     shell: root.shell
     customIcons: root.customIcons
     iconSourceFor: function(id) { return root.iconSourceFor(id) }
+    grayscaleFor: function(id) { return root.iconUsesAutomaticNativeFallback(id) }
     stateHelperPath: root.stateHelperPath
     runHelperPath: root.runHelperPath
     iconMapPath: root.iconMapPath
@@ -1546,6 +1593,7 @@ Item {
     interval: 260
     onTriggered: {
       root.ghostSource = ""
+      root.ghostGrayscale = false
       root.ghostSettling = false
       root.ghostOpacity = 1
       root.ghostScale = 1.18
@@ -1563,6 +1611,7 @@ Item {
     bottomY: root.previewBottomY
     reducedMotion: root.reducedMotion
     iconSourceFor: function(data) { return root.iconSourceFor({ id: root.previewAppId }) }
+    iconGrayscaleFor: function(data) { return root.iconUsesAutomaticNativeFallback(root.previewAppId) }
     thumbnailFor: function(data) { return root.thumbnailFor(data) }
     onActivated: function(data) { root.activatePreviewWindow(data) }
     onPreviewHoverEntered: previewGrace.stop()
@@ -1573,6 +1622,7 @@ Item {
     id: altTab
     screen: root.dockScreen
     iconSourceFor: function(app) { return root.iconSourceFor(app.id) }
+    grayscaleFor: function(app) { return root.iconUsesAutomaticNativeFallback(app.id) }
     onActivated: function(appId, appName) { root.activateApp(appId, appName) }
   }
 
@@ -1688,6 +1738,7 @@ Item {
         width: root.iconSize * root.ghostScale
         height: root.iconSize * root.ghostScale
         source: root.ghostSource
+        grayscale: root.ghostGrayscale
         sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
         asynchronous: true
       }

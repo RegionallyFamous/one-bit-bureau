@@ -16,6 +16,7 @@ PanelWindow {
   property real centerX: 0
   property real bottomY: 0
   property var iconSourceFor: function(item) { return "" }
+  property var iconGrayscaleFor: function(item) { return false }
   property var thumbnailFor: function(item) { return "" }
   property Component cardComponent: Qt.createComponent("WindowPreview.qml")
   property var cards: []
@@ -40,6 +41,7 @@ PanelWindow {
       var card = root.cardComponent.createObject(row, {
         windowData: w,
         iconSource: root.iconSourceFor(w),
+        iconGrayscale: root.iconGrayscaleFor(w),
         thumbnail: root.thumbnailFor(w),
         active: !!w.active,
         animationEnabled: !root.reducedMotion

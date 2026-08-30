@@ -12,7 +12,7 @@ One-Bit Bureau's Object-First system is based on primary Apple documentation and
 ## What changed in One-Bit Bureau
 
 - Desktop input now follows select-before-action: single click selects, double-click opens, Return opens, and empty click clears.
-- Original ImageGen-authored raster mini-illustrations replace arbitrary modern fallbacks for generic objects. Safe local raster image files remain recognizable as real, unmodified photographs; unsupported or unsafe images use an authored one-bit picture fallback.
+- Original ImageGen-authored raster mini-illustrations replace arbitrary modern fallbacks for generic objects. Safe local raster image files remain recognizable through grayscale desktop previews while their source bytes and full-color opened view remain untouched; unsupported or unsafe images use an authored one-bit picture fallback.
 - Selection reverses a generic object's glyph and name rail. A photograph keeps its pixels unchanged while the enclosing rule and name rail provide the selection feedback.
 - Overview preview bodies remain stable paper while keyboard ownership moves through title rails. The active window receives a separate double rule.
 - The active-app widget leads with the application owner and treats a distinct window title as secondary context.

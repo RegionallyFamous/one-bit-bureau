@@ -1,9 +1,11 @@
 import QtQuick
+import QtQuick.Effects
 import "IconResolver.js" as IconResolver
 
 Image {
   id: root
 
+  property bool grayscale: false
   readonly property var packCrop: IconResolver.packCropForSource(String(root.source))
   readonly property real clipScaleX: root.sourceSize.width > 0 ? root.sourceSize.width / 256 : 1
   readonly property real clipScaleY: root.sourceSize.height > 0 ? root.sourceSize.height / 256 : 1
@@ -16,4 +18,9 @@ Image {
         Math.round(root.packCrop.height * root.clipScaleY)
       )
     : undefined
+
+  layer.enabled: root.grayscale
+  layer.effect: MultiEffect {
+    saturation: -1.0
+  }
 }

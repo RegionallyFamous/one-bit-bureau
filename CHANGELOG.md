@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.1 — 2026-08-30
+
+### Product changes
+
+- Render safe local photograph previews in grayscale on the desktop while preserving the original file bytes and full-color opened view.
+- Render unmatched automatic native app icons in grayscale across the dock, drag ghost, preview fallback, app switcher, and icon manager.
+- Keep authored One-Bit roles, manual pack assignments, and custom icon files unchanged; explicit Native mode restores the application's original color icon.
+
+### Release verification
+
+- Added deterministic presentation-mode contracts and disposable-guest pixel checks for grayscale Automatic fallbacks, full-color Native opt-out, and byte-identical photo sources.
+
 ## 1.0.0 — 2026-08-30
 
 ### Product changes

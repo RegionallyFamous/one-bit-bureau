@@ -14,6 +14,7 @@ Item {
 
   required property var windowData
   property string iconSource: ""
+  property bool iconGrayscale: false
   property string thumbnail: ""
   property bool active: false
   property bool animationEnabled: true
@@ -110,6 +111,7 @@ Item {
         width: 64
         height: 64
         source: root.iconSource
+        grayscale: root.iconGrayscale
         sourceSize: Qt.size(128, 128)
         fillMode: Image.PreserveAspectFit
         asynchronous: true

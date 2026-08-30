@@ -21,6 +21,7 @@ PanelWindow {
   property bool fromManage: false
   property var customIcons: ({})
   property var iconSourceFor: function(id) { return "" }
+  property var grayscaleFor: function(id) { return false }
   property string stateHelperPath: ""
   property string runHelperPath: ""
   property string iconMapPath: ""
@@ -376,6 +377,7 @@ PanelWindow {
                 width: 38
                 height: 38
                 source: root.mode === "picker" ? root.previewSource(root.currentAppId) : ""
+                grayscale: root.mode === "picker" && root.grayscaleFor(root.currentAppId)
                 sourceSize: Qt.size(76, 76)
                 fillMode: Image.PreserveAspectFit
                 cache: true
@@ -767,6 +769,7 @@ PanelWindow {
                 width: 36
                 height: 36
                 source: root.previewSource(modelData.id)
+                grayscale: root.grayscaleFor(modelData.id)
                 sourceSize: Qt.size(72, 72)
                 fillMode: Image.PreserveAspectFit
                 cache: true

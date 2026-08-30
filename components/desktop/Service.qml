@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
+import QtQuick.Effects
 import qs.Commons
 
 Item {
@@ -188,7 +189,7 @@ Item {
     if (root.isTrash(item))
       return "Trash. Press to open."
     if (root.hasImagePreview(item))
-      return "Picture file shown as an unmodified photo thumbnail. Press to open."
+      return "Picture file shown as a grayscale photo thumbnail. Press to open the original."
     if (item.isDir || item.kind === "folder")
       return "Folder. Press to open."
     if (item.kind === "launcher")
@@ -1099,8 +1100,8 @@ Item {
               Image {
                 id: desktopIcon
                 anchors.centerIn: parent
-                // A real picture never changes pixels to communicate selection.
-                // Its source and geometry stay constant while the enclosure inverts.
+                // The source file remains untouched and opens in full color. Its
+                // desktop thumbnail stays grayscale in every interaction state.
                 width: panel.host.iconSize
                 height: panel.host.iconSize
                 source: panel.host.objectIconSource(iconRoot.modelData, iconRoot.selected)
@@ -1113,6 +1114,10 @@ Item {
                   || !panel.host.usesCategoryIcon(iconRoot.modelData)
                 sourceSize.width: width * Screen.devicePixelRatio
                 sourceSize.height: height * Screen.devicePixelRatio
+                layer.enabled: iconRoot.photoPreview
+                layer.effect: MultiEffect {
+                  saturation: -1.0
+                }
               }
 
               Rectangle {

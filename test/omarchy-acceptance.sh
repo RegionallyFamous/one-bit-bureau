@@ -20,6 +20,9 @@ STATE_FILE="$STATE_DIR/install-state.json"
 BUREAU_CONFIG="$HOME/.config/omarchy/one-bit-bureau"
 FONT_TARGET="$HOME/.local/share/fonts/one-bit-bureau"
 COMMAND_TARGET="$HOME/.local/bin/one-bit-bureau"
+QA_APP_ID="one-bit-bureau-qa-unmatched"
+QA_DESKTOP_ENTRY="$HOME/.local/share/applications/$QA_APP_ID.desktop"
+QA_NATIVE_ICON="$HOME/.local/share/icons/hicolor/64x64/apps/$QA_APP_ID.png"
 PUBLIC_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
 THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
 THEME_SOURCE_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/theme-sources"
@@ -145,6 +148,11 @@ decoded_pixel_hash() {
   ffmpeg -v error -i "$image" -map 0:v:0 -f md5 - 2>/dev/null | sed -n 's/^MD5=//p'
 }
 
+decoded_channel_hash() {
+  local image="$1" channel="$2"
+  ffmpeg -v error -i "$image" -vf "format=rgb24,extractplanes=$channel" -f md5 - 2>/dev/null | sed -n 's/^MD5=//p'
+}
+
 capture_photo_inner_pixels() {
   local destination="$1"
   local record screen_name local_x local_y monitor_x monitor_y crop_x crop_y
@@ -162,6 +170,22 @@ capture_photo_inner_pixels() {
   crop_y=$((monitor_y + local_y + 22))
   timeout 10 grim -g "${crop_x},${crop_y} 40x40" "$destination" 2>/dev/null ||
     fail "the photo's inner pixels are captured"
+}
+
+capture_dock_icon_inner_pixels() {
+  local app_id="$1" destination="$2"
+  local bounds local_x local_y width height monitor_x monitor_y crop_x crop_y
+
+  bounds=$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconBounds "$app_id")
+  IFS=, read -r local_x local_y width height <<<"$bounds"
+  [[ $local_x =~ ^-?[0-9]+$ && $local_y =~ ^-?[0-9]+$ && $width =~ ^[0-9]+$ && $height =~ ^[0-9]+$ ]] ||
+    fail "the unmatched app exposes bounded dock geometry"
+  monitor_x=$(hyprctl -j monitors | jq -er '.[0].x | floor')
+  monitor_y=$(hyprctl -j monitors | jq -er '.[0].y | floor')
+  crop_x=$((monitor_x + local_x + (width - 32) / 2))
+  crop_y=$((monitor_y + local_y + (height - 32) / 2))
+  timeout 10 grim -g "${crop_x},${crop_y} 32x32" "$destination" 2>/dev/null ||
+    fail "the unmatched app's dock pixels are captured"
 }
 
 public_plugin_absent() {
@@ -224,6 +248,7 @@ cleanup_one_bit_bureau() {
   omarchy-shell shell hide omarchy.menu >/dev/null 2>&1 || true
   omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
   close_windows '^one-bit-bureau-qa-' || true
+  rm -f -- "$QA_DESKTOP_ENTRY" "$QA_NATIVE_ICON"
   if [[ $public_lifecycle_active == true && -f $STATE_FILE ]]; then
     if [[ -x $COMMAND_TARGET ]]; then
       "$COMMAND_TARGET" remove >/dev/null 2>&1 || true
@@ -274,10 +299,23 @@ pass "One-Bit Bureau passes qmllint"
 "$OMARCHY_PATH/bin/omarchy-plugin-validate" "$FIXTURE" || fail "One-Bit Bureau passes the host validator"
 pass "One-Bit Bureau passes the host validator"
 
-mkdir -p "$HOME/Desktop" "$THEMES_DIR" "$(dirname "$PLUGIN_DIR")"
+mkdir -p "$HOME/Desktop" "$THEMES_DIR" "$(dirname "$PLUGIN_DIR")" "$BUREAU_CONFIG"
+mkdir -p "$(dirname "$QA_DESKTOP_ENTRY")" "$(dirname "$QA_NATIVE_ICON")"
 mkdir -p "$HOME/Desktop/Projects"
 printf 'One-Bit Bureau runtime proof\n' >"$HOME/Desktop/ONE-BIT-BUREAU-QA.txt"
 cp "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/One-Bit Bureau Photo.png"
+cp "$FIXTURE/docs/assets/proof-photo.png" "$QA_NATIVE_ICON"
+printf '%s\n' \
+  '[Desktop Entry]' \
+  'Type=Application' \
+  'Name=Spectra QA' \
+  "Exec=foot --app-id=$QA_APP_ID --title=Spectra-QA" \
+  "Icon=$QA_NATIVE_ICON" \
+  'Terminal=false' \
+  >"$QA_DESKTOP_ENTRY"
+printf '%s\n' \
+  '{"version":1,"pinned":["org.gnome.Nautilus","chromium","foot","one-bit-bureau-qa-unmatched"],"order":["org.gnome.Nautilus","chromium","foot","one-bit-bureau-qa-unmatched"]}' \
+  >"$BUREAU_CONFIG/dock-pinned.json"
 python3 "$FIXTURE/components/desktop/bin/desktop-index" | jq -e --arg photo "$HOME/Desktop/One-Bit Bureau Photo.png" '.items[] | select(.path == $photo) | .kind == "image" and .preview == $photo' >/dev/null || fail "Desktop index exposes the real photo as a safe local preview"
 pass "Desktop index exposes the real photo as a safe local preview"
 
@@ -319,6 +357,11 @@ wait_until "One-Bit Bureau dock auto-hide is disabled for visual proof" 10 \
 wait_until "One-Bit Bureau seeds a useful first-run dock" 15 dock_has_seeded_items
 wait_until "One-Bit Bureau renders every seeded dock icon" 15 dock_has_rendered_icons
 wait_until "One-Bit Bureau normalizes every seeded dock icon" 15 dock_has_normalized_pack_icons
+wait_until "One-Bit Bureau renders the unmatched app's native fallback" 20 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconReadyForApp '$QA_APP_ID') == 'true' ]]"
+[[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconGrayscale "$QA_APP_ID") == "true" ]] ||
+  fail "the unmatched automatic app icon is marked for grayscale rendering"
+pass "One-Bit Bureau marks an unmatched automatic app icon for grayscale rendering"
 [[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconSize) == "48" ]] || fail "One-Bit Bureau uses the approved 48px dock icon box"
 pass "One-Bit Bureau uses the approved 48px dock icon box"
 [[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock getMaxIconCenterOffset) == "0" ]] || fail "One-Bit Bureau centers dock artwork on the shelf axis"
@@ -393,7 +436,39 @@ idle_photo_hash=$(decoded_pixel_hash "$ARTIFACTS/one-bit-bureau-photo-idle-inner
 selected_photo_hash=$(decoded_pixel_hash "$ARTIFACTS/one-bit-bureau-photo-selected-inner.png")
 [[ -n $idle_photo_hash && $idle_photo_hash == "$selected_photo_hash" ]] ||
   fail "selecting a real photo leaves its inner pixels unchanged"
-pass "One-Bit Bureau encloses a selected real photo without changing the photo pixels"
+idle_photo_red_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-photo-idle-inner.png" r)
+idle_photo_green_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-photo-idle-inner.png" g)
+idle_photo_blue_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-photo-idle-inner.png" b)
+[[ -n $idle_photo_red_hash && $idle_photo_red_hash == "$idle_photo_green_hash" && $idle_photo_red_hash == "$idle_photo_blue_hash" ]] ||
+  fail "the real photo thumbnail is not grayscale"
+cmp -s "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/One-Bit Bureau Photo.png" ||
+  fail "the grayscale desktop preview changed the original photo file"
+pass "One-Bit Bureau keeps the original photo intact behind a constant grayscale desktop preview"
+
+capture_dock_icon_inner_pixels "$QA_APP_ID" "$ARTIFACTS/one-bit-bureau-unmatched-auto.png"
+auto_icon_red_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-unmatched-auto.png" r)
+auto_icon_green_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-unmatched-auto.png" g)
+auto_icon_blue_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-unmatched-auto.png" b)
+[[ -n $auto_icon_red_hash && $auto_icon_red_hash == "$auto_icon_green_hash" && $auto_icon_red_hash == "$auto_icon_blue_hash" ]] ||
+  fail "the unmatched automatic app icon pixels are not grayscale"
+screenshot "success-one-bit-bureau-02a-unmatched-app-automatic-grayscale"
+
+bash "$PLUGIN_DIR/components/dock/scripts/one-bit-bureau-icon" native "$QA_APP_ID" >/dev/null
+wait_until "explicit Native mode removes grayscale from the unmatched app" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconGrayscale '$QA_APP_ID') == 'false' ]]"
+sleep 1
+capture_dock_icon_inner_pixels "$QA_APP_ID" "$ARTIFACTS/one-bit-bureau-unmatched-native.png"
+native_icon_red_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-unmatched-native.png" r)
+native_icon_green_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-unmatched-native.png" g)
+native_icon_blue_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-unmatched-native.png" b)
+[[ -n $native_icon_red_hash && ($native_icon_red_hash != "$native_icon_green_hash" || $native_icon_red_hash != "$native_icon_blue_hash") ]] ||
+  fail "explicit Native mode did not restore the unmatched app's color pixels"
+screenshot "success-one-bit-bureau-02b-unmatched-app-explicit-native-color"
+
+bash "$PLUGIN_DIR/components/dock/scripts/one-bit-bureau-icon" auto "$QA_APP_ID" >/dev/null
+wait_until "Automatic mode restores grayscale for the unmatched app" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconGrayscale '$QA_APP_ID') == 'true' ]]"
+pass "unmatched app icons default to grayscale and explicit Native restores color"
 
 wtype -M shift -k F10 -m shift
 wait_until "the desktop keyboard context menu opens" 10 screen_contains "Show in Files"

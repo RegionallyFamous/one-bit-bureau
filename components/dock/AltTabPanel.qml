@@ -21,6 +21,7 @@ PanelWindow {
   property var placements: ({})
   property real surfaceWidth: 0
   property var iconSourceFor: function(app) { return "" }
+  property var grayscaleFor: function(app) { return false }
 
   // The dock's layout constants scaled by ~2.1 (15% over the previous 1.82).
   property int iconSize: 72
@@ -161,6 +162,7 @@ PanelWindow {
             width: root.iconSize
             height: root.iconSize
             source: root.iconSource(modelData)
+            grayscale: root.grayscaleFor(modelData)
             sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
             fillMode: Image.PreserveAspectFit
             cache: true

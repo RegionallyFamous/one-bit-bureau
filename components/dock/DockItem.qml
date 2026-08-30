@@ -18,6 +18,7 @@ Item {
   property bool leftPressed: false
   property bool tooltipVisible: false
   property string iconSourceOverride: ""
+  property bool grayscaleIcon: false
   property point pressPosition: Qt.point(0, 0)
   readonly property bool iconReady: icon.status === Image.Ready
   readonly property bool packNormalized: icon.packCrop !== null
@@ -105,6 +106,7 @@ Item {
     width: root.iconSize
     height: root.iconSize
     source: root.iconSource()
+    grayscale: root.grayscaleIcon
     sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
     fillMode: Image.PreserveAspectFit
     cache: true

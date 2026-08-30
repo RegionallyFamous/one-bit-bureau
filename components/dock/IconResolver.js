@@ -140,6 +140,15 @@ function automaticPackRole(item) {
     return ""
 }
 
+function iconPresentationMode(customIcons, item) {
+    var data = item || {}
+    var id = data.id || data.desktopId
+    if (customIconFile(customIcons, id)) return "custom"
+    if (customIconPack(customIcons, id)) return "pack"
+    if (customIconMode(customIcons, id) === "native") return "native"
+    return automaticPackRole(data) ? "pack" : "native-grayscale"
+}
+
 function packCropForSource(source) {
     var value = String(source || "").split("?")[0].split("#")[0]
     if (value.indexOf("/components/dock/assets/app-icons/") === -1) return null
@@ -178,6 +187,7 @@ if (typeof module !== "undefined" && module.exports) {
         customIconMode: customIconMode,
         hasCustomOverride: hasCustomOverride,
         automaticPackRole: automaticPackRole,
+        iconPresentationMode: iconPresentationMode,
         packCropForSource: packCropForSource,
         resolveIcon: resolveIcon
     }

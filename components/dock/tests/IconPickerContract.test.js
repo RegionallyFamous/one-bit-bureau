@@ -48,3 +48,10 @@ test("escape and bounded helper execution remain part of the panel contract", ()
   assert.match(source, /interval: 2500/)
   assert.match(source, /Component\.onDestruction:[\s\S]*applyProcess\.running = false/)
 })
+
+test("icon manager previews automatic native fallbacks in grayscale", () => {
+  assert.match(source, /property var grayscaleFor: function\(id\) \{ return false \}/)
+  assert.match(source, /id: previewImage[\s\S]*?grayscale: root\.mode === "picker" && root\.grayscaleFor\(root\.currentAppId\)/)
+  assert.match(source, /id: rowIcon[\s\S]*?grayscale: root\.grayscaleFor\(modelData\.id\)/)
+  assert.match(source, /id: nativeAction[\s\S]*?accessibleDescription: "Use the application's original icon"/)
+})

@@ -10,9 +10,9 @@ The product identity is consistent throughout: repository `RegionallyFamous/one-
 
 ## What is included
 
-- Real files and folders from the configured XDG Desktop directory on every display, with selection, keyboard opening, drag/drop, Trash, safe launcher confirmation, persistent positions, and original bitmap object icons. Safe local PNG, JPEG, WebP, and BMP files up to 32 MiB render as their real, unmodified thumbnails; SVG, animated, oversized, inaccessible, or otherwise unsupported images use the authored one-bit picture fallback.
+- Real files and folders from the configured XDG Desktop directory on every display, with selection, keyboard opening, drag/drop, Trash, safe launcher confirmation, persistent positions, and original bitmap object icons. Safe local PNG, JPEG, WebP, and BMP files up to 32 MiB render as grayscale desktop thumbnails without modifying the source file; opening the file still shows the original color image. SVG, animated, oversized, inaccessible, or otherwise unsupported images use the authored one-bit picture fallback.
 - A bottom dock with launch/focus, running indicators, auto-hide, pinning, reordering, previews, one-output ownership, and an optional app-switcher HUD. A fresh install starts with Files, Chromium, and Foot, and the bundled art is optically cropped and centered inside consistent 48px icon boxes.
-- Twelve original offline One-Bit Bureau app-role icons, automatic matching for common Linux desktop IDs, manual association, and an explicit native-icon override.
+- Twelve original offline One-Bit Bureau app-role icons, automatic matching for common Linux desktop IDs, grayscale native fallbacks for unmatched apps, manual association, and an explicit full-color native-icon override.
 - A searchable, keyboard-navigable contact-sheet overview with live window previews and a top-left hot corner.
 - A native bar widget placed beside the Omarchy menu; One-Bit Bureau leaves the rest of Omarchy’s top bar intact.
 - The `one-bit-bureau` theme with a 4K Bitmap Workbench background, opaque square shell surfaces, and a branded unlock mark plus honest 1920×1080 unlock preview.
@@ -106,7 +106,7 @@ One-Bit Bureau follows the documented native boundaries for [themes](https://oma
 
 The plugin runs with the current user’s shell privileges. It reads the configured Desktop directory, writes user state only under `~/.config/omarchy/one-bit-bureau/`, launches selected files through Gio, and calls standard Omarchy/Hyprland helpers. Copied `.desktop` launchers remain untrusted unless they came from canonical application directories; trusting one requires explicit confirmation.
 
-The bundled app-icon pack and automatic associations work entirely offline. Manage Icons filters the twelve original One-Bit Bureau roles locally and can switch any app back to its native icon. One-Bit Bureau does not send app names to an icon service or download third-party artwork.
+The bundled app-icon pack and automatic associations work entirely offline. A common app receives the matching authored One-Bit role; an unmatched app keeps its recognizable native shape but is rendered in grayscale across the dock, drag ghost, preview fallback, app switcher, and icon manager. Manage Icons can assign any of the twelve roles, accept a custom file, or use Native to restore the application's original full-color icon. One-Bit Bureau does not send app names to an icon service or download third-party artwork.
 
 ## Known boundaries
 

@@ -58,6 +58,19 @@ test("associates common Linux apps with One-Bit Bureau roles", () => {
   assert.equal(resolver.automaticPackRole({ id: "org.example.Encode" }), "")
 })
 
+test("grays only unmatched automatic native icons", () => {
+  const icons = {
+    painted: { file: "painted.png" },
+    assigned: { pack: "notes" },
+    original: { mode: "native" }
+  }
+  assert.equal(resolver.iconPresentationMode(icons, { id: "painted" }), "custom")
+  assert.equal(resolver.iconPresentationMode(icons, { id: "assigned" }), "pack")
+  assert.equal(resolver.iconPresentationMode(icons, { id: "original" }), "native")
+  assert.equal(resolver.iconPresentationMode(icons, { id: "firefox" }), "pack")
+  assert.equal(resolver.iconPresentationMode(icons, { id: "org.example.Encode" }), "native-grayscale")
+})
+
 test("normalizes every bundled raster without touching unrelated icons", () => {
   assert.deepEqual(Object.keys(resolver.PACK_CROPS).sort(), Array.from(resolver.PACK_ROLES).sort())
   for (const role of resolver.PACK_ROLES) {
