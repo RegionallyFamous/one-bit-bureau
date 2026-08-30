@@ -55,19 +55,32 @@ The complete manual install and trust model are documented in the [installation 
 
 The [everyday-use guide](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Everyday-Use) covers keyboard controls, dock placement, optional app switching, fonts, motion, and icon management.
 
-## See it running
+## See how it works
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/runtime-icon-picker.png" alt="One-Bit Bureau app icon picker with twelve original bitmap roles"><br><sub>Offline app-icon picker and association controls</sub></td>
-    <td width="50%"><img src="docs/screenshots/runtime-overview.png" alt="One-Bit Bureau searchable two-window overview"><br><sub>Searchable keyboard-navigable window overview</sub></td>
+    <td width="50%"><img src="docs/screenshots/runtime-inspector-desktop.png" alt="The shared One-Bit Bureau Inspector showing identity, facts, launcher trust, and safe actions for a desktop object"><br><sub>One shared Inspector for desktop objects, applications, and windows</sub></td>
+    <td width="50%"><img src="docs/screenshots/runtime-route-receipt-undo.png" alt="A One-Bit Bureau desktop receipt stating that two items moved to Projects and offering Undo"><br><sub>A local result receipt offers Undo only when reversal is proven</sub></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="docs/screenshots/runtime-notification.png" alt="One-Bit Bureau terminal palette, notification, top bar, and dock"><br><sub>Whole-desktop theme across terminals, notifications, bar, dock, and wallpaper</sub></td>
+    <td width="50%"><img src="docs/screenshots/runtime-window-ledger.png" alt="The One-Bit Bureau Window Ledger listing two windows for one application on two workspaces"><br><sub>One app identity with a truthful titled-window ledger</sub></td>
+    <td width="50%"><img src="docs/screenshots/runtime-workspace-board.png" alt="The One-Bit Bureau Overview after moving the selected window from Workspace 1 to Workspace 2"><br><sub>A stable workspace board that moves the exact selected window and stays open</sub></td>
   </tr>
 </table>
 
-These are real 1280×800 captures from the passed disposable x86_64 Omarchy acceptance run. The images were recompressed without changing their pixels.
+These are real 1280×800 captures from passed disposable x86_64 Omarchy run `bxzg552bm4`, using Omarchy commit `2c593dbb` and public plugin commit `1e4aa8c`. The same run passed the exact public install, activate, update, remove, rollback, and user-data-preservation lifecycle.
+
+### The rest of the system
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/runtime-icon-picker.png" alt="One-Bit Bureau app icon picker with twelve original bitmap roles"><br><sub>Twelve offline icons plus automatic grayscale and native fallbacks</sub></td>
+    <td width="50%"><img src="docs/screenshots/runtime-overview.png" alt="One-Bit Bureau searchable window overview with ordinary workspaces 1 and 2"><br><sub>Searchable, keyboard-navigable windows and workspaces</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/runtime-notification.png" alt="One-Bit Bureau terminal palette, notification, top bar, dock, and wallpaper"><br><sub>Whole-desktop theme across terminals, notifications, top bar, dock, and wallpaper</sub></td>
+  </tr>
+</table>
 
 ## Make it yours
 
@@ -108,5 +121,6 @@ The [Wiki](https://github.com/RegionallyFamous/one-bit-bureau/wiki) contains the
 - [Troubleshooting](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Troubleshooting)
 - [Architecture and state](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Architecture-and-State)
 - [Development and testing](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Development-and-Testing)
+- [Source-backed 1.2 research backlog](docs/ONE-BIT-BUREAU-1.2-RESEARCH-BACKLOG.md)
 
 One-Bit Bureau is MIT-licensed. Imported-code and font notices are preserved in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
