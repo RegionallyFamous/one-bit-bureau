@@ -23,7 +23,7 @@ The product contract and provenance guardrails live in [docs/DIRECTION.md](docs/
 
 ## Install: Git and Omarchy, no pipe-to-shell
 
-One-Bit Bureau uses Omarchy’s own validated Git plugin flow, then adopts that disabled checkout to install the matching source-owned theme and reversible companion assets:
+One-Bit Bureau uses Omarchy’s own validated Git plugin flow, then adopts that disabled checkout to install the matching commit-locked theme and reversible companion assets:
 
 ```bash
 omarchy plugin add https://github.com/RegionallyFamous/one-bit-bureau.git --yes && bash "$HOME/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/setup" --adopt-plugin
@@ -42,7 +42,7 @@ bash setup --local
 ## What setup changes
 
 - Installs and enables `io.github.regionallyfamous.one-bit-bureau` with its native bar widget in the left section after `omarchy.menu`.
-- Installs `one-bit-bureau` through Omarchy’s theme-source ownership system, puts the bar at the top, makes it opaque, and applies the theme.
+- Installs `one-bit-bureau` through Omarchy’s theme-source ownership system when the host provides it. On earlier Quattro builds, setup creates one verified symlink to the theme inside the canonical plugin checkout, keeping plugin and theme on the same commit without a second updater. It then puts the bar at the top, makes it opaque, and applies the theme.
 - Installs both bundled fonts under `~/.local/share/fonts/one-bit-bureau/` and refreshes fontconfig, without selecting a font or rewriting terminal configuration.
 - Backs up and applies One-Bit Bureau About/screensaver branding. Removal restores the exact prior bytes only while One-Bit Bureau still owns the active files; a later user edit is preserved.
 - Installs the `one-bit-bureau` coordinator into `~/.local/bin/` and creates the already-configured XDG Desktop directory when needed. It does not rewrite `XDG_DESKTOP_DIR`, Hyprland bindings, or input policy.
@@ -66,7 +66,7 @@ one-bit-bureau font list
 one-bit-bureau font use krypton
 ```
 
-`one-bit-bureau update` updates only this Git-managed plugin and its recorded theme source, checks that both reach the same commit, and reapplies the theme only when it was already active. `one-bit-bureau motion reduce` stores the native `reducedMotion` bar setting used across One-Bit Bureau surfaces; `one-bit-bureau motion full` restores the brief default transitions, and `one-bit-bureau motion status` reports the current mode. `one-bit-bureau font use krypton` delegates to Omarchy’s supported font setter; Krypton is the recommended whole-desktop choice because it includes Nerd Font symbols. Departure Mono is the more aggressively pixel-shaped alternate and does not include those symbols.
+`one-bit-bureau update` updates only this Git-managed plugin and its recorded theme installation, verifies that both resolve to the same commit, and reapplies the theme only when it was already active. `one-bit-bureau motion reduce` stores the native `reducedMotion` bar setting used across One-Bit Bureau surfaces; `one-bit-bureau motion full` restores the brief default transitions, and `one-bit-bureau motion status` reports the current mode. `one-bit-bureau font use krypton` delegates to Omarchy’s supported font setter; Krypton is the recommended whole-desktop choice because it includes Nerd Font symbols. Departure Mono is the more aggressively pixel-shaped alternate and does not include those symbols.
 
 ## Omarchy navigation remains Omarchy navigation
 
@@ -129,4 +129,4 @@ The local gate covers manifest and source safety, helper syntax, desktop trust/p
 one-bit-bureau remove
 ```
 
-Removal is ownership-aware. It restores prior theme, bar, and branding state only while One-Bit Bureau still owns the active value; detaches only the theme child owned by the recorded Git source; removes unmodified bundled fonts and command; and preserves Desktop files, pins, icon choices, custom icons, and desktop positions.
+Removal is ownership-aware. It validates every owned target before changing anything, restores prior theme, bar, and branding state only while One-Bit Bureau still owns the active value, then removes either the recorded theme-source child or the exact plugin-linked theme selected at install time. It also removes unmodified bundled fonts and command while preserving Desktop files, pins, icon choices, custom icons, and desktop positions.

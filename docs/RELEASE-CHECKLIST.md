@@ -15,9 +15,9 @@
 
 - Start from a clean guest and record the active theme, bar position/transparency, presence and SHA-256 hashes of `~/.config/omarchy/branding/about.txt` and `screensaver.txt`, selected Omarchy font, and whether the One-Bit Bureau command, plugin, theme, source, ownership record, and font directory already exist.
 - Install from the public repository with `omarchy plugin add https://github.com/RegionallyFamous/one-bit-bureau.git --yes`. Confirm the validated checkout is present but disabled and that no theme, font, branding, bar, command, or ownership state changed before setup.
-- Adopt and activate that exact checkout with `bash "$HOME/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/setup" --adopt-plugin --yes`. Confirm the plugin is enabled, the source-owned `one-bit-bureau` theme is active, the theme and plugin checkouts resolve to the same commit, the top opaque bar and One-Bit Bureau branding are active, both font families are visible to fontconfig, and the previously selected Omarchy font remains selected.
-- Run `one-bit-bureau status`, then `one-bit-bureau update --yes`. Confirm the plugin checkout, recorded plugin commit, theme-source checkout, and recorded theme commit resolve to the same final release commit; an already active One-Bit Bureau theme must remain active.
-- Run `one-bit-bureau remove`. Confirm the plugin payload, owned theme link/source child, unmodified bundled font directory, unmodified command, and ownership record are gone; the recorded theme, bar settings, and exact prior branding bytes are restored; the selected font is unchanged; and the documented Desktop files, pins, icon choices, custom icons, and positions remain as user data.
+- Adopt and activate that exact checkout with `bash "$HOME/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/setup" --adopt-plugin --yes`. Confirm the plugin is enabled, the owned `one-bit-bureau` theme is active, the recorded theme mode is `source` on hosts with the native theme-source API or `plugin-link` on earlier Quattro hosts, the theme and plugin resolve to the same commit, the top opaque bar and One-Bit Bureau branding are active, both font families are visible to fontconfig, and the previously selected Omarchy font remains selected.
+- Run `one-bit-bureau status`, then `one-bit-bureau update --yes`. Confirm the plugin checkout, recorded plugin commit, owned theme installation, and recorded theme commit resolve to the same final release commit; an already active One-Bit Bureau theme must remain active.
+- Run `one-bit-bureau remove`. Confirm the plugin payload, owned theme link and any source child, unmodified bundled font directory, unmodified command, and ownership record are gone; the recorded theme, bar settings, and exact prior branding bytes are restored; the selected font is unchanged; and the documented Desktop files, pins, icon choices, custom icons, and positions remain as user data.
 - Repeat the branding removal check after editing one installed branding file. Removal must preserve that later edit and retain its corresponding backup rather than overwriting it.
 
 ## Disposable Omarchy runtime behavior
@@ -56,6 +56,6 @@
 - A stale `preview.png`, or describing its wallpaper-only image as a runtime desktop capture.
 - A helper process that continues after the shell/plugin closes.
 - Any keyboard trap, actionable secondary-surface control without a visible focus state and meaningful accessible name, or motion that continues after reduced motion is enabled.
-- Any public lifecycle run that does not start from the GitHub URL, cannot align plugin and theme source commits, or fails to restore the recorded baseline on removal.
+- Any public lifecycle run that does not start from the GitHub URL, cannot align plugin and owned-theme commits, or fails to restore the recorded baseline on removal.
 - An update that removes a previously published theme child or changes the public plugin ID.
 - A claim that the dock has explicit monitor ownership before its persisted output resolver exists.

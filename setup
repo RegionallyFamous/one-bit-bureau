@@ -16,6 +16,7 @@ SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
 THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
 PLUGIN_TARGET="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
+THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
 ONE_BIT_BUREAU_CONFIG="$HOME/.config/omarchy/one-bit-bureau"
 FONT_TARGET="$HOME/.local/share/fonts/one-bit-bureau"
 BRANDING_TARGET="$HOME/.config/omarchy/branding"
@@ -43,6 +44,7 @@ PLUGIN_COMMIT=""
 THEME_SOURCE_ID=""
 THEME_SOURCE_URL=""
 THEME_SOURCE_COMMIT=""
+THEME_INSTALL_MODE=""
 REMOTE_REPO_URL=""
 
 fail() {
@@ -98,15 +100,15 @@ if (( ! LOCAL_INSTALL && ! ADOPT_PLUGIN )); then
   [[ $REMOTE_REPO_URL == "$EXPECTED_REPO_URL" ]] || fail "remote setup requires the canonical origin $EXPECTED_REPO_URL; use --local for a fork or development checkout"
 fi
 
-[[ ! -e $STATE_FILE ]] || fail "an install-state record already exists; run bash uninstall before reinstalling"
+[[ ! -e $STATE_FILE && ! -L $STATE_FILE ]] || fail "an install-state record already exists; run bash uninstall before reinstalling"
 if (( ADOPT_PLUGIN )); then
   [[ -d $PLUGIN_TARGET/.git ]] || fail "--adopt-plugin requires a Git-managed plugin at $PLUGIN_TARGET"
   [[ $(cd -- "$SCRIPT_DIR" && pwd -P) == "$(cd -- "$PLUGIN_TARGET" && pwd -P)" ]] || fail "run the setup script from the installed One-Bit Bureau plugin"
 else
-  [[ ! -e $PLUGIN_TARGET ]] || fail "plugin target already exists: $PLUGIN_TARGET"
+  [[ ! -e $PLUGIN_TARGET && ! -L $PLUGIN_TARGET ]] || fail "plugin target already exists: $PLUGIN_TARGET"
 fi
-[[ ! -e $THEME_TARGET ]] || fail "theme target already exists: $THEME_TARGET"
-[[ ! -e $FONT_TARGET ]] || fail "font target already exists: $FONT_TARGET"
+[[ ! -e $THEME_TARGET && ! -L $THEME_TARGET ]] || fail "theme target already exists: $THEME_TARGET"
+[[ ! -e $FONT_TARGET && ! -L $FONT_TARGET ]] || fail "font target already exists: $FONT_TARGET"
 [[ ! -e $COMMAND_TARGET && ! -L $COMMAND_TARGET ]] || fail "command target already exists: $COMMAND_TARGET"
 [[ ! -L $BRANDING_TARGET ]] || fail "branding directory must not be a symlink: $BRANDING_TARGET"
 [[ ! -e $BRANDING_TARGET || -d $BRANDING_TARGET ]] || fail "branding target is not a directory: $BRANDING_TARGET"
@@ -337,13 +339,14 @@ write_state() {
     --arg themeSourceId "$THEME_SOURCE_ID" \
     --arg themeSourceUrl "$THEME_SOURCE_URL" \
     --arg themeSourceCommit "$THEME_SOURCE_COMMIT" \
+    --arg themeInstallMode "$THEME_INSTALL_MODE" \
     --arg previousTheme "$PREVIOUS_THEME" \
     --arg previousBarPosition "$PREVIOUS_BAR_POSITION" \
     --argjson previousBarTransparent "$PREVIOUS_BAR_TRANSPARENT" \
     --argjson previousAboutPresent "$PREVIOUS_ABOUT_PRESENT" \
     --argjson previousScreensaverPresent "$PREVIOUS_SCREENSAVER_PRESENT" \
     '{
-      schemaVersion: 2,
+      schemaVersion: 3,
       product: $product,
       pluginId: $pluginId,
       theme: $theme,
@@ -358,6 +361,7 @@ write_state() {
         themeSourceId: $themeSourceId,
         themeSourceUrl: $themeSourceUrl,
         themeSourceCommit: $themeSourceCommit,
+        themeInstallMode: $themeInstallMode,
         fontTreeHash: $fontTreeHash,
         aboutHash: $aboutHash,
         screensaverHash: $screensaverHash
@@ -432,18 +436,20 @@ rollback() {
     rm -rf -- "$FONT_TARGET"
     fc-cache -f >/dev/null 2>&1 || true
   fi
-  if (( PLUGIN_OWNED )); then
-    omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
-    omarchy plugin remove "$PLUGIN_ID" --yes >/dev/null 2>&1 || true
-    [[ ! -e $PLUGIN_TARGET ]] || rm -rf "$PLUGIN_TARGET"
-  fi
   if (( THEME_OWNED )); then
-    if [[ -n $THEME_SOURCE_ID ]]; then
+    if [[ $THEME_INSTALL_MODE == "source" && -n $THEME_SOURCE_ID ]]; then
       omarchy theme source detach "$THEME_SOURCE_ID" "$THEME_NAME" --json >/dev/null 2>&1 || true
+    elif [[ $THEME_INSTALL_MODE == "plugin-link" ]]; then
+      [[ ! -L $THEME_TARGET ]] || rm -- "$THEME_TARGET"
     else
       omarchy theme remove "$THEME_NAME" >/dev/null 2>&1 || true
     fi
-    [[ ! -e $THEME_TARGET ]] || rm -rf "$THEME_TARGET"
+    [[ ! -e $THEME_TARGET && ! -L $THEME_TARGET ]] || rm -rf -- "$THEME_TARGET"
+  fi
+  if (( PLUGIN_OWNED )); then
+    omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
+    omarchy plugin remove "$PLUGIN_ID" --yes >/dev/null 2>&1 || true
+    [[ ! -e $PLUGIN_TARGET && ! -L $PLUGIN_TARGET ]] || rm -rf -- "$PLUGIN_TARGET"
   fi
   [[ -z $PLUGIN_STAGE || ! -e $PLUGIN_STAGE ]] || rm -rf "$PLUGIN_STAGE"
   [[ -z $THEME_STAGE || ! -e $THEME_STAGE ]] || rm -rf "$THEME_STAGE"
@@ -503,6 +509,7 @@ install_adopted_plugin() {
 
 install_local_theme() {
   local themes_dir="$HOME/.config/omarchy/themes"
+  THEME_INSTALL_MODE="copy"
   mkdir -p "$themes_dir"
   THEME_STAGE=$(mktemp -d "$themes_dir/.one-bit-bureau-theme.XXXXXX")
   cp -R "$SCRIPT_DIR/themes/$THEME_NAME/." "$THEME_STAGE/"
@@ -512,14 +519,40 @@ install_local_theme() {
   THEME_STAGE=""
 }
 
+theme_source_commands_available() {
+  local command
+  [[ -n ${OMARCHY_PATH:-} ]] || return 1
+  for command in inspect install update detach; do
+    [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-$command ]] || return 1
+  done
+}
+
+install_plugin_linked_theme() {
+  local source_theme="$PLUGIN_TARGET/themes/$THEME_NAME"
+  [[ -d $source_theme && ! -L $source_theme ]] || fail "installed plugin is missing its matching theme"
+  mkdir -p "$HOME/.config/omarchy/themes"
+  THEME_INSTALL_MODE="plugin-link"
+  THEME_SOURCE_ID=""
+  THEME_SOURCE_URL="$EXPECTED_REPO_URL"
+  THEME_SOURCE_COMMIT="$PLUGIN_COMMIT"
+  THEME_OWNED=1
+  write_state
+  ln -s "$source_theme" "$THEME_TARGET"
+}
+
 install_remote_theme() {
-  local repo_url source_json install_json
+  local repo_url source_json install_json source_path expected_theme_path actual_theme_path actual_source_url actual_source_commit
   if (( ADOPT_PLUGIN )); then
     repo_url=$(git -C "$SCRIPT_DIR" config --get remote.origin.url 2>/dev/null || true)
   else
     repo_url="$REMOTE_REPO_URL"
   fi
   [[ $repo_url == "$EXPECTED_REPO_URL" ]] || fail "theme setup requires the canonical origin $EXPECTED_REPO_URL"
+  if ! theme_source_commands_available; then
+    install_plugin_linked_theme
+    return
+  fi
+  THEME_INSTALL_MODE="source"
   source_json=$(omarchy theme source inspect "$repo_url" --json) || fail "could not inspect the One-Bit Bureau theme source"
   THEME_SOURCE_ID=$(jq -er '.source.id' <<<"$source_json") || fail "theme source did not return an ID"
   THEME_SOURCE_URL=$(jq -er '.source.url' <<<"$source_json") || fail "theme source did not return a URL"
@@ -532,7 +565,16 @@ install_remote_theme() {
   write_state
   install_json=$(omarchy theme source install "$THEME_SOURCE_ID" "$THEME_NAME" --json) || fail "could not install the One-Bit Bureau theme"
   jq -e --arg source "$THEME_SOURCE_ID" --arg theme "$THEME_NAME" '.source.id == $source and .action.theme == $theme' <<<"$install_json" >/dev/null || fail "theme source install returned an unexpected result"
-  [[ -e $THEME_TARGET ]] || fail "theme install did not create $THEME_TARGET"
+  source_path="$THEME_SOURCES_DIR/$THEME_SOURCE_ID"
+  [[ -d $source_path/.git && ! -L $source_path ]] || fail "theme source checkout is missing or unsafe"
+  actual_source_url=$(git -C "$source_path" config --get remote.origin.url 2>/dev/null || true)
+  [[ $actual_source_url == "$EXPECTED_REPO_URL" ]] || fail "theme source checkout has an unexpected origin"
+  actual_source_commit=$(git -C "$source_path" rev-parse HEAD 2>/dev/null || true)
+  [[ $actual_source_commit == "$THEME_SOURCE_COMMIT" ]] || fail "theme source checkout does not match its recorded commit"
+  [[ -L $THEME_TARGET ]] || fail "theme source install did not create an owned symlink"
+  expected_theme_path=$(realpath "$source_path/themes/$THEME_NAME" 2>/dev/null || true)
+  actual_theme_path=$(realpath "$THEME_TARGET" 2>/dev/null || true)
+  [[ -n $expected_theme_path && $actual_theme_path == "$expected_theme_path" ]] || fail "theme source install created an unexpected link"
 }
 
 prepare_user_data() {

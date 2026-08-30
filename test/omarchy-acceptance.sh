@@ -43,6 +43,7 @@ fi
 
 PUBLIC_SOURCE_ID=""
 PUBLIC_SOURCE_PATH=""
+PUBLIC_THEME_MODE=""
 public_lifecycle_active=false
 
 screen_lacks() {
@@ -184,7 +185,14 @@ assert_public_commit_alignment() {
   local plugin_commit source_commit state_plugin_commit state_source_commit remote_commit
 
   plugin_commit=$(git -C "$PLUGIN_DIR" rev-parse HEAD)
-  source_commit=$(git -C "$PUBLIC_SOURCE_PATH" rev-parse HEAD)
+  if [[ $PUBLIC_THEME_MODE == "source" ]]; then
+    source_commit=$(git -C "$PUBLIC_SOURCE_PATH" rev-parse HEAD)
+    [[ $(realpath "$THEME_TARGET") == "$(realpath "$PUBLIC_SOURCE_PATH/themes/$THEME_NAME")" ]] || return 1
+  else
+    source_commit="$plugin_commit"
+    [[ $PUBLIC_THEME_MODE == "plugin-link" ]] || return 1
+    [[ $(realpath "$THEME_TARGET") == "$(realpath "$PLUGIN_DIR/themes/$THEME_NAME")" ]] || return 1
+  fi
   state_plugin_commit=$(jq -er '.installed.pluginCommit' "$STATE_FILE")
   state_source_commit=$(jq -er '.installed.themeSourceCommit' "$STATE_FILE")
   remote_commit=$(git ls-remote "$PUBLIC_REPO_URL" refs/heads/main | awk 'NR == 1 { print $1 }')
@@ -591,15 +599,34 @@ wait_until "the public One-Bit Bureau plugin activates" 30 \
   bash -c "omarchy plugin list --json | jq -e --arg id '$PLUGIN_ID' 'any(.[]; .id == \$id and .enabled == true)'"
 wait_until "the public One-Bit Bureau dock mounts" 20 layer_on_screen one-bit-bureau-dock
 [[ -f $STATE_FILE && ! -L $STATE_FILE ]] || fail "public setup records source ownership"
+PUBLIC_THEME_MODE=$(jq -er '.installed.themeInstallMode' "$STATE_FILE")
 PUBLIC_SOURCE_ID=$(jq -er '.installed.themeSourceId' "$STATE_FILE")
-PUBLIC_SOURCE_PATH="$THEME_SOURCES_DIR/$PUBLIC_SOURCE_ID"
-[[ -d $PUBLIC_SOURCE_PATH/.git && ! -L $PUBLIC_SOURCE_PATH ]] ||
-  fail "public setup creates a safe theme-source checkout"
-[[ -L $THEME_TARGET ]] || fail "public setup installs the theme as a source-owned symlink"
-[[ $(realpath "$THEME_TARGET") == "$(realpath "$PUBLIC_SOURCE_PATH/themes/$THEME_NAME")" ]] ||
-  fail "the installed theme link resolves inside its recorded source"
-assert_public_commit_alignment || fail "the public plugin and theme source align with public main"
-pass "the public plugin, theme source, ownership record, and main branch align"
+[[ -L $THEME_TARGET ]] || fail "public setup installs the theme as an owned symlink"
+expected_public_theme_mode="plugin-link"
+if [[ -n ${OMARCHY_PATH:-} ]] &&
+  [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-inspect ]] &&
+  [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-install ]] &&
+  [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-update ]] &&
+  [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-detach ]]; then
+  expected_public_theme_mode="source"
+fi
+[[ $PUBLIC_THEME_MODE == "$expected_public_theme_mode" ]] ||
+  fail "public setup selected $PUBLIC_THEME_MODE instead of the supported $expected_public_theme_mode mode"
+if [[ $PUBLIC_THEME_MODE == "source" ]]; then
+  PUBLIC_SOURCE_PATH="$THEME_SOURCES_DIR/$PUBLIC_SOURCE_ID"
+  [[ -d $PUBLIC_SOURCE_PATH/.git && ! -L $PUBLIC_SOURCE_PATH ]] ||
+    fail "public setup creates a safe theme-source checkout"
+  [[ $(realpath "$THEME_TARGET") == "$(realpath "$PUBLIC_SOURCE_PATH/themes/$THEME_NAME")" ]] ||
+    fail "the installed theme link resolves inside its recorded source"
+elif [[ $PUBLIC_THEME_MODE == "plugin-link" ]]; then
+  [[ -z $PUBLIC_SOURCE_ID ]] || fail "plugin-linked theme records no separate source ID"
+  [[ $(realpath "$THEME_TARGET") == "$(realpath "$PLUGIN_DIR/themes/$THEME_NAME")" ]] ||
+    fail "the installed theme link resolves inside its plugin checkout"
+else
+  fail "public setup records a supported theme installation mode"
+fi
+assert_public_commit_alignment || fail "the public plugin and owned theme align with public main"
+pass "the public plugin, owned theme, ownership record, and main branch align"
 [[ -x $COMMAND_TARGET && -d $FONT_TARGET ]] || fail "public setup installs the command and bundled fonts"
 screenshot "success-one-bit-bureau-18-public-install"
 
@@ -624,17 +651,20 @@ pass "One-Bit Bureau reduced-motion control is live across dock and overview"
 [[ $(sha256sum "$PLUGIN_DIR/test/omarchy-acceptance.sh" | awk '{print $1}') == "$fixture_acceptance_hash" ]] ||
   fail "the public update retains the exact tested acceptance code"
 assert_public_commit_alignment || fail "the public update keeps plugin and theme commits aligned"
-pass "the public update command keeps plugin and theme source aligned"
+pass "the public update command keeps plugin and owned theme aligned"
 
-public_theme_source_state="$THEME_SOURCE_STATE_DIR/$PUBLIC_SOURCE_ID/installed/$THEME_NAME"
+public_theme_source_state=""
+if [[ $PUBLIC_THEME_MODE == "source" ]]; then
+  public_theme_source_state="$THEME_SOURCE_STATE_DIR/$PUBLIC_SOURCE_ID/installed/$THEME_NAME"
+fi
 "$COMMAND_TARGET" remove
 public_lifecycle_active=false
 wait_until "the public plugin is removed" 20 public_plugin_absent
-[[ ! -e $PLUGIN_DIR && ! -e $THEME_TARGET && ! -e $STATE_FILE ]] ||
+[[ ! -e $PLUGIN_DIR && ! -L $PLUGIN_DIR && ! -e $THEME_TARGET && ! -L $THEME_TARGET && ! -e $STATE_FILE ]] ||
   fail "public removal clears plugin, theme link, and ownership state"
 [[ ! -e $FONT_TARGET && ! -e $COMMAND_TARGET ]] ||
   fail "public removal clears owned fonts and command"
-[[ ! -e $public_theme_source_state ]] || fail "public removal detaches the theme from its source"
+[[ -z $public_theme_source_state || ! -e $public_theme_source_state ]] || fail "public removal detaches the theme from its source"
 [[ -f $BUREAU_CONFIG/lifecycle-user-data.txt && -f $HOME/Desktop/ONE-BIT-BUREAU-QA.txt && -f $HOME/Desktop/One-Bit\ Bureau\ Photo.png ]] ||
   fail "public removal preserves One-Bit Bureau configuration and Desktop data"
 [[ $(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true) == "$ORIGINAL_THEME" ]] ||

@@ -127,15 +127,13 @@ class PluginSourceContractTest(unittest.TestCase):
         self.assertIn("screenName: root.preferredScreenName", source)
         self.assertIn("function setScreen(name: string): bool", source)
 
-    def test_theme_keeps_terminal_paper_fully_opaque(self) -> None:
+    def test_theme_keeps_every_application_paper_fully_opaque(self) -> None:
         source = (ROOT / "themes/one-bit-bureau/hyprland.lua").read_text(
             encoding="utf-8"
         )
         self.assertIn("active_opacity = 1.0", source)
         self.assertIn("inactive_opacity = 1.0", source)
-        self.assertIn(
-            'o.window({ tag = "terminal" }, { opacity = "1.0 1.0" })', source
-        )
+        self.assertIn('o.window(".*", { opacity = "1.0 1.0" })', source)
 
     def test_dock_settings_reject_stale_startup_snapshots(self) -> None:
         source = (ROOT / "components/dock/DockPanelBase.qml").read_text(
@@ -206,11 +204,31 @@ class PluginSourceContractTest(unittest.TestCase):
         self.assertIn('EXPECTED_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"', setup)
         self.assertIn('omarchy theme source inspect "$repo_url" --json', setup)
         self.assertIn('omarchy theme source install "$THEME_SOURCE_ID" "$THEME_NAME" --json', setup)
+        self.assertIn('THEME_INSTALL_MODE="plugin-link"', setup)
+        self.assertIn('ln -s "$source_theme" "$THEME_TARGET"', setup)
+        self.assertIn('[[ ! -e $THEME_TARGET && ! -L $THEME_TARGET ]]', setup)
+        self.assertIn("for command in inspect install update detach; do", setup)
+        self.assertIn(
+            "[[ -x $OMARCHY_PATH/bin/omarchy-theme-source-$command ]]", setup
+        )
+        self.assertNotIn('omarchy theme install "$repo_url"', setup)
+        self.assertLess(
+            setup.index('if (( THEME_OWNED )); then'),
+            setup.index('if (( PLUGIN_OWNED )); then'),
+        )
         self.assertIn('omarchy "${arguments[@]}"', update)
         self.assertIn('exec bash "$PLUGIN_DIR/update" --reconcile', update)
         self.assertIn('omarchy theme source update "$source_id" --json', update)
+        self.assertIn('[[ $theme_install_mode == "source" ]]', update)
         self.assertIn('[[ $theme_commit == "$plugin_commit" ]]', update)
+        self.assertIn('actual_plugin_url=$(git -C "$PLUGIN_DIR" config --get remote.origin.url', update)
+        self.assertNotIn("omarchy theme update", update)
         self.assertIn('omarchy theme source detach "$THEME_SOURCE_ID" "$THEME_NAME" --json', uninstall)
+        self.assertIn('[[ $THEME_INSTALL_MODE == "plugin-link" ]]', uninstall)
+        self.assertLess(
+            uninstall.index("preflight_owned_installation || exit 1"),
+            uninstall.index('omarchy theme set "$PREVIOUS_THEME"'),
+        )
         self.assertIn('PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"', command)
 
 

@@ -27,6 +27,14 @@ hash_file() {
   fi
 }
 
+theme_source_commands_available() {
+  local command
+  [[ -n ${OMARCHY_PATH:-} ]] || return 1
+  for command in inspect install update detach; do
+    [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-$command ]] || return 1
+  done
+}
+
 while (( $# > 0 )); do
   case "$1" in
     --yes | -y) ASSUME_YES=1 ;;
@@ -45,7 +53,7 @@ command -v jq >/dev/null || fail "jq is required"
 [[ -d $PLUGIN_DIR/.git ]] || fail "this installation is not Git-managed; reinstall from the public repository"
 [[ -f $STATE_FILE && ! -L $STATE_FILE ]] || fail "ownership record is missing or unsafe"
 jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NAME" --arg repo "$EXPECTED_REPO_URL" '
-  .schemaVersion == 2 and
+  .schemaVersion == 3 and
   .pluginId == $id and
   .product == $product and
   .theme == $theme and
@@ -54,26 +62,50 @@ jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NA
   (.installed | type == "object") and
   .installed.pluginOrigin == $repo and
   (.installed.pluginCommit | type == "string" and length > 0) and
-  (.installed.themeSourceId | type == "string" and length > 0) and
+  (.installed.themeInstallMode == "source" or .installed.themeInstallMode == "plugin-link") and
+  (.installed.themeSourceId | type == "string") and
   .installed.themeSourceUrl == $repo and
   (.installed.themeSourceCommit | type == "string" and length > 0) and
+  (
+    if .installed.themeInstallMode == "source" then
+      (.installed.themeSourceId | test("^[a-z0-9]+(-[a-z0-9]+)*-[a-f0-9]{12}$"))
+    else
+      .installed.themeSourceId == ""
+    end
+  ) and
   (.installed.commandHash | type == "string" and length > 0)
-' "$STATE_FILE" >/dev/null || fail "ownership record is invalid or is not a source-owned public installation"
+' "$STATE_FILE" >/dev/null || fail "ownership record is invalid or is not an owned public installation"
 
+theme_install_mode=$(jq -er '.installed.themeInstallMode' "$STATE_FILE")
 source_id=$(jq -er '.installed.themeSourceId' "$STATE_FILE")
 source_url=$(jq -er '.installed.themeSourceUrl' "$STATE_FILE")
-[[ $source_id =~ ^[a-z0-9]+(-[a-z0-9]+)*-[a-f0-9]{12}$ ]] || fail "recorded theme source ID is invalid"
-source_path="$THEME_SOURCES_DIR/$source_id"
-[[ -d $source_path/.git && ! -L $source_path ]] || fail "recorded theme source checkout is missing or unsafe"
-actual_source_url=$(git -C "$source_path" config --get remote.origin.url 2>/dev/null || true)
-[[ $actual_source_url == "$source_url" && $source_url == "$EXPECTED_REPO_URL" ]] || fail "recorded theme source does not own the installed repository"
-[[ -L $THEME_TARGET ]] || fail "One-Bit Bureau theme is not linked from its recorded source"
-expected_theme_path=$(realpath "$source_path/themes/$THEME_NAME" 2>/dev/null || true)
+recorded_plugin_commit=$(jq -er '.installed.pluginCommit' "$STATE_FILE")
+recorded_theme_commit=$(jq -er '.installed.themeSourceCommit' "$STATE_FILE")
+actual_plugin_url=$(git -C "$PLUGIN_DIR" config --get remote.origin.url 2>/dev/null || true)
+[[ $actual_plugin_url == "$EXPECTED_REPO_URL" ]] || fail "plugin checkout origin is not the canonical One-Bit Bureau repository"
+[[ -z $(git -C "$PLUGIN_DIR" status --porcelain) ]] || fail "plugin checkout has local changes; commit or remove them before updating"
+current_plugin_commit=$(git -C "$PLUGIN_DIR" rev-parse HEAD)
+if (( ! RECONCILE )); then
+  [[ $current_plugin_commit == "$recorded_plugin_commit" ]] || fail "plugin checkout changed outside One-Bit Bureau; reconcile ownership before updating"
+fi
+if [[ $theme_install_mode == "source" ]]; then
+  theme_source_commands_available || fail "this installation requires Omarchy's complete theme-source API; update Omarchy before updating One-Bit Bureau"
+  source_path="$THEME_SOURCES_DIR/$source_id"
+  [[ -d $source_path/.git && ! -L $source_path ]] || fail "recorded theme source checkout is missing or unsafe"
+  actual_source_url=$(git -C "$source_path" config --get remote.origin.url 2>/dev/null || true)
+  [[ $actual_source_url == "$source_url" && $source_url == "$EXPECTED_REPO_URL" ]] || fail "recorded theme source does not own the installed repository"
+  [[ -z $(git -C "$source_path" status --porcelain) ]] || fail "recorded theme source has local changes"
+  actual_source_commit=$(git -C "$source_path" rev-parse HEAD)
+  [[ $actual_source_commit == "$recorded_theme_commit" ]] || fail "recorded theme source changed outside One-Bit Bureau"
+  expected_theme_path=$(realpath "$source_path/themes/$THEME_NAME" 2>/dev/null || true)
+else
+  expected_theme_path=$(realpath "$PLUGIN_DIR/themes/$THEME_NAME" 2>/dev/null || true)
+fi
+[[ -L $THEME_TARGET ]] || fail "One-Bit Bureau theme is not an owned link"
 actual_theme_path=$(realpath "$THEME_TARGET" 2>/dev/null || true)
-[[ -n $expected_theme_path && $actual_theme_path == "$expected_theme_path" ]] || fail "One-Bit Bureau theme link is not owned by its recorded source"
+[[ -n $expected_theme_path && $actual_theme_path == "$expected_theme_path" ]] || fail "One-Bit Bureau theme link is not owned by its recorded installation mode"
 
 if (( ! RECONCILE )); then
-  [[ -z $(git -C "$PLUGIN_DIR" status --porcelain) ]] || fail "plugin checkout has local changes; commit or remove them before updating"
   arguments=(plugin update "$PLUGIN_ID")
   (( ! ASSUME_YES )) || arguments+=(--yes)
   omarchy "${arguments[@]}"
@@ -84,9 +116,15 @@ active_theme=""
 theme_state="$HOME/.local/state/omarchy/current/theme.name"
 [[ ! -f $theme_state ]] || active_theme=$(<"$theme_state")
 
-theme_json=$(omarchy theme source update "$source_id" --json) || fail "theme source update failed"
-theme_commit=$(jq -er '.source.commit' <<<"$theme_json") || fail "theme source update returned no commit"
 plugin_commit=$(git -C "$PLUGIN_DIR" rev-parse HEAD)
+if [[ $theme_install_mode == "source" ]]; then
+  theme_json=$(omarchy theme source update "$source_id" --json) || fail "theme source update failed"
+  theme_commit=$(jq -er '.source.commit' <<<"$theme_json") || fail "theme source update returned no commit"
+else
+  [[ $(realpath "$THEME_TARGET" 2>/dev/null || true) == "$(realpath "$PLUGIN_DIR/themes/$THEME_NAME" 2>/dev/null || true)" ]] ||
+    fail "plugin-linked theme stopped pointing at the updated plugin"
+  theme_commit="$plugin_commit"
+fi
 [[ $theme_commit == "$plugin_commit" ]] || fail "plugin and theme stopped at different commits; rerun the update"
 
 if [[ $active_theme == "$THEME_NAME" ]]; then

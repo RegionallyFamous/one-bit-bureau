@@ -5,6 +5,7 @@ set -euo pipefail
 PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
 PRODUCT_NAME="One-Bit Bureau"
 THEME_NAME="one-bit-bureau"
+EXPECTED_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
 STATE_DIR="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID"
 STATE_FILE="$STATE_DIR/install-state.json"
 SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
@@ -43,8 +44,8 @@ command -v python3 >/dev/null || {
   exit 1
 }
 
-jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NAME" '
-  .schemaVersion == 2 and
+jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NAME" --arg repo "$EXPECTED_REPO_URL" '
+  .schemaVersion == 3 and
   .pluginId == $id and
   .product == $product and
   .theme == $theme and
@@ -59,14 +60,26 @@ jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NA
   (.installed.themeSourceId | type == "string") and
   (.installed.themeSourceUrl | type == "string") and
   (.installed.themeSourceCommit | type == "string") and
+  (.installed.themeInstallMode == "source" or .installed.themeInstallMode == "plugin-link" or .installed.themeInstallMode == "copy") and
+  .themeOwned == true and
   (
-    if .installed.themeSourceId == "" then
-      .installed.themeSourceUrl == "" and .installed.themeSourceCommit == ""
-    else
-      .themeOwned == true and
+    if .installed.themeInstallMode == "source" then
+      .pluginOwned == true and
+      .installed.pluginOrigin == $repo and
+      (.installed.pluginCommit | length > 0) and
       (.installed.themeSourceId | test("^[a-z0-9]+(-[a-z0-9]+)*-[a-f0-9]{12}$")) and
-      .installed.themeSourceUrl == "https://github.com/RegionallyFamous/one-bit-bureau.git" and
-      (.installed.themeSourceCommit | length > 0)
+      .installed.themeSourceUrl == $repo and
+      .installed.themeSourceCommit == .installed.pluginCommit
+    elif .installed.themeInstallMode == "plugin-link" then
+      .pluginOwned == true and
+      .installed.pluginOrigin == $repo and
+      (.installed.pluginCommit | length > 0) and
+      .installed.themeSourceId == "" and
+      .installed.themeSourceUrl == $repo and
+      .installed.themeSourceCommit == .installed.pluginCommit
+    else
+      .installed.pluginOrigin == "" and .installed.pluginCommit == "" and
+      .installed.themeSourceId == "" and .installed.themeSourceUrl == "" and .installed.themeSourceCommit == ""
     end
   ) and
   (.installed.fontTreeHash | type == "string") and
@@ -92,6 +105,10 @@ COMMAND_OWNED=$(jq -r '.commandOwned' "$STATE_FILE")
 FONT_TREE_HASH=$(jq -r '.installed.fontTreeHash' "$STATE_FILE")
 THEME_SOURCE_ID=$(jq -r '.installed.themeSourceId' "$STATE_FILE")
 THEME_SOURCE_URL=$(jq -r '.installed.themeSourceUrl' "$STATE_FILE")
+PLUGIN_ORIGIN=$(jq -r '.installed.pluginOrigin' "$STATE_FILE")
+PLUGIN_COMMIT=$(jq -r '.installed.pluginCommit' "$STATE_FILE")
+THEME_SOURCE_COMMIT=$(jq -r '.installed.themeSourceCommit' "$STATE_FILE")
+THEME_INSTALL_MODE=$(jq -r '.installed.themeInstallMode' "$STATE_FILE")
 ABOUT_HASH=$(jq -r '.installed.aboutHash' "$STATE_FILE")
 SCREENSAVER_HASH=$(jq -r '.installed.screensaverHash' "$STATE_FILE")
 COMMAND_HASH=$(jq -r '.installed.commandHash' "$STATE_FILE")
@@ -224,6 +241,105 @@ font_tree_hash() {
   } | hash_file /dev/stdin
 }
 
+theme_source_commands_available() {
+  local command
+  [[ -n ${OMARCHY_PATH:-} ]] || return 1
+  for command in inspect install update detach; do
+    [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-$command ]] || return 1
+  done
+}
+
+preflight_owned_installation() {
+  local actual_plugin_origin actual_plugin_commit source_path actual_source_url actual_source_commit expected_theme_path actual_theme_path
+
+  if [[ $PLUGIN_OWNED == "true" ]]; then
+    [[ -e $PLUGIN_TARGET && ! -L $PLUGIN_TARGET ]] || {
+      echo "$PRODUCT_NAME plugin payload is missing or unsafe; no changes were made." >&2
+      return 1
+    }
+    if [[ -n $PLUGIN_ORIGIN ]]; then
+      [[ -d $PLUGIN_TARGET/.git ]] || {
+        echo "$PRODUCT_NAME plugin checkout is not Git-managed; no changes were made." >&2
+        return 1
+      }
+      actual_plugin_origin=$(git -C "$PLUGIN_TARGET" config --get remote.origin.url 2>/dev/null || true)
+      [[ $actual_plugin_origin == "$PLUGIN_ORIGIN" && $PLUGIN_ORIGIN == "$EXPECTED_REPO_URL" ]] || {
+        echo "$PRODUCT_NAME plugin origin no longer matches its ownership record; no changes were made." >&2
+        return 1
+      }
+      [[ -z $(git -C "$PLUGIN_TARGET" status --porcelain) ]] || {
+        echo "$PRODUCT_NAME plugin checkout has local changes; no changes were made." >&2
+        return 1
+      }
+      actual_plugin_commit=$(git -C "$PLUGIN_TARGET" rev-parse HEAD 2>/dev/null || true)
+      [[ $actual_plugin_commit == "$PLUGIN_COMMIT" ]] || {
+        echo "$PRODUCT_NAME plugin commit no longer matches its ownership record; no changes were made." >&2
+        return 1
+      }
+    else
+      [[ $THEME_INSTALL_MODE == "copy" && ! -e $PLUGIN_TARGET/.git ]] || {
+        echo "$PRODUCT_NAME local plugin payload no longer matches its ownership record; no changes were made." >&2
+        return 1
+      }
+    fi
+  fi
+
+  [[ -e $THEME_TARGET || -L $THEME_TARGET ]] || {
+    echo "$PRODUCT_NAME owned theme is missing; no changes were made." >&2
+    return 1
+  }
+  if [[ $THEME_INSTALL_MODE == "source" ]]; then
+    theme_source_commands_available || {
+      echo "$PRODUCT_NAME requires Omarchy's complete theme-source API for safe removal; update Omarchy first." >&2
+      return 1
+    }
+    source_path="$THEME_SOURCES_DIR/$THEME_SOURCE_ID"
+    [[ -d $source_path/.git && ! -L $source_path ]] || {
+      echo "$PRODUCT_NAME recorded theme source is missing or unsafe; no changes were made." >&2
+      return 1
+    }
+    actual_source_url=$(git -C "$source_path" config --get remote.origin.url 2>/dev/null || true)
+    [[ $actual_source_url == "$THEME_SOURCE_URL" && $THEME_SOURCE_URL == "$EXPECTED_REPO_URL" ]] || {
+      echo "$PRODUCT_NAME recorded theme source origin changed; no changes were made." >&2
+      return 1
+    }
+    [[ -z $(git -C "$source_path" status --porcelain) ]] || {
+      echo "$PRODUCT_NAME recorded theme source has local changes; no changes were made." >&2
+      return 1
+    }
+    actual_source_commit=$(git -C "$source_path" rev-parse HEAD 2>/dev/null || true)
+    [[ $actual_source_commit == "$THEME_SOURCE_COMMIT" ]] || {
+      echo "$PRODUCT_NAME recorded theme source commit changed; no changes were made." >&2
+      return 1
+    }
+    expected_theme_path=$(realpath "$source_path/themes/$THEME_NAME" 2>/dev/null || true)
+    [[ -L $THEME_TARGET ]] || {
+      echo "$PRODUCT_NAME theme is not linked from its recorded source; no changes were made." >&2
+      return 1
+    }
+  elif [[ $THEME_INSTALL_MODE == "plugin-link" ]]; then
+    expected_theme_path=$(realpath "$PLUGIN_TARGET/themes/$THEME_NAME" 2>/dev/null || true)
+    [[ -L $THEME_TARGET ]] || {
+      echo "$PRODUCT_NAME theme is not linked from its plugin checkout; no changes were made." >&2
+      return 1
+    }
+  else
+    [[ -d $THEME_TARGET && ! -L $THEME_TARGET ]] || {
+      echo "$PRODUCT_NAME copied theme is not an owned directory; no changes were made." >&2
+      return 1
+    }
+    return 0
+  fi
+
+  actual_theme_path=$(realpath "$THEME_TARGET" 2>/dev/null || true)
+  [[ -n $expected_theme_path && $actual_theme_path == "$expected_theme_path" ]] || {
+    echo "$PRODUCT_NAME theme link no longer belongs to its recorded installation; no changes were made." >&2
+    return 1
+  }
+}
+
+preflight_owned_installation || exit 1
+
 BRANDING_BACKUP_RETAINED=false
 restore_branding_file() {
   local current="$1" backup="$2" previous_present="$3" installed_hash="$4"
@@ -291,8 +407,8 @@ if [[ $FONT_OWNED == "true" && -d $FONT_TARGET ]]; then
 fi
 
 if [[ $THEME_OWNED == "true" ]]; then
-  if [[ -e $THEME_TARGET ]]; then
-    if [[ -n $THEME_SOURCE_ID ]]; then
+  if [[ -e $THEME_TARGET || -L $THEME_TARGET ]]; then
+    if [[ $THEME_INSTALL_MODE == "source" ]]; then
       source_path="$THEME_SOURCES_DIR/$THEME_SOURCE_ID"
       [[ -d $source_path/.git && ! -L $source_path ]] || {
         echo "$PRODUCT_NAME recorded theme source is missing or unsafe; refusing to detach it." >&2
@@ -314,11 +430,27 @@ if [[ $THEME_OWNED == "true" ]]; then
         exit 1
       }
       omarchy theme source detach "$THEME_SOURCE_ID" "$THEME_NAME" --json >/dev/null
+    elif [[ $THEME_INSTALL_MODE == "plugin-link" ]]; then
+      [[ -L $THEME_TARGET ]] || {
+        echo "$PRODUCT_NAME theme is not linked from its plugin checkout; refusing to remove it." >&2
+        exit 1
+      }
+      expected_theme_path=$(realpath "$PLUGIN_TARGET/themes/$THEME_NAME" 2>/dev/null || true)
+      actual_theme_path=$(realpath "$THEME_TARGET" 2>/dev/null || true)
+      [[ -n $expected_theme_path && $actual_theme_path == "$expected_theme_path" ]] || {
+        echo "$PRODUCT_NAME theme link is not owned by its plugin checkout; refusing to remove it." >&2
+        exit 1
+      }
+      rm -- "$THEME_TARGET"
     else
+      [[ -d $THEME_TARGET && ! -L $THEME_TARGET ]] || {
+        echo "$PRODUCT_NAME copied theme is not an owned directory; refusing to remove it." >&2
+        exit 1
+      }
       omarchy theme remove "$THEME_NAME"
     fi
   fi
-  [[ ! -e $THEME_TARGET ]] || {
+  [[ ! -e $THEME_TARGET && ! -L $THEME_TARGET ]] || {
     echo "$PRODUCT_NAME could not remove its theme; the ownership record was retained." >&2
     exit 1
   }
@@ -326,10 +458,10 @@ fi
 
 if [[ $PLUGIN_OWNED == "true" ]]; then
   omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
-  if [[ -e $PLUGIN_TARGET ]]; then
+  if [[ -e $PLUGIN_TARGET || -L $PLUGIN_TARGET ]]; then
     omarchy plugin remove "$PLUGIN_ID" --yes
   fi
-  [[ ! -e $PLUGIN_TARGET ]] || {
+  [[ ! -e $PLUGIN_TARGET && ! -L $PLUGIN_TARGET ]] || {
     echo "$PRODUCT_NAME could not remove its plugin payload; the ownership record was retained." >&2
     exit 1
   }

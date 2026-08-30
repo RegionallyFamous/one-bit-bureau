@@ -21,9 +21,9 @@ printf '%s\n' '#!/bin/bash' >"$BIN/git"
 printf '%s\n' 'set -euo pipefail' >>"$BIN/git"
 printf '%s\n' 'last=${!#}' >>"$BIN/git"
 printf '%s\n' 'if [[ $* == *"config --get remote.origin.url"* ]]; then echo "${TEST_GIT_ORIGIN:-https://github.com/RegionallyFamous/one-bit-bureau.git}"' >>"$BIN/git"
-printf '%s\n' 'elif [[ $* == *"status --porcelain"* ]]; then exit 0' >>"$BIN/git"
+printf '%s\n' 'elif [[ $* == *"status --porcelain"* ]]; then [[ ${TEST_GIT_DIRTY:-0} != 1 ]] || echo dirty' >>"$BIN/git"
 printf '%s\n' 'elif [[ $last == "refs/remotes/origin/HEAD" ]]; then echo "origin/main"' >>"$BIN/git"
-printf '%s\n' 'elif [[ $last == "HEAD" ]]; then echo "main"' >>"$BIN/git"
+printf '%s\n' 'elif [[ $last == "HEAD" ]]; then echo "${TEST_GIT_HEAD:-main}"' >>"$BIN/git"
 printf '%s\n' 'else exit 1; fi' >>"$BIN/git"
 chmod +x "$BIN/git"
 
@@ -59,6 +59,27 @@ printf '%s\n' '    [[ ${FAIL_THEME:-} != "$3" ]] || exit 1' >>"$BIN/omarchy"
 printf '%s\n' '    mkdir -p "$(dirname "$theme_state")"' >>"$BIN/omarchy"
 printf '%s\n' '    printf "%s\n" "$3" >"$theme_state"' >>"$BIN/omarchy"
 printf '%s\n' '    ;;' >>"$BIN/omarchy"
+printf '%s\n' '  "theme source")' >>"$BIN/omarchy"
+printf '%s\n' '    source_id="one-bit-bureau-abcdef123456"' >>"$BIN/omarchy"
+printf '%s\n' '    source_dir="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources/$source_id"' >>"$BIN/omarchy"
+printf '%s\n' '    case "$3" in' >>"$BIN/omarchy"
+printf '%s\n' '      inspect)' >>"$BIN/omarchy"
+printf '%s\n' '        mkdir -p "$source_dir/.git" "$source_dir/themes"' >>"$BIN/omarchy"
+printf '%s\n' '        cp -R "$TEST_ROOT/themes/one-bit-bureau" "$source_dir/themes/"' >>"$BIN/omarchy"
+printf '%s\n' '        printf '\''{"source":{"id":"%s","url":"https://github.com/RegionallyFamous/one-bit-bureau.git","commit":"main"}}\n'\'' "$source_id"' >>"$BIN/omarchy"
+printf '%s\n' '        ;;' >>"$BIN/omarchy"
+printf '%s\n' '      install)' >>"$BIN/omarchy"
+printf '%s\n' '        mkdir -p "$HOME/.config/omarchy/themes"' >>"$BIN/omarchy"
+printf '%s\n' '        ln -s "$source_dir/themes/$5" "$HOME/.config/omarchy/themes/$5"' >>"$BIN/omarchy"
+printf '%s\n' '        printf '\''{"source":{"id":"%s"},"action":{"theme":"%s"}}\n'\'' "$source_id" "$5"' >>"$BIN/omarchy"
+printf '%s\n' '        ;;' >>"$BIN/omarchy"
+printf '%s\n' '      detach)' >>"$BIN/omarchy"
+printf '%s\n' '        rm -f -- "$HOME/.config/omarchy/themes/$5"' >>"$BIN/omarchy"
+printf '%s\n' '        rm -rf -- "$source_dir"' >>"$BIN/omarchy"
+printf '%s\n' '        printf '\''{}\n'\''' >>"$BIN/omarchy"
+printf '%s\n' '        ;;' >>"$BIN/omarchy"
+printf '%s\n' '    esac' >>"$BIN/omarchy"
+printf '%s\n' '    ;;' >>"$BIN/omarchy"
 printf '%s\n' '  "theme install")' >>"$BIN/omarchy"
 printf '%s\n' '    mkdir -p "$HOME/.config/omarchy/themes/one-bit-bureau"' >>"$BIN/omarchy"
 printf '%s\n' '    [[ ${FAIL_THEME_INSTALL_PARTIAL:-0} != 1 ]] || exit 1' >>"$BIN/omarchy"
@@ -93,7 +114,7 @@ FONTS="$HOME_ONE/.local/share/fonts/one-bit-bureau"
 [[ -x $COMMAND && -f $FONTS/DepartureMono-1.500.otf && -f $FONTS/MonaspaceKryptonNF-Regular-1.400.otf ]]
 [[ $(<"$HOME_ONE/.config/omarchy/branding/about.txt") != "previous about" ]]
 [[ -d $TEST_DESKTOP ]]
-jq -e '.schemaVersion == 2 and .pluginOwned and .themeOwned and .fontOwned and .brandingOwned and .commandOwned and .previous.theme == "catppuccin" and .previous.barPosition == "bottom" and .previous.barTransparent and .previous.aboutPresent and .previous.screensaverPresent' "$STATE" >/dev/null
+jq -e '.schemaVersion == 3 and .installed.themeInstallMode == "copy" and .pluginOwned and .themeOwned and .fontOwned and .brandingOwned and .commandOwned and .previous.theme == "catppuccin" and .previous.barPosition == "bottom" and .previous.barTransparent and .previous.aboutPresent and .previous.screensaverPresent' "$STATE" >/dev/null
 printf '%s\n' 'keep' >"$TEST_DESKTOP/user-file.txt"
 
 HOME="$HOME_ONE" PATH="$BIN:$PATH" bash "$ROOT/uninstall"
@@ -118,6 +139,20 @@ if HOME="$HOME_TWO" PATH="$BIN:$PATH" bash "$ROOT/setup" --local >/dev/null 2>&1
 fi
 [[ -f $HOME_TWO/.config/omarchy/themes/one-bit-bureau/sentinel ]]
 [[ ! -e $HOME_TWO/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau ]]
+
+echo "== setup refuses a dangling theme collision without touching it"
+HOME_TWO_LINK="$WORK/home-two-link"
+seed_home "$HOME_TWO_LINK"
+mkdir -p "$HOME_TWO_LINK/.config/omarchy/themes"
+ln -s "$WORK/missing-theme" "$HOME_TWO_LINK/.config/omarchy/themes/one-bit-bureau"
+export TEST_DESKTOP="$HOME_TWO_LINK/Desktop"
+export TEST_LOG="$WORK/dangling-collision.log"
+if HOME="$HOME_TWO_LINK" PATH="$BIN:$PATH" bash "$ROOT/setup" --local >/dev/null 2>&1; then
+  echo "setup accepted a dangling theme collision" >&2
+  exit 1
+fi
+[[ -L $HOME_TWO_LINK/.config/omarchy/themes/one-bit-bureau ]]
+[[ ! -e $HOME_TWO_LINK/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau ]]
 
 echo "== a late activation failure rolls back plugin, theme, and bar changes"
 HOME_THREE="$WORK/home-three"
@@ -263,6 +298,66 @@ if HOME="$HOME_ADOPT" PATH="$BIN:$PATH" bash "$ADOPT_TARGET/setup" --adopt-plugi
 fi
 grep -q 'interactive trust confirmation is required' "$WORK/adopt-output.log"
 [[ ! -e $ADOPT_TARGET ]]
+unset TEST_GIT_ORIGIN PLUGIN_LIST_JSON
+
+echo "== adopted public checkout uses an owned plugin theme link on earlier Quattro"
+HOME_ADOPT_YES="$WORK/home-adopt-yes"
+seed_home "$HOME_ADOPT_YES"
+ADOPT_YES_TARGET="$HOME_ADOPT_YES/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau"
+mkdir -p "$ADOPT_YES_TARGET/.git" "$ADOPT_YES_TARGET/themes" "$ADOPT_YES_TARGET/fonts" "$ADOPT_YES_TARGET/branding"
+cp "$ROOT/setup" "$ROOT/manifest.json" "$ROOT/one-bit-bureau" "$ROOT/update" "$ROOT/uninstall" "$ADOPT_YES_TARGET/"
+cp -R "$ROOT/themes/one-bit-bureau" "$ADOPT_YES_TARGET/themes/"
+cp "$ROOT/fonts/DepartureMono-1.500.otf" "$ROOT/fonts/MonaspaceKryptonNF-Regular-1.400.otf" "$ADOPT_YES_TARGET/fonts/"
+cp "$ROOT/branding/about.txt" "$ROOT/branding/screensaver.txt" "$ADOPT_YES_TARGET/branding/"
+export TEST_DESKTOP="$HOME_ADOPT_YES/Desktop"
+export TEST_LOG="$WORK/adopt-yes.log"
+export TEST_GIT_ORIGIN="https://github.com/RegionallyFamous/one-bit-bureau.git"
+export PLUGIN_LIST_JSON='[{"id":"io.github.regionallyfamous.one-bit-bureau","enabled":false}]'
+HOME="$HOME_ADOPT_YES" PATH="$BIN:$PATH" bash "$ADOPT_YES_TARGET/setup" --adopt-plugin --yes >/dev/null
+ADOPT_YES_THEME="$HOME_ADOPT_YES/.config/omarchy/themes/one-bit-bureau"
+ADOPT_YES_STATE="$HOME_ADOPT_YES/.local/state/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/install-state.json"
+[[ -L $ADOPT_YES_THEME ]]
+[[ $(realpath "$ADOPT_YES_THEME") == "$(realpath "$ADOPT_YES_TARGET/themes/one-bit-bureau")" ]]
+jq -e '.schemaVersion == 3 and .installed.themeInstallMode == "plugin-link" and .installed.themeSourceId == ""' "$ADOPT_YES_STATE" >/dev/null
+export TEST_GIT_ORIGIN="https://example.invalid/not-owned.git"
+if HOME="$HOME_ADOPT_YES" PATH="$BIN:$PATH" bash "$ADOPT_YES_TARGET/uninstall" >/dev/null 2>&1; then
+  echo "uninstall accepted a changed public plugin origin" >&2
+  exit 1
+fi
+[[ -L $ADOPT_YES_THEME && -e $ADOPT_YES_TARGET && -e $ADOPT_YES_STATE ]]
+export TEST_GIT_ORIGIN="https://github.com/RegionallyFamous/one-bit-bureau.git"
+HOME="$HOME_ADOPT_YES" PATH="$BIN:$PATH" bash "$ADOPT_YES_TARGET/uninstall" >/dev/null
+[[ ! -e $ADOPT_YES_TARGET && ! -e $ADOPT_YES_THEME && ! -e $ADOPT_YES_STATE ]]
+unset TEST_GIT_ORIGIN PLUGIN_LIST_JSON
+
+echo "== adopted public checkout uses native theme-source ownership when available"
+HOME_SOURCE="$WORK/home-source"
+seed_home "$HOME_SOURCE"
+SOURCE_TARGET="$HOME_SOURCE/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau"
+mkdir -p "$SOURCE_TARGET/.git" "$SOURCE_TARGET/themes" "$SOURCE_TARGET/fonts" "$SOURCE_TARGET/branding"
+cp "$ROOT/setup" "$ROOT/manifest.json" "$ROOT/one-bit-bureau" "$ROOT/update" "$ROOT/uninstall" "$SOURCE_TARGET/"
+cp -R "$ROOT/themes/one-bit-bureau" "$SOURCE_TARGET/themes/"
+cp "$ROOT/fonts/DepartureMono-1.500.otf" "$ROOT/fonts/MonaspaceKryptonNF-Regular-1.400.otf" "$SOURCE_TARGET/fonts/"
+cp "$ROOT/branding/about.txt" "$ROOT/branding/screensaver.txt" "$SOURCE_TARGET/branding/"
+SOURCE_API="$WORK/source-api"
+mkdir -p "$SOURCE_API/bin"
+for source_command in inspect install update detach; do
+  printf '%s\n' '#!/bin/bash' 'exit 0' >"$SOURCE_API/bin/omarchy-theme-source-$source_command"
+  chmod +x "$SOURCE_API/bin/omarchy-theme-source-$source_command"
+done
+export TEST_DESKTOP="$HOME_SOURCE/Desktop"
+export TEST_LOG="$WORK/source.log"
+export TEST_GIT_ORIGIN="https://github.com/RegionallyFamous/one-bit-bureau.git"
+export PLUGIN_LIST_JSON='[{"id":"io.github.regionallyfamous.one-bit-bureau","enabled":false}]'
+HOME="$HOME_SOURCE" OMARCHY_PATH="$SOURCE_API" PATH="$BIN:$PATH" bash "$SOURCE_TARGET/setup" --adopt-plugin --yes >/dev/null
+SOURCE_THEME="$HOME_SOURCE/.config/omarchy/themes/one-bit-bureau"
+SOURCE_STATE="$HOME_SOURCE/.local/state/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/install-state.json"
+SOURCE_ID=$(jq -er '.installed.themeSourceId' "$SOURCE_STATE")
+[[ -L $SOURCE_THEME ]]
+[[ $(jq -r '.installed.themeInstallMode' "$SOURCE_STATE") == "source" ]]
+[[ $(realpath "$SOURCE_THEME") == "$(realpath "$HOME_SOURCE/.local/share/omarchy/theme-sources/$SOURCE_ID/themes/one-bit-bureau")" ]]
+HOME="$HOME_SOURCE" OMARCHY_PATH="$SOURCE_API" PATH="$BIN:$PATH" bash "$SOURCE_TARGET/uninstall" >/dev/null
+[[ ! -e $SOURCE_TARGET && ! -L $SOURCE_THEME && ! -e $SOURCE_STATE ]]
 unset TEST_GIT_ORIGIN PLUGIN_LIST_JSON
 
 echo "== remote setup rejects a noncanonical origin before mutation"
