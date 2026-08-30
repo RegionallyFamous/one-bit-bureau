@@ -1,12 +1,56 @@
 # One-Bit Bureau
 
-One-Bit Bureau is one installable Omarchy experience: real desktop files, a bottom application dock, a searchable window overview, active-application context in the top bar, a native theme, original bitmap branding, a bundled app-icon pack, and two legally redistributable retro monospace fonts.
+**One command turns Omarchy into a one-bit Macintosh-inspired workbench.**
 
-It borrows the original Macintosh interface method rather than Apple artwork or exact trade dress. Select the object before acting, keep spatial landmarks stable, show immediate feedback, leave unavailable commands discoverable, and make the safe action obvious. The visual system uses original raster artwork, opaque paper-and-carbon surfaces, square geometry, and a two-color illustrated workbench.
+You get real folders on the desktop, a bottom dock, a searchable window overview, original bitmap icons, a matching whole-desktop theme, retro fonts, and One-Bit Bureau branding—all installed and updated together.
 
-## See it running
+[Install](#install) · [See everything it includes](#what-you-get) · [Read the Wiki](https://github.com/RegionallyFamous/one-bit-bureau/wiki) · [Latest release](https://github.com/RegionallyFamous/one-bit-bureau/releases/latest)
 
 ![One-Bit Bureau desktop with real files, a grayscale photo preview, the Bitmap Workbench background, top bar, and bottom dock](docs/screenshots/runtime-desktop.png)
+
+## Install
+
+One-Bit Bureau requires a current Omarchy Quattro installation.
+
+```bash
+bash <(curl -fsSL https://bureau.regionallyfamous.com/install)
+```
+
+The installer fetches the plugin through Omarchy’s normal Git validation, tells you exactly what it will change, and asks before activating unsandboxed plugin code.
+
+Want to inspect it first?
+
+```bash
+curl -fsSL https://bureau.regionallyfamous.com/install
+```
+
+The complete manual install and trust model are documented in the [installation guide](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Installation-and-Trust).
+
+## What you get
+
+- **A real desktop.** Files and folders come from your configured Desktop directory. Single-click selects; double-click or Return opens. Positions persist.
+- **A bottom dock.** Launch apps, focus running windows, pin and reorder favorites, preview windows, and optionally auto-hide it.
+- **A window overview.** Move the pointer to the top-left corner or run `one-bit-bureau overview` to search and switch between windows.
+- **A complete visual system.** The Bitmap Workbench wallpaper, square paper-and-carbon surfaces, top-bar app context, notification styling, terminal palette, branding, and unlock art all belong together.
+- **Twelve original app icons.** Files, Terminal, Web, Code, Mail, Chat, Music, Video, Calendar, Controls, Games, and Notes work offline.
+- **Sensible fallbacks.** Apps without a matching One-Bit icon keep their recognizable native icon in grayscale. You can restore the original color icon at any time.
+- **Two optional retro fonts.** Monaspace Krypton NF is the practical whole-desktop choice; Departure Mono is the sharper pixel-shaped alternative.
+- **A reversible install.** One-Bit Bureau records what it owns, restores the settings and branding it replaced, and leaves your Desktop files and personal choices alone.
+
+## Your first five minutes
+
+| Try this | What happens |
+|---|---|
+| Single-click a desktop object | Selects it without opening it |
+| Double-click it or press Return | Opens the selected file or folder |
+| Right-click a dock icon | Shows pin, window, icon, and dock actions |
+| Move to the top-left corner | Opens the searchable window overview |
+| Run `one-bit-bureau motion reduce` | Removes nonessential One-Bit Bureau motion |
+| Run `one-bit-bureau font use krypton` | Selects the bundled Nerd Font-compatible retro font |
+
+The [everyday-use guide](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Everyday-Use) covers keyboard controls, dock placement, optional app switching, fonts, motion, and icon management.
+
+## See it running
 
 <table>
   <tr>
@@ -18,142 +62,45 @@ It borrows the original Macintosh interface method rather than Apple artwork or 
   </tr>
 </table>
 
-These are unedited 1280×800 runtime captures from the passed disposable x86_64 Omarchy acceptance run for v1.0.1. The v1.0.2 release adds installer infrastructure only and does not change the pictured runtime UI.
+These are real 1280×800 captures from the passed disposable x86_64 Omarchy acceptance run. The images were recompressed without changing their pixels.
 
-![The twelve original One-Bit Bureau app-role icons](docs/app-icon-pack.png)
-
-The product identity is consistent throughout: repository `RegionallyFamous/one-bit-bureau`, plugin ID `io.github.regionallyfamous.one-bit-bureau`, and namespaced runtime state under `~/.config/omarchy/one-bit-bureau/`.
-
-## What is included
-
-- Real files and folders from the configured XDG Desktop directory on every display, with selection, keyboard opening, drag/drop, Trash, safe launcher confirmation, persistent positions, and original bitmap object icons. Safe local PNG, JPEG, WebP, and BMP files up to 32 MiB render as grayscale desktop thumbnails without modifying the source file; opening the file still shows the original color image. SVG, animated, oversized, inaccessible, or otherwise unsupported images use the authored one-bit picture fallback.
-- A bottom dock with launch/focus, running indicators, auto-hide, pinning, reordering, previews, one-output ownership, and an optional app-switcher HUD. A fresh install starts with Files, Chromium, and Foot, and the bundled art is optically cropped and centered inside consistent 48px icon boxes.
-- Twelve original offline One-Bit Bureau app-role icons, automatic matching for common Linux desktop IDs, grayscale native fallbacks for unmatched apps, manual association, and an explicit full-color native-icon override.
-- A searchable, keyboard-navigable contact-sheet overview with live window previews and a top-left hot corner.
-- A native bar widget placed beside the Omarchy menu; One-Bit Bureau leaves the rest of Omarchy’s top bar intact.
-- The `one-bit-bureau` theme with a 4K Bitmap Workbench background, opaque square shell surfaces, and a branded unlock mark plus honest 1920×1080 unlock preview.
-- Original About and screensaver text branding generated through Omarchy’s own image-to-text pipeline.
-- Monaspace Krypton NF 1.400 and Departure Mono 1.500, with exact upstream licenses and SHA-256 checksums under `fonts/`. Setup makes both families available to fontconfig but deliberately leaves the selected Omarchy font unchanged.
-
-The product contract and provenance guardrails live in [docs/DIRECTION.md](docs/DIRECTION.md). Imported-code and font provenance lives in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-## Install: one memorable address
-
-The short installer lives at the first-party, memorable `bureau.regionallyfamous.com` address:
+## Make it yours
 
 ```bash
-bash <(curl -fsSL https://bureau.regionallyfamous.com/install)
-```
-
-The served bootstrap is the small, public [`shortlink/src/install.sh`](shortlink/src/install.sh) file in this repository. It calls Omarchy’s own validated Git plugin flow, then runs the matching setup from that checkout; it does not bypass the existing trust prompt. Inspect the exact response before running it with `curl -fsSL https://bureau.regionallyfamous.com/install`.
-
-For an audit-first install with no fetched bootstrap, use the complete commands directly:
-
-```bash
-omarchy plugin add https://github.com/RegionallyFamous/one-bit-bureau.git --yes && bash "$HOME/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/setup" --adopt-plugin
-```
-
-Both paths keep the source auditable in a normal Git checkout and use Omarchy’s manifest validator before any One-Bit Bureau code runs. The first command leaves the validated plugin disabled; setup then presents one explicit unsandboxed-plugin warning and lists the system changes before it enables anything. Declining removes that disabled checkout. After independently reviewing the repository, a noninteractive install may append `--yes` to the quick command or the setup command. Setup also verifies the canonical repository identity and commit, refuses enabled standalone replacements, records exact ownership, and rolls back a partial transaction.
-
-One-Bit Bureau targets the current Omarchy Quattro plugin API and relies on Omarchy’s default runtime tools (`python3` with Gio bindings, `hyprctl`, `jq`, Git, coreutils, and fontconfig). Disable `henri.desktop-icons`, `crmne.active-window`, `expose.window-overview`, and `rosakodu.dock` first; setup refuses an enabled conflict instead of silently doubling shell surfaces.
-
-For development from this checkout:
-
-```bash
-bash setup --local
-```
-
-## What setup changes
-
-- Installs and enables `io.github.regionallyfamous.one-bit-bureau` with its native bar widget in the left section after `omarchy.menu`.
-- Installs `one-bit-bureau` through Omarchy’s theme-source ownership system when the host provides it. On earlier Quattro builds, setup creates one verified symlink to the theme inside the canonical plugin checkout, keeping plugin and theme on the same commit without a second updater. It then puts the bar at the top, makes it opaque, and applies the theme.
-- Installs both bundled fonts under `~/.local/share/fonts/one-bit-bureau/` and refreshes fontconfig, without selecting a font or rewriting terminal configuration.
-- Backs up and applies One-Bit Bureau About/screensaver branding. Removal restores the exact prior bytes only while One-Bit Bureau still owns the active files; a later user edit is preserved.
-- Installs the `one-bit-bureau` coordinator into `~/.local/bin/` and creates the already-configured XDG Desktop directory when needed. It does not rewrite `XDG_DESKTOP_DIR`, Hyprland bindings, or input policy.
-- Ships unlock branding inside the theme but does not run privileged Plymouth/initramfs commands. Choose it through Omarchy’s Style → Unlock surface when desired.
-
-## The One-Bit Bureau command
-
-```bash
-one-bit-bureau status
-one-bit-bureau update
-one-bit-bureau remove
-one-bit-bureau overview
-one-bit-bureau motion reduce
-one-bit-bureau motion full
-one-bit-bureau motion status
 one-bit-bureau icon pack list
-one-bit-bureau icon pack set org.gnome.Nautilus files
-one-bit-bureau icon native firefox
-one-bit-bureau icon auto firefox
 one-bit-bureau font list
 one-bit-bureau font use krypton
+one-bit-bureau motion reduce
+one-bit-bureau motion full
 ```
 
-`one-bit-bureau update` updates only this Git-managed plugin and its recorded theme installation, verifies that both resolve to the same commit, and reapplies the theme only when it was already active. `one-bit-bureau motion reduce` stores the native `reducedMotion` bar setting used across One-Bit Bureau surfaces; `one-bit-bureau motion full` restores the brief default transitions, and `one-bit-bureau motion status` reports the current mode. `one-bit-bureau font use krypton` delegates to Omarchy’s supported font setter; Krypton is the recommended whole-desktop choice because it includes Nerd Font symbols. Departure Mono is the more aggressively pixel-shaped alternate and does not include those symbols.
+The dock’s **Manage Icons** screen is the easiest way to assign a One-Bit role, keep an automatic grayscale fallback, use an app’s original full-color icon, or choose your own local image.
 
-## Omarchy navigation remains Omarchy navigation
-
-One-Bit Bureau adds mouse-friendly discovery without replacing Omarchy’s keyboard-first model. Focused One-Bit Bureau surfaces explicitly pass every `Super`-modified chord through to the compositor, so the native tiling, workspace, grouping, popped-window, fullscreen, and scratchpad commands remain authoritative.
-
-| Intent | Control |
-|---|---|
-| Omarchy menu | `Super + Space` |
-| Terminal / browser | `Super + Return` / `Super + Shift + Return` |
-| Move focus / swap windows | `Super + Arrow` / `Super + Shift + Arrow` |
-| Toggle stack, float, fullscreen | `Super + J`, `Super + T`, `Super + F` |
-| Toggle workspace layout / group / popped window | `Super + L`, `Super + G`, `Super + O` |
-| Scratchpad | `Super + Grave` or `Super + S` |
-| Select / open a desktop object | Single click; then `Return`, or double-click |
-| Show all windows | Top-left hot corner or `one-bit-bureau overview` |
-| Preview a selected overview window | `Space` |
-| Change background | `Super + Ctrl + Space` |
-
-One-Bit Bureau does not replace global Alt+Tab. An optional One-Bit Bureau HUD can live on the non-conflicting `Alt + Grave` chord by adding this user-owned snippet to `~/.config/hypr/bindings.lua`:
-
-```lua
-o.bind("ALT + GRAVE", "One-Bit Bureau app switcher next", "omarchy-shell -q regionallyfamous.one-bit-bureau.dock altTabNext")
-o.bind("ALT + SHIFT + GRAVE", "One-Bit Bureau app switcher previous", "omarchy-shell -q regionallyfamous.one-bit-bureau.dock altTabPrev")
-```
-
-An optional overview binding can use `Ctrl + Up` without taking a `Super` chord:
-
-```lua
-o.bind("CTRL + UP", "One-Bit Bureau window overview", hl.dsp.event("regionallyfamous.one-bit-bureau.overview:toggle"))
-```
-
-## Official Omarchy contracts covered
-
-One-Bit Bureau follows the documented native boundaries for [themes](https://omarchy.org/manual/themes/), [backgrounds](https://omarchy.org/manual/backgrounds/), [branding](https://omarchy.org/manual/branding/), [fonts](https://omarchy.org/manual/fonts/), [the top bar](https://omarchy.org/manual/the-top-bar/), and [navigation](https://omarchy.org/manual/navigation/). Theme colors drive Omarchy’s normal app and shell templates; backgrounds remain selectable; unlock assets use the documented filenames; the bar widget uses native placement and `shell.json`; fonts remain fontconfig/Omarchy-managed; and One-Bit Bureau does not seize the system’s navigation language.
-
-## Network and permissions
-
-The plugin runs with the current user’s shell privileges. It reads the configured Desktop directory, writes user state only under `~/.config/omarchy/one-bit-bureau/`, launches selected files through Gio, and calls standard Omarchy/Hyprland helpers. Copied `.desktop` launchers remain untrusted unless they came from canonical application directories; trusting one requires explicit confirmation.
-
-The bundled app-icon pack and automatic associations work entirely offline. A common app receives the matching authored One-Bit role; an unmatched app keeps its recognizable native shape but is rendered in grayscale across the dock, drag ghost, preview fallback, app switcher, and icon manager. Manage Icons can assign any of the twelve roles, accept a custom file, or use Native to restore the application's original full-color icon. One-Bit Bureau does not send app names to an icon service or download third-party artwork.
-
-## Known boundaries
-
-- The dock owns one persisted output. Set it with `one-bit-bureau dock setScreen DP-1`; if that output disconnects, One-Bit Bureau falls back safely and returns when it reconnects.
-- Linux client-side decorations remain application-owned, so no shell plugin can make every title bar match.
-- The dock is a modern launcher translated into One-Bit Bureau’s object-first system, not a claim of historical 1984 behavior.
-- PNGs under `docs/` are labeled static design proofs. Public runtime claims remain gated on the disposable x86_64 Omarchy acceptance run and captures from the exact release artifact.
-
-## Validate
+## Update or remove
 
 ```bash
-npm --prefix shortlink ci
-npm --prefix shortlink test
-rm -rf shortlink/node_modules
-bash tests/static.sh
-```
-
-The Worker gate runs first because the generated dependency tree contains executable tooling and therefore must not remain inside a repository that is also a safe Omarchy theme source. The plugin/theme gate covers manifest and source safety, helper syntax, desktop trust/path policy, dock lifecycle and app association, setup/uninstall rollback, branding/font ownership, canonical identity regression checks, the shell bootstrap, strict theme validation, headless template rendering, and navigation pass-through contracts. The graphical gate is `bash test/omarchy-acceptance.sh` inside the disposable x86_64 Omarchy guest.
-
-## Remove
-
-```bash
+one-bit-bureau update
 one-bit-bureau remove
 ```
 
-Removal is ownership-aware. It validates the owned plugin and theme before changing anything, restores prior theme, bar, and branding state only while One-Bit Bureau still owns the active value, then removes either the recorded theme-source child or the exact plugin-linked theme selected at install time. It removes unmodified bundled fonts and command, preserves modified ones, and keeps Desktop files, pins, icon choices, custom icons, and desktop positions.
+Removal restores the theme, top-bar position, transparency, and branding that One-Bit Bureau still owns. It keeps your Desktop files, dock pins, icon choices, custom icons, and saved positions.
+
+## Honest limits
+
+- This is an original Macintosh-inspired interface, not Apple artwork or a pixel-perfect copy of System 1.
+- The dock is a useful modern launcher translated into the One-Bit Bureau style.
+- Linux applications own their client-side title bars, so one plugin cannot make every app window identical.
+- One-Bit Bureau keeps Omarchy’s tiling, launcher, Quick Look, notifications, controls, and normal `Super` navigation intact.
+- Setup refuses to run beside enabled standalone desktop-icon, dock, overview, or active-window plugins that would duplicate the same surfaces.
+
+## Help and technical details
+
+The [Wiki](https://github.com/RegionallyFamous/one-bit-bureau/wiki) contains the detailed command reference, installation and trust model, app-icon rules, architecture, state files, theme and font provenance, development workflow, test gates, and troubleshooting.
+
+- [Everyday use](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Everyday-Use)
+- [Icons and app associations](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Icons-and-App-Associations)
+- [Troubleshooting](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Troubleshooting)
+- [Architecture and state](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Architecture-and-State)
+- [Development and testing](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Development-and-Testing)
+
+One-Bit Bureau is MIT-licensed. Imported-code and font notices are preserved in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
