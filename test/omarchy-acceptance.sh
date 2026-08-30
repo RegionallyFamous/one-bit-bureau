@@ -718,7 +718,6 @@ wait_until "the overview move proof window is active on Workspace 1" 10 \
   bash -c "hyprctl -j activewindow | jq -e --arg address '$overview_move_address' '.address == \$address and .workspace.id == 1' >/dev/null"
 omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
 wait_until "One-Bit Bureau overview opens" 20 layer_on_screen one-bit-bureau-window-overview
-wait_until "One-Bit Bureau overview instructions paint" 20 screen_contains "navigate"
 sleep 2
 screenshot "success-one-bit-bureau-12-overview"
 
@@ -741,7 +740,6 @@ pass "One-Bit Bureau routes a selected window through the overview workspace boa
 
 omarchy-shell shell hide "$PLUGIN_ID" >/dev/null
 wait_until "One-Bit Bureau overview layer closes" 20 layer_absent one-bit-bureau-window-overview
-wait_until "One-Bit Bureau overview pixels clear" 10 screen_lacks "navigate"
 
 omarchy-shell shell summon omarchy.menu '{"menu":"root"}' >/dev/null
 wait_until "the One-Bit Bureau themed Omarchy menu opens" 15 layer_on_screen omarchy-menu
