@@ -499,7 +499,9 @@ for route_item in "Route Alpha.txt" "Route Beta.txt" "Projects"; do
   wait_until "One-Bit Bureau saves a position for $route_item" 15 \
     bash -c "jq -e --arg id '$route_item' 'any(to_entries[]; .value[\$id] != null)' '$BUREAU_CONFIG/desktop-icon-positions.json'"
 done
-select_desktop_item_by_id "Route Alpha.txt"
+read -r route_alpha_x route_alpha_y < <(desktop_item_center "Route Alpha.txt")
+move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the first routing item"
+ydotool click 0xC0 >/dev/null
 # Use the desktop's native keyboard range selection. The Test Lab's virtual
 # keyboard and pointer are separate devices, so a modifier held by wtype is
 # not guaranteed to decorate a ydotool click on every compositor build.
@@ -507,7 +509,6 @@ wtype -M shift -k Down -m shift
 sleep 0.5
 screenshot "success-one-bit-bureau-02d-desktop-multi-selection"
 
-read -r route_alpha_x route_alpha_y < <(desktop_item_center "Route Alpha.txt")
 read -r route_target_x route_target_y < <(desktop_item_center "Projects")
 move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the selected routing group"
 ydotool click 0x40 >/dev/null
