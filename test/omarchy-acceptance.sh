@@ -384,6 +384,8 @@ launch_showcase_apps() {
   close_windows '^soffice$' || true
   wait_until "the showcase closes LibreOffice's extra start center" 15 window_absent '^soffice$'
   pass "the showcase opens Chromium, Files, and Writer with offline local content"
+  omarchy-shell regionallyfamous.one-bit-bureau.dock getDockItemIds \
+    >"$ARTIFACTS/one-bit-bureau-showcase-dock-ids.json"
   wait_until "the showcase keeps all real windows under the five curated app identities" 20 \
     bash -c "(( \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getItemCount) == 5 ))"
   sleep 4

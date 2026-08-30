@@ -192,6 +192,13 @@ Item {
     }
     function getAutoHide(): bool { return root.autoHide }
     function getItemCount(): int { return root.dockItems.length }
+    function getDockItemIds(): string {
+      var values = []
+      var limit = Math.min(root.dockItems.length, 64)
+      for (var i = 0; i < limit; i++)
+        values.push(String(root.dockItems[i] || "").slice(0, 160))
+      return JSON.stringify(values)
+    }
     function getReadyIconCount(): int { return root.readyIconCount() }
     function getNormalizedPackIconCount(): int { return root.normalizedPackIconCount() }
     function getIconSize(): int { return root.iconSize }
@@ -1660,6 +1667,10 @@ Item {
   Connections {
     target: ToplevelManager.toplevels
     function onValuesChanged() {
+      // lastIpcObject is a snapshot. Refresh it when the authoritative
+      // foreign-toplevel set changes so generated app ids can be compared
+      // with Hyprland's live class and initialClass before dock aggregation.
+      Hyprland.refreshToplevels()
       root.refreshItems()
     }
   }

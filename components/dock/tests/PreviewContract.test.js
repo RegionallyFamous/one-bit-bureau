@@ -53,11 +53,20 @@ test("unmatched automatic app icons stay grayscale across dock surfaces", () => 
   assert.match(panelBase, /grayscaleIcon:\s*root\.iconUsesAutomaticNativeFallback\(modelData\)/)
   assert.match(panelBase, /ghostGrayscale\s*=\s*root\.iconUsesAutomaticNativeFallback\(item\)/)
   assert.match(panelBase, /function getIconReadyForApp\(appId: string\): bool/)
+  assert.match(panelBase, /function getDockItemIds\(\): string/)
+  assert.match(panelBase, /Math\.min\(root\.dockItems\.length, 64\)/)
   assert.match(panelBase, /function getIconGrayscale\(appId: string\): bool/)
   assert.match(panelBase, /function getIconBounds\(appId: string\): string/)
   assert.match(previewPanel, /iconGrayscale:\s*root\.iconGrayscaleFor\(w\)/)
   assert.match(previewCard, /grayscale:\s*root\.iconGrayscale/)
   assert.match(altTab, /grayscale:\s*root\.grayscaleFor\(modelData\)/)
+})
+
+test("foreign-toplevel changes refresh Hyprland class metadata before aggregation", () => {
+  assert.match(
+    panelBase,
+    /target: ToplevelManager\.toplevels[\s\S]*?function onValuesChanged\(\) \{[\s\S]*?Hyprland\.refreshToplevels\(\)[\s\S]*?root\.refreshItems\(\)/
+  )
 })
 
 test("dock items expose an accessible press action and keyboard context menu", () => {
