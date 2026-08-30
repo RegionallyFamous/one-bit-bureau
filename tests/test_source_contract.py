@@ -9,6 +9,29 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PluginSourceContractTest(unittest.TestCase):
+    def test_experience_hosts_one_shared_inspector_and_routes_each_noun_kind(self) -> None:
+        experience = (ROOT / "Experience.qml").read_text(encoding="utf-8")
+        dock = (ROOT / "components/dock/DockPanelBase.qml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertEqual(
+            experience.count("OneBitBureauInspector.InspectorPanel"), 1
+        )
+        self.assertIn("function onInspectRequested(payload, screenName)", experience)
+        self.assertIn("onInspectorRequested: function(context", experience)
+        self.assertIn("onInspectRequested: function(payload, screenName)", experience)
+        self.assertIn('if (kind === "desktop"', experience)
+        self.assertIn('if (kind === "app")', experience)
+        self.assertIn('if (kind === "window")', experience)
+        self.assertIn("root.service.performInspectorAction(actionId, context)", experience)
+        self.assertIn("dock.performInspectorAction(actionId, context)", experience)
+        self.assertIn("overview.performInspectorAction(actionId, context)", experience)
+        self.assertIn('kind: "app"', dock)
+        self.assertNotIn('kind: "application"', dock)
+        self.assertIn("facts: [", dock)
+        self.assertIn("actions: [", dock)
+
     def test_one_bit_bureau_is_the_only_canonical_identity(self) -> None:
         manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["id"], "io.github.regionallyfamous.one-bit-bureau")

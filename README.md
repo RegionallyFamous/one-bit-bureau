@@ -2,7 +2,7 @@
 
 **One command turns Omarchy into a one-bit Macintosh-inspired workbench.**
 
-You get real folders on the desktop, a bottom dock, a searchable window overview, original bitmap icons, a matching whole-desktop theme, retro fonts, and One-Bit Bureau branding—all installed and updated together.
+You get real folders on the desktop, a bottom dock, one shared Inspector, safe file routing with Undo, a window ledger, a workspace board, original bitmap icons, a matching whole-desktop theme, retro fonts, and One-Bit Bureau branding—all installed and updated together.
 
 [Install](#install) · [See everything it includes](#what-you-get) · [Read the Wiki](https://github.com/RegionallyFamous/one-bit-bureau/wiki) · [Latest release](https://github.com/RegionallyFamous/one-bit-bureau/releases/latest)
 
@@ -28,9 +28,10 @@ The complete manual install and trust model are documented in the [installation 
 
 ## What you get
 
-- **A real desktop.** Files and folders come from your configured Desktop directory. Single-click selects; double-click or Return opens. Positions persist.
-- **A bottom dock.** Launch apps, focus running windows, pin and reorder favorites, preview windows, and optionally auto-hide it.
-- **A window overview.** Move the pointer to the top-left corner or run `one-bit-bureau overview` to search and switch between windows.
+- **A real desktop.** Files and folders come from your configured Desktop directory. Select up to 64 items with Shift or Control, route them into folders or Trash, see the exact verb before release, and Undo unchanged regular-file moves from the receipt.
+- **One shared Inspector.** Press Control+I on a desktop object, choose **Get Info** for a dock app, or press I on an overview window. Identity, facts, and actions stay in the same predictable places.
+- **A bottom dock with a Window Ledger.** Launch apps, focus the most-recent surviving window, see 1/2/3+ window state, inspect current and other-workspace counts, open a titled window list, pin and reorder favorites, preview windows, and optionally auto-hide it.
+- **A window overview and workspace board.** Move the pointer to the top-left corner or run `one-bit-bureau overview` to search and switch. The compact rail shows occupancy and moves the selected window to an existing ordinary workspace without closing the overview.
 - **A complete visual system.** The Bitmap Workbench wallpaper, square paper-and-carbon surfaces, top-bar app context, notification styling, terminal palette, branding, and unlock art all belong together.
 - **Twelve original app icons.** Files, Terminal, Web, Code, Mail, Chat, Music, Video, Calendar, Controls, Games, and Notes work offline.
 - **Sensible fallbacks.** Apps without a matching One-Bit icon keep their recognizable native icon in grayscale. You can restore the original color icon at any time.
@@ -42,9 +43,13 @@ The complete manual install and trust model are documented in the [installation 
 | Try this | What happens |
 |---|---|
 | Single-click a desktop object | Selects it without opening it |
+| Control-click or Shift-click objects | Builds a bounded multi-selection |
+| Drag selected files onto a desktop folder | Shows the exact Move route, then a result receipt with Undo when reversal is provable |
+| Press Control+I | Opens the selected desktop object's Inspector |
 | Double-click it or press Return | Opens the selected file or folder |
-| Right-click a dock icon | Shows pin, window, icon, and dock actions |
+| Choose Get Info on a dock icon | Opens application facts and actions; Show Windows opens its Window Ledger |
 | Move to the top-left corner | Opens the searchable window overview |
+| In Overview, use Control+Left/Right then Control+Shift+Enter | Chooses a workspace and moves the selected window there |
 | Run `one-bit-bureau motion reduce` | Removes nonessential One-Bit Bureau motion |
 | Run `one-bit-bureau font use krypton` | Selects the bundled Nerd Font-compatible retro font |
 
@@ -90,6 +95,7 @@ Removal restores the theme, top-bar position, transparency, and branding that On
 - This is an original Macintosh-inspired interface, not Apple artwork or a pixel-perfect copy of System 1.
 - The dock is a useful modern launcher translated into the One-Bit Bureau style.
 - Linux applications own their client-side title bars, so one plugin cannot make every app window identical.
+- Wayland does not make a manual desktop-icon drag portable across separate layer-shell windows, so desktop-to-dock internal dragging is not advertised. Native external file drops and the desktop, Trash, and overview routes are supported.
 - One-Bit Bureau keeps Omarchy’s tiling, launcher, Quick Look, notifications, controls, and normal `Super` navigation intact.
 - Setup refuses to run beside enabled standalone desktop-icon, dock, overview, or active-window plugins that would duplicate the same surfaces.
 

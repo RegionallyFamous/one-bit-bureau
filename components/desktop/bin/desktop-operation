@@ -1,0 +1,1027 @@
+#!/usr/bin/python3
+"""Bounded local filesystem operations for the One-Bit Bureau desktop.
+
+The QML surface treats this program as a transaction boundary.  Every invocation
+prints exactly one JSON receipt, mutations are journaled before they start, and
+Undo is offered only for unchanged regular-file moves that can be proven safe.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ctypes
+import errno
+import fcntl
+import hashlib
+import json
+import mimetypes
+import os
+import re
+import secrets
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterator
+from urllib.parse import unquote_to_bytes, urlparse
+
+_BIN_DIR = str(Path(__file__).resolve().parent)
+if _BIN_DIR not in sys.path:
+    sys.path.insert(0, _BIN_DIR)
+
+from desktop_policy import enforce_untrusted_launcher
+
+
+SCHEMA_VERSION = 1
+MAX_SOURCES = 64
+MAX_RAW_ARGS = 70
+MAX_RAW_ARG_BYTES = 1024
+MAX_PATH_BYTES = 1024
+MAX_NAME_BYTES = 255
+MAX_OUTPUT_BYTES = 256 * 1024
+MAX_JOURNAL_BYTES = 512 * 1024
+MAX_ERROR_BYTES = 240
+MAX_TREE_ENTRIES = 20_000
+MAX_UNDO_FILE_BYTES = 64 * 1024 * 1024
+MAX_UNIQUE_ATTEMPTS = 10_000
+MAX_USER_DIRS_BYTES = 64 * 1024
+CHILD_TIMEOUT_SECONDS = 30
+OPERATION_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+URI_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+PR_SET_PDEATHSIG = 1
+
+
+class RequestError(Exception):
+    def __init__(self, code: str, message: str, *, exit_code: int = 2):
+        super().__init__(message)
+        self.code = code
+        self.exit_code = exit_code
+
+
+class ItemError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class ReceiptParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        raise RequestError("invalid_arguments", message)
+
+    def exit(self, status: int = 0, message: str | None = None) -> None:
+        raise RequestError("invalid_arguments", message or "Help requested")
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _bounded_text(value: Any, limit: int = MAX_ERROR_BYTES) -> str:
+    text = " ".join(
+        str(value or "").replace("\x00", " ").replace("\r", " ").replace("\n", " ").split()
+    )
+    encoded = text.encode("utf-8", "replace")
+    if len(encoded) <= limit:
+        return text
+    return encoded[:limit].decode("utf-8", "ignore").rstrip()
+
+
+def _error(code: str, message: Any) -> dict[str, str]:
+    return {"code": code, "message": _bounded_text(message)}
+
+
+def _json_bytes(payload: dict[str, Any], *, journal: bool = False) -> bytes:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    limit = MAX_JOURNAL_BYTES if journal else MAX_OUTPUT_BYTES
+    if len(encoded) > limit:
+        raise RequestError("output_too_large", f"Structured result exceeds {limit} bytes")
+    return encoded
+
+
+def emit(payload: dict[str, Any]) -> None:
+    sys.stdout.buffer.write(_json_bytes(payload) + b"\n")
+    sys.stdout.buffer.flush()
+
+
+def _failed_receipt(command: str, error: Exception) -> dict[str, Any]:
+    code = error.code if isinstance(error, (RequestError, ItemError)) else "internal_error"
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "command": command,
+        "ok": False,
+        "state": "failed",
+        "undoable": False,
+        "error": _error(code, error),
+    }
+
+
+def _kill_child_when_parent_dies() -> None:
+    """Keep a cancelled shell process from orphaning a mutating gio child."""
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
+        os._exit(127)
+    # Close the race where the QML-owned parent exits between fork and prctl.
+    if os.getppid() == 1:
+        os._exit(127)
+
+
+def _validate_raw_argv(argv: list[str]) -> None:
+    if len(argv) > MAX_RAW_ARGS:
+        raise RequestError("too_many_arguments", f"At most {MAX_RAW_ARGS} arguments are allowed")
+    for value in argv:
+        if "\x00" in value:
+            raise RequestError("invalid_argument", "Arguments cannot contain NUL bytes")
+        if any(ord(character) < 32 or ord(character) == 127 for character in value):
+            raise RequestError("invalid_argument", "Arguments cannot contain control characters")
+        if len(value.encode("utf-8", "surrogateescape")) > MAX_RAW_ARG_BYTES:
+            raise RequestError(
+                "argument_too_long",
+                f"Each raw argument is limited to {MAX_RAW_ARG_BYTES} bytes",
+            )
+
+
+def _decode_local_file_uri(raw: str) -> str:
+    parsed = urlparse(raw)
+    if parsed.scheme.lower() != "file":
+        raise RequestError("remote_uri", "Only local file paths are accepted")
+    if parsed.netloc.lower() not in {"", "localhost"}:
+        raise RequestError("remote_uri", "Remote file URIs are not accepted")
+    if parsed.query or parsed.fragment:
+        raise RequestError("invalid_path", "File URIs cannot contain a query or fragment")
+    try:
+        return unquote_to_bytes(parsed.path).decode("utf-8", "strict")
+    except UnicodeDecodeError as error:
+        raise RequestError("invalid_path", "File URI is not valid UTF-8") from error
+
+
+def local_path(raw: str) -> Path:
+    if not raw:
+        raise RequestError("empty_path", "Path is empty")
+    text = _decode_local_file_uri(raw) if URI_SCHEME_RE.match(raw) else raw
+    if URI_SCHEME_RE.match(text) or "://" in text:
+        raise RequestError("remote_uri", "Only local file paths are accepted")
+    if "\x00" in text:
+        raise RequestError("invalid_path", "Path contains a NUL byte")
+    expanded = os.path.expanduser(text)
+    if not os.path.isabs(expanded) or expanded.startswith("//"):
+        raise RequestError("invalid_path", "Path must be an absolute local path")
+    path = Path(os.path.abspath(expanded))
+    if len(os.fsencode(path)) > MAX_PATH_BYTES:
+        raise RequestError("path_too_long", f"Paths are limited to {MAX_PATH_BYTES} bytes")
+    name = path.name
+    if name and len(os.fsencode(name)) > MAX_NAME_BYTES:
+        raise RequestError("name_too_long", f"Names are limited to {MAX_NAME_BYTES} bytes")
+    return path
+
+
+def _home_path() -> Path:
+    raw = os.environ.get("HOME") or str(Path.home())
+    return local_path(raw).resolve()
+
+
+def desktop_dir() -> Path:
+    """Read user-dirs.dirs without shell evaluation and return the real Desktop."""
+
+    home = _home_path()
+    config_raw = os.environ.get("XDG_CONFIG_HOME")
+    config = local_path(config_raw).resolve() if config_raw else home / ".config"
+    user_dirs = config / "user-dirs.dirs"
+    chosen: Path | None = None
+    try:
+        info = user_dirs.lstat()
+        if stat.S_ISREG(info.st_mode) and info.st_size <= MAX_USER_DIRS_BYTES:
+            for line in user_dirs.read_text(encoding="utf-8").splitlines():
+                match = re.fullmatch(r'\s*XDG_DESKTOP_DIR="((?:[^"\\]|\\.)*)"\s*', line)
+                if not match:
+                    continue
+                value = re.sub(r"\\([\\\"$`])", r"\1", match.group(1))
+                value = value.replace("${HOME}", str(home)).replace("$HOME", str(home))
+                if "$" not in value:
+                    chosen = local_path(value)
+                break
+    except (OSError, UnicodeError, RequestError):
+        chosen = None
+    return (chosen or (home / "Desktop")).resolve()
+
+
+def _lstat_supported(path: Path, *, allow_symlink: bool = False) -> os.stat_result:
+    try:
+        info = path.lstat()
+    except FileNotFoundError as error:
+        raise ItemError("not_found", f"Item no longer exists: {path}") from error
+    except OSError as error:
+        raise ItemError("stat_failed", f"Cannot inspect {path.name}: {error}") from error
+    if stat.S_ISLNK(info.st_mode):
+        if allow_symlink:
+            return info
+        raise ItemError("unsafe_symlink", f"Symbolic links are not accepted: {path.name}")
+    if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+        raise ItemError("unsupported_type", f"Unsupported filesystem item: {path.name}")
+    return info
+
+
+def _validate_tree(path: Path) -> None:
+    top = _lstat_supported(path)
+    if stat.S_ISREG(top.st_mode):
+        return
+    count = 1
+    try:
+        for root, directories, files in os.walk(path, topdown=True, followlinks=False):
+            root_path = Path(root)
+            for name in directories + files:
+                count += 1
+                if count > MAX_TREE_ENTRIES:
+                    raise ItemError(
+                        "tree_too_large",
+                        f"Folder contains more than {MAX_TREE_ENTRIES} entries",
+                    )
+                _lstat_supported(root_path / name)
+    except ItemError:
+        raise
+    except OSError as error:
+        raise ItemError("scan_failed", f"Could not validate {path.name}: {error}") from error
+
+
+def _validate_destination(raw: str) -> Path:
+    path = local_path(raw)
+    info = _lstat_supported(path)
+    if not stat.S_ISDIR(info.st_mode):
+        raise RequestError("invalid_destination", "Destination must be a local folder")
+    resolved = path.resolve()
+    if not os.access(resolved, os.W_OK | os.X_OK):
+        raise RequestError("destination_not_writable", "Destination is not writable")
+    return resolved
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _preflight_source(path: Path, destination: Path) -> None:
+    _validate_tree(path)
+    resolved = path.resolve()
+    if resolved == destination:
+        raise ItemError("same_file", "Source and destination are the same folder")
+    if path.parent.resolve() == destination:
+        raise ItemError("same_folder", f"{path.name} is already in the destination folder")
+    if _is_relative_to(destination, resolved):
+        raise ItemError("destination_recursion", "A folder cannot be placed inside itself")
+
+
+def _truncate_name(text: str, byte_limit: int) -> str:
+    encoded = text.encode("utf-8")
+    if len(encoded) <= byte_limit:
+        return text
+    return encoded[:byte_limit].decode("utf-8", "ignore")
+
+
+def _numbered_name(name: str, number: int) -> str:
+    suffix = Path(name).suffix if not name.startswith(".") else ""
+    stem = name[: -len(suffix)] if suffix else name
+    counter = f" {number}"
+    room = MAX_NAME_BYTES - len((counter + suffix).encode("utf-8"))
+    if room < 1:
+        suffix = ""
+        room = MAX_NAME_BYTES - len(counter.encode("utf-8"))
+    return f"{_truncate_name(stem, room)}{counter}{suffix}"
+
+
+def _candidate(destination: Path, name: str, attempt: int) -> Path:
+    return destination / (name if attempt == 1 else _numbered_name(name, attempt))
+
+
+def _copy_regular(source: Path, destination: Path) -> None:
+    source_fd = -1
+    destination_fd = -1
+    created = False
+    try:
+        source_fd = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        before = os.fstat(source_fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise ItemError("source_changed", f"Source type changed: {source.name}")
+        destination_fd = os.open(
+            destination,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            stat.S_IMODE(before.st_mode) or 0o600,
+        )
+        created = True
+        while True:
+            block = os.read(source_fd, 1024 * 1024)
+            if not block:
+                break
+            view = memoryview(block)
+            while view:
+                written = os.write(destination_fd, view)
+                view = view[written:]
+        os.fsync(destination_fd)
+        after = os.fstat(source_fd)
+        identity_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+        identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        if identity_before != identity_after:
+            raise ItemError("source_changed", f"Source changed while copying: {source.name}")
+        os.fchmod(destination_fd, stat.S_IMODE(before.st_mode))
+        os.utime(destination_fd, ns=(before.st_atime_ns, before.st_mtime_ns))
+    except FileExistsError:
+        raise
+    except (ItemError, OSError):
+        if created:
+            try:
+                destination.unlink()
+            except OSError:
+                pass
+        raise
+    finally:
+        if destination_fd >= 0:
+            os.close(destination_fd)
+        if source_fd >= 0:
+            os.close(source_fd)
+
+
+def _copy_directory(source: Path, destination: Path) -> None:
+    created = False
+    try:
+        destination.mkdir(mode=0o700)
+        created = True
+        shutil.copytree(source, destination, dirs_exist_ok=True, symlinks=True)
+        _validate_tree(destination)
+        shutil.copystat(source, destination, follow_symlinks=False)
+    except FileExistsError:
+        raise
+    except Exception:
+        if created:
+            shutil.rmtree(destination, ignore_errors=True)
+        raise
+
+
+def _copy_to_unique(source: Path, destination: Path) -> Path:
+    source_info = source.lstat()
+    for attempt in range(1, MAX_UNIQUE_ATTEMPTS + 1):
+        target = _candidate(destination, source.name, attempt)
+        try:
+            if stat.S_ISDIR(source_info.st_mode):
+                _copy_directory(source, target)
+            else:
+                _copy_regular(source, target)
+            return target
+        except FileExistsError:
+            continue
+    raise ItemError("name_exhausted", f"Could not find a unique name for {source.name}")
+
+
+def _launcher_to_desktop(source: Path, destination: Path, *, move: bool) -> Path:
+    """Transfer a launcher only after its Desktop copy is provably untrusted."""
+
+    for attempt in range(1, MAX_UNIQUE_ATTEMPTS + 1):
+        target = _candidate(destination, source.name, attempt)
+        try:
+            _copy_regular(source, target)
+        except FileExistsError:
+            continue
+        try:
+            enforce_untrusted_launcher(target)
+            if move:
+                source.unlink()
+            return target
+        except Exception:
+            try:
+                target.unlink()
+            except OSError:
+                pass
+            raise
+    raise ItemError("name_exhausted", f"Could not find a unique name for {source.name}")
+
+
+def _rename_noreplace(source: Path, destination: Path) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(libc, "renameat2", None)
+    if renameat2 is None:
+        raise OSError(errno.ENOSYS, "renameat2 is unavailable")
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    result = renameat2(
+        -100,
+        os.fsencode(source),
+        -100,
+        os.fsencode(destination),
+        1,
+    )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), str(destination))
+
+
+def _remove_created(path: Path) -> None:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode):
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _move_exact(source: Path, destination: Path) -> None:
+    try:
+        _rename_noreplace(source, destination)
+        return
+    except OSError as error:
+        if error.errno == errno.EEXIST:
+            raise FileExistsError(errno.EEXIST, "Destination exists", str(destination)) from error
+        if error.errno not in {errno.EXDEV, errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP}:
+            raise
+
+    # Portable/cross-filesystem fallback.  The destination is reserved with
+    # O_EXCL/mkdir, and is rolled back if removing the source does not finish.
+    source_info = source.lstat()
+    if stat.S_ISDIR(source_info.st_mode):
+        _copy_directory(source, destination)
+    else:
+        _copy_regular(source, destination)
+    try:
+        if stat.S_ISDIR(source_info.st_mode):
+            shutil.rmtree(source)
+        else:
+            source.unlink()
+    except Exception:
+        try:
+            _remove_created(destination)
+        except Exception as rollback_error:
+            raise ItemError(
+                "rollback_failed",
+                f"Move failed and its destination could not be removed: {rollback_error}",
+            )
+        raise
+
+
+def _move_to_unique(source: Path, destination: Path) -> Path:
+    for attempt in range(1, MAX_UNIQUE_ATTEMPTS + 1):
+        target = _candidate(destination, source.name, attempt)
+        try:
+            _move_exact(source, target)
+            return target
+        except FileExistsError:
+            continue
+    raise ItemError("name_exhausted", f"Could not find a unique name for {source.name}")
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise ItemError("undo_not_provable", "Only regular-file moves can be undone")
+        if before.st_size > MAX_UNDO_FILE_BYTES:
+            raise ItemError("undo_not_provable", "File is too large for a safe Undo proof")
+        while True:
+            block = os.read(fd, 1024 * 1024)
+            if not block:
+                break
+            digest.update(block)
+        after = os.fstat(fd)
+        if (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+        ):
+            raise ItemError("undo_not_provable", "File changed while its Undo proof was recorded")
+        return digest.hexdigest()
+    finally:
+        os.close(fd)
+
+
+def _move_proof(source: Path, destination: Path) -> dict[str, Any] | None:
+    try:
+        if destination.suffix.lower() == ".desktop":
+            return None
+        info = destination.lstat()
+        if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            return None
+        if info.st_size > MAX_UNDO_FILE_BYTES:
+            return None
+        digest = _sha256(destination)
+        after = destination.lstat()
+        if (
+            info.st_dev,
+            info.st_ino,
+            info.st_size,
+            info.st_mtime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+        ):
+            return None
+        return {
+            "source": str(source),
+            "destination": str(destination),
+            "device": after.st_dev,
+            "inode": after.st_ino,
+            "size": after.st_size,
+            "mtimeNs": after.st_mtime_ns,
+            "ctimeNs": after.st_ctime_ns,
+            "mode": stat.S_IMODE(after.st_mode),
+            "uid": after.st_uid,
+            "gid": after.st_gid,
+            "sha256": digest,
+            "undone": False,
+        }
+    except (OSError, ItemError):
+        return None
+
+
+def _proof_matches(proof: dict[str, Any]) -> bool:
+    path = Path(proof["destination"])
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            return False
+        if (
+            info.st_dev != proof["device"]
+            or info.st_ino != proof["inode"]
+            or info.st_size != proof["size"]
+            or info.st_mtime_ns != proof["mtimeNs"]
+            or info.st_ctime_ns != proof["ctimeNs"]
+            or stat.S_IMODE(info.st_mode) != proof["mode"]
+            or info.st_uid != proof["uid"]
+            or info.st_gid != proof["gid"]
+        ):
+            return False
+        return secrets.compare_digest(_sha256(path), proof["sha256"])
+    except (OSError, ItemError, KeyError, TypeError):
+        return False
+
+
+def _state_directory() -> Path:
+    raw = os.environ.get("XDG_STATE_HOME")
+    base = local_path(raw).resolve() if raw else _home_path() / ".local/state"
+    directory = base / "one-bit-bureau" / "desktop-operations"
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = directory.lstat()
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        raise RequestError("unsafe_state_directory", "Operation journal path is not a real folder")
+    if info.st_uid != os.getuid():
+        raise RequestError("unsafe_state_directory", "Operation journal is owned by another user")
+    try:
+        directory.chmod(0o700)
+    except OSError:
+        pass
+    return directory
+
+
+def _validate_operation_id(operation_id: str) -> str:
+    if not OPERATION_ID_RE.fullmatch(operation_id or ""):
+        raise RequestError("invalid_operation_id", "Operation ID is invalid")
+    return operation_id
+
+
+def _journal_path(operation_id: str) -> Path:
+    return _state_directory() / f"{_validate_operation_id(operation_id)}.json"
+
+
+@contextmanager
+def _operation_lock(operation_id: str) -> Iterator[None]:
+    directory = _state_directory()
+    lock_path = directory / f"{_validate_operation_id(operation_id)}.lock"
+    fd = os.open(
+        lock_path,
+        os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            raise RequestError("unsafe_journal", "Operation lock is unsafe")
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def _write_journal(record: dict[str, Any]) -> None:
+    operation_id = _validate_operation_id(record.get("operationId", ""))
+    path = _journal_path(operation_id)
+    payload = _json_bytes(record, journal=True) + b"\n"
+    temporary = path.parent / f".{operation_id}.{secrets.token_hex(8)}.tmp"
+    fd = -1
+    try:
+        fd = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        view = memoryview(payload)
+        while view:
+            written = os.write(fd, view)
+            view = view[written:]
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        os.replace(temporary, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _read_journal(operation_id: str) -> dict[str, Any]:
+    path = _journal_path(operation_id)
+    try:
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            raise RequestError("unsafe_journal", "Operation journal is not a regular file")
+        if info.st_uid != os.getuid() or info.st_size > MAX_JOURNAL_BYTES:
+            raise RequestError("unsafe_journal", "Operation journal failed validation")
+        with path.open("rb") as handle:
+            record = json.load(handle)
+    except FileNotFoundError as error:
+        raise RequestError("operation_not_found", "Operation was not found") from error
+    except json.JSONDecodeError as error:
+        raise RequestError("invalid_journal", "Operation journal is corrupt") from error
+    if not isinstance(record, dict) or record.get("operationId") != operation_id:
+        raise RequestError("invalid_journal", "Operation journal identity does not match")
+    return record
+
+
+def _public_record(record: dict[str, Any], *, command: str | None = None) -> dict[str, Any]:
+    public = {key: value for key, value in record.items() if key not in {"proofs"}}
+    if command and command != record.get("command"):
+        public["operationCommand"] = record.get("command")
+        public["command"] = command
+    return public
+
+
+def _size_text(size: int) -> str:
+    units = ("bytes", "KiB", "MiB", "GiB", "TiB")
+    value = float(max(0, size))
+    for index, unit in enumerate(units):
+        if value < 1024 or index == len(units) - 1:
+            if index == 0:
+                return f"{int(value)} bytes"
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{size} bytes"
+
+
+def inspect_item(raw: str) -> dict[str, Any]:
+    path = local_path(raw)
+    desktop = desktop_dir()
+    try:
+        if path.parent.resolve() != desktop:
+            raise RequestError("outside_desktop", "Inspect is limited to direct Desktop items")
+    except OSError as error:
+        raise RequestError("invalid_path", f"Could not validate Desktop item: {error}") from error
+    info = _lstat_supported(path)
+    kind = "folder" if stat.S_ISDIR(info.st_mode) else "file"
+    if stat.S_ISREG(info.st_mode) and path.suffix.lower() == ".desktop":
+        kind = "launcher"
+    mime_type = mimetypes.guess_type(path.name, strict=False)[0] or (
+        "inode/directory" if kind == "folder" else "application/octet-stream"
+    )
+    preview_eligible = (
+        kind == "file"
+        and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+        and 0 < info.st_size <= 32 * 1024 * 1024
+    )
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "command": "inspect",
+        "ok": True,
+        "state": "completed",
+        "undoable": False,
+        "item": {
+            "path": str(path),
+            "name": path.name,
+            "location": str(path.parent),
+            "kind": kind,
+            "isDirectory": stat.S_ISDIR(info.st_mode),
+            "size": info.st_size,
+            "sizeText": "Not calculated" if kind == "folder" else _size_text(info.st_size),
+            "modifiedUnixMs": info.st_mtime_ns // 1_000_000,
+            "modifiedTime": datetime.fromtimestamp(
+                info.st_mtime, timezone.utc
+            ).isoformat(timespec="seconds"),
+            "mimeType": mime_type,
+            "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+            "ownerIsCurrentUser": info.st_uid == os.getuid(),
+            "readable": os.access(path, os.R_OK),
+            "writable": os.access(path, os.W_OK),
+            "previewEligible": preview_eligible,
+            "previewPolicy": "Local grayscale preview" if preview_eligible else "One-bit type icon",
+            "launcherExecutable": kind == "launcher" and bool(info.st_mode & 0o111),
+        },
+    }
+
+
+def _new_record(command: str, sources: list[str], destination: str | None = None) -> dict[str, Any]:
+    operation_id = secrets.token_hex(16)
+    record: dict[str, Any] = {
+        "schemaVersion": SCHEMA_VERSION,
+        "operationId": operation_id,
+        "command": command,
+        "ok": False,
+        "state": "running",
+        "undoable": False,
+        "createdAt": _utc_now(),
+        "updatedAt": _utc_now(),
+        "sources": sources,
+        "results": [],
+        "proofs": [],
+    }
+    if destination is not None:
+        record["destination"] = destination
+    return record
+
+
+def _finish_record(record: dict[str, Any]) -> None:
+    completed = sum(result.get("status") == "completed" for result in record["results"])
+    failed = len(record["results"]) - completed
+    if completed and failed:
+        record["state"] = "partial"
+    elif completed:
+        record["state"] = "completed"
+    else:
+        record["state"] = "failed"
+    record["ok"] = failed == 0 and completed > 0
+    if failed:
+        first_failed = next(
+            (result for result in record["results"] if result.get("status") == "failed"),
+            None,
+        )
+        if first_failed and first_failed.get("error"):
+            record["error"] = first_failed["error"]
+    record["updatedAt"] = _utc_now()
+
+
+def _result_error(source: str, error: Exception, destination: str | None = None) -> dict[str, Any]:
+    code = error.code if isinstance(error, (RequestError, ItemError)) else "filesystem_error"
+    result: dict[str, Any] = {
+        "source": source,
+        "destination": destination,
+        "status": "failed",
+        "error": _error(code, error),
+    }
+    return result
+
+
+def transfer(command: str, raw_sources: list[str], raw_destination: str) -> tuple[dict[str, Any], int]:
+    if len(raw_sources) > MAX_SOURCES:
+        raise RequestError("too_many_sources", f"At most {MAX_SOURCES} sources are allowed")
+    destination = _validate_destination(raw_destination)
+    record = _new_record(command, raw_sources, str(destination))
+    operation_id = record["operationId"]
+    with _operation_lock(operation_id):
+        _write_journal(record)
+        seen: set[str] = set()
+        resolved_sources: list[Path] = []
+        parsed: list[tuple[str, Path | None, Exception | None]] = []
+        for raw in raw_sources:
+            try:
+                path = local_path(raw)
+                canonical = str(path.resolve())
+                if canonical in seen:
+                    raise ItemError("duplicate_source", f"Source appears more than once: {path.name}")
+                seen.add(canonical)
+                parsed.append((raw, path, None))
+                resolved_sources.append(path.resolve())
+            except Exception as error:
+                parsed.append((raw, None, error))
+
+        for raw, source, parse_error in parsed:
+            if parse_error is not None or source is None:
+                record["results"].append(_result_error(raw, parse_error or ItemError("invalid_path", "Invalid source")))
+                continue
+            try:
+                _preflight_source(source, destination)
+                resolved = source.resolve()
+                if any(
+                    other != resolved and _is_relative_to(resolved, other)
+                    for other in resolved_sources
+                ):
+                    raise ItemError("nested_source", f"Nested source is also selected: {source.name}")
+                launcher_to_desktop = (
+                    source.suffix.lower() == ".desktop"
+                    and destination == desktop_dir()
+                )
+                if launcher_to_desktop:
+                    target = _launcher_to_desktop(
+                        source,
+                        destination,
+                        move=command == "move",
+                    )
+                elif command == "copy":
+                    target = _copy_to_unique(source, destination)
+                else:
+                    target = _move_to_unique(source, destination)
+                record["results"].append(
+                    {"source": str(source), "destination": str(target), "status": "completed"}
+                )
+                if command == "move":
+                    proof = _move_proof(source, target)
+                    if proof is not None:
+                        record["proofs"].append(proof)
+            except Exception as error:
+                record["results"].append(_result_error(str(source), error))
+            record["updatedAt"] = _utc_now()
+            _write_journal(record)
+
+        _finish_record(record)
+        completed = sum(result["status"] == "completed" for result in record["results"])
+        record["undoable"] = (
+            command == "move"
+            and completed > 0
+            and len(record["proofs"]) == completed
+        )
+        _write_journal(record)
+    return _public_record(record), 0 if record["ok"] else 1
+
+
+def _run_gio_trash(path: Path) -> None:
+    try:
+        result = subprocess.run(
+            ["gio", "trash", str(path)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=CHILD_TIMEOUT_SECONDS,
+            check=False,
+            start_new_session=True,
+            preexec_fn=_kill_child_when_parent_dies,
+        )
+    except FileNotFoundError as error:
+        raise ItemError("child_missing", "The local Trash helper is unavailable") from error
+    except subprocess.TimeoutExpired as error:
+        raise ItemError("child_timeout", "The local Trash helper timed out") from error
+    except OSError as error:
+        raise ItemError("child_failed", f"Could not start the local Trash helper: {error}") from error
+    if result.returncode != 0:
+        raise ItemError("child_failed", f"The local Trash helper exited with status {result.returncode}")
+
+
+def trash(raw_sources: list[str]) -> tuple[dict[str, Any], int]:
+    if len(raw_sources) > MAX_SOURCES:
+        raise RequestError("too_many_sources", f"At most {MAX_SOURCES} sources are allowed")
+    desktop = desktop_dir()
+    record = _new_record("trash", raw_sources)
+    operation_id = record["operationId"]
+    with _operation_lock(operation_id):
+        _write_journal(record)
+        seen: set[str] = set()
+        for raw in raw_sources:
+            try:
+                path = local_path(raw)
+                lexical_key = str(path)
+                if lexical_key in seen:
+                    raise ItemError("duplicate_source", f"Source appears more than once: {path.name}")
+                seen.add(lexical_key)
+                if path.parent.resolve() != desktop:
+                    raise ItemError("outside_desktop", "Trash is limited to direct Desktop items")
+                _lstat_supported(path, allow_symlink=True)
+                _run_gio_trash(path)
+                record["results"].append(
+                    {"source": str(path), "destination": None, "status": "completed"}
+                )
+            except Exception as error:
+                record["results"].append(_result_error(raw, error))
+            record["updatedAt"] = _utc_now()
+            _write_journal(record)
+        _finish_record(record)
+        record["undoable"] = False
+        _write_journal(record)
+    return _public_record(record), 0 if record["ok"] else 1
+
+
+def status(operation_id: str) -> dict[str, Any]:
+    operation_id = _validate_operation_id(operation_id)
+    with _operation_lock(operation_id):
+        record = _read_journal(operation_id)
+    return _public_record(record, command="status")
+
+
+def undo(operation_id: str) -> tuple[dict[str, Any], int]:
+    operation_id = _validate_operation_id(operation_id)
+    with _operation_lock(operation_id):
+        record = _read_journal(operation_id)
+        if record.get("command") != "move" or not record.get("undoable"):
+            raise RequestError("not_undoable", "This operation does not have a safely provable Undo")
+        proofs = [proof for proof in record.get("proofs", []) if not proof.get("undone")]
+        if not proofs:
+            raise RequestError("already_undone", "This operation has already been undone")
+
+        # Prove the entire remaining batch before changing any path.
+        for proof in proofs:
+            source = local_path(proof["source"])
+            if os.path.lexists(source):
+                raise RequestError("undo_collision", f"Original path is occupied: {source}")
+            if not _proof_matches(proof):
+                raise RequestError("undo_proof_failed", f"Moved item changed after the operation: {proof['destination']}")
+
+        undo_results: list[dict[str, Any]] = []
+        for proof in proofs:
+            destination = local_path(proof["destination"])
+            source = local_path(proof["source"])
+            try:
+                _move_exact(destination, source)
+                proof["undone"] = True
+                undo_results.append(
+                    {"source": str(destination), "destination": str(source), "status": "completed"}
+                )
+            except Exception as error:
+                undo_results.append(_result_error(str(destination), error, str(source)))
+                break
+
+        remaining = [proof for proof in record.get("proofs", []) if not proof.get("undone")]
+        failed = any(result["status"] == "failed" for result in undo_results)
+        record["state"] = "undo-partial" if remaining or failed else "undone"
+        record["ok"] = not remaining and not failed
+        record["undoable"] = bool(remaining)
+        record["updatedAt"] = _utc_now()
+        record["undoResults"] = undo_results
+        _write_journal(record)
+        public = _public_record(record, command="undo")
+    return public, 0 if public["ok"] else 1
+
+
+def _parser() -> ReceiptParser:
+    parser = ReceiptParser(description="One-Bit Bureau desktop operation helper")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    inspect_parser = subparsers.add_parser("inspect")
+    inspect_parser.add_argument("path")
+    for command in ("copy", "move"):
+        operation_parser = subparsers.add_parser(command)
+        operation_parser.add_argument("--destination", required=True)
+        operation_parser.add_argument("sources", nargs="+")
+    trash_parser = subparsers.add_parser("trash")
+    trash_parser.add_argument("sources", nargs="+")
+    status_parser = subparsers.add_parser("status")
+    status_parser.add_argument("operation_id")
+    undo_parser = subparsers.add_parser("undo")
+    undo_parser.add_argument("operation_id")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    command_hint = raw_argv[0] if raw_argv else "unknown"
+    try:
+        _validate_raw_argv(raw_argv)
+        args = _parser().parse_args(raw_argv)
+        if args.command == "inspect":
+            payload, exit_code = inspect_item(args.path), 0
+        elif args.command in {"copy", "move"}:
+            payload, exit_code = transfer(args.command, args.sources, args.destination)
+        elif args.command == "trash":
+            payload, exit_code = trash(args.sources)
+        elif args.command == "status":
+            payload, exit_code = status(args.operation_id), 0
+        elif args.command == "undo":
+            payload, exit_code = undo(args.operation_id)
+        else:
+            raise RequestError("invalid_arguments", "Unknown command")
+        emit(payload)
+        return exit_code
+    except Exception as error:
+        try:
+            emit(_failed_receipt(command_hint, error))
+        except Exception:
+            # Last-ditch bounded receipt; never echo raw arguments or paths.
+            sys.stdout.write(
+                '{"command":"unknown","error":{"code":"internal_error","message":"Could not encode result"},'
+                '"ok":false,"schemaVersion":1,"state":"failed","undoable":false}\n'
+            )
+        return error.exit_code if isinstance(error, RequestError) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

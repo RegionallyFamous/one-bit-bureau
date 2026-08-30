@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.0 — 2026-08-30
+
+### Product changes
+
+- Added one shared Bureau Inspector for desktop objects, dock applications, and overview windows, with stable Identity, Facts, and Actions regions, visible unavailable-action reasons, local-only icon loading, keyboard access, accessibility metadata, and reduced-motion behavior.
+- Added bounded 64-item desktop multi-selection, named `noun -> verb -> destination` routing slips, real folder and Trash destinations, external local-file drops, operation receipts, Escape cancellation, and narrowly provable Undo for unchanged regular-file moves.
+- Added a hardened local transaction helper with bounded JSON receipts, private atomic journals, collision-free destinations, cross-filesystem rollback, partial-batch reporting, launcher trust demotion, hash-proven Undo, and parent-death containment for the `gio trash` child.
+- Added a truthful per-app Window Ledger with 1/2/3+ marks, active and cross-workspace state, deterministic most-recently-used focus, explicit Activate and Close actions, and no duplicate launch when compositor state is stale.
+- Added the overview workspace board with stable ordinary-workspace ordering, occupancy, keyboard and context parity, validated window moves, and an overview that remains open after routing.
+- Corrected Dock **Get Info** so it opens the shared Inspector while **Manage Icons** remains a distinct command.
+- Preserved one deliberate Wayland limit: internal desktop drags do not pretend to cross into the separate dock layer-shell window. Native external file drops and every proven in-surface route remain supported.
+
+### Release verification
+
+- Added 18 adversarial filesystem-helper tests, 50 desktop contracts, 63 dock/Window Ledger tests, 10 Inspector tests, 8 overview/workspace tests, shared-host source contracts, and new graphical acceptance scenes for Inspector, multi-route/receipt/Undo, Window Ledger, and workspace moves.
+
 ## 1.0.2 — 2026-08-30
 
 ### Product changes

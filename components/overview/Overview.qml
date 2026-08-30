@@ -8,12 +8,16 @@ import Quickshell.Wayland
 import qs.Commons
 import "IconResolver.js" as IconResolver
 import "WindowModel.js" as WindowModel
+import "WorkspaceModel.js" as WorkspaceModel
 
 Item {
     id: root
 
+    signal inspectRequested(var payload, string screenName)
+
     property var shell: null
     property var manifest: null
+    property var service: null
     readonly property string pluginId: String((root.manifest && root.manifest.id) || "io.github.regionallyfamous.one-bit-bureau")
     readonly property string pluginDir: String((root.manifest && root.manifest.__sourceDir)
         ? root.manifest.__sourceDir + "/components/overview"
@@ -127,6 +131,16 @@ Item {
     property bool hotCornerArmed: true
     property string filterText: ""
     property string workspaceScope: "all"
+    property int selectedWorkspaceId: 0
+    property int workspaceCursorId: 0
+    property bool workspaceMenuOpen: false
+    property int workspaceMenuWorkspaceId: 0
+    property int workspaceMenuCursorIndex: 0
+    property point workspaceMenuPosition: Qt.point(0, 0)
+    property string workspaceNotice: ""
+    property string pendingMoveAddress: ""
+    property string pendingMoveTitle: ""
+    property int pendingMoveWorkspaceId: 0
     property int selectedIndex: 0
     property int hoveredIndex: -1
     property int previewIndex: -1
@@ -206,12 +220,48 @@ Item {
         var revision = root.modelRevision;
         return root.toplevelsForScreen(root.keyboardScreenName);
     }
+    readonly property var ordinaryWorkspaces: {
+        var revision = root.modelRevision;
+        var values = Hyprland.workspaces ? Hyprland.workspaces.values : [];
+        return WorkspaceModel.ordinaryWorkspaces(values, root.allToplevels, root.workspaceForScreen(root.keyboardScreenName));
+    }
+    readonly property var workspaceBoardEntries: [{
+        id: 0,
+        name: "all",
+        label: "All workspaces",
+        count: root.allToplevels.length,
+        occupied: root.allToplevels.length > 0,
+        active: false
+    }].concat(root.ordinaryWorkspaces)
+    readonly property var workspaceMenuEntries: {
+        var workspace = WorkspaceModel.workspaceById(root.ordinaryWorkspaces, root.workspaceMenuWorkspaceId);
+        var top = root.selectedToplevel();
+        var sourceWorkspaceId = WorkspaceModel.toplevelWorkspaceId(top);
+        return [
+            {action: "show", label: workspace ? "Show " + workspace.label : "Show workspace", enabled: workspace !== null},
+            {action: "move", label: top && workspace ? "Move selected window here" : "Move selected window here", enabled: top !== null && workspace !== null && sourceWorkspaceId !== workspace.id},
+            {action: "inspect", label: "Get Info on selected window", enabled: top !== null}
+        ];
+    }
 
     onMultiMonitorModeChanged: {
         root.hoveredIndex = -1;
         root.clearPreview();
         root.modelRevision++;
         root.selectedIndex = Math.max(0, root.filteredToplevels.indexOf(Hyprland.activeToplevel));
+    }
+
+    onOrdinaryWorkspacesChanged: {
+        if (root.workspaceScope === "workspace" && !root.workspaceById(root.selectedWorkspaceId))
+            root.setWorkspaceScope("all");
+        if (!root.workspaceById(root.workspaceCursorId)) {
+            var focusedId = WorkspaceModel.workspaceIdFor(Hyprland.focusedWorkspace);
+            root.workspaceCursorId = root.workspaceById(focusedId)
+                ? focusedId
+                : (root.ordinaryWorkspaces.length > 0 ? root.ordinaryWorkspaces[0].id : 0);
+        }
+        if (root.workspaceMenuOpen && !root.workspaceById(root.workspaceMenuWorkspaceId))
+            root.closeWorkspaceMenu();
     }
 
     onReducedMotionChanged: {
@@ -227,8 +277,11 @@ Item {
 
     function open(payload) {
         root.closeSettings();
+        root.closeWorkspaceMenu();
         root.filterText = "";
         root.workspaceScope = "all";
+        root.selectedWorkspaceId = 0;
+        root.workspaceCursorId = WorkspaceModel.workspaceIdFor(Hyprland.focusedWorkspace);
         root.dismissNotifyShell = false;
         if (root.surfaceMounted) {
             root.opened = true;
@@ -260,6 +313,7 @@ Item {
     function startDismiss(notifyShell) {
         root.openingPending = false;
         root.closeSettings();
+        root.closeWorkspaceMenu();
         root.hoveredIndex = -1;
         root.clearPreview();
         root.opened = false;
@@ -541,6 +595,7 @@ Item {
     function openSettings() {
         if (!root.surfaceMounted)
             root.open("{}");
+        root.closeWorkspaceMenu();
         root.closeFooterHideConfirmation();
         root.clearAnimationTimingPreview();
         root.backgroundBlurPreview = -1;
@@ -742,21 +797,129 @@ Item {
         root.modelRevision++;
     }
 
+    function selectedToplevel() {
+        if (root.selectedIndex < 0 || root.selectedIndex >= root.filteredToplevels.length)
+            return null;
+        return root.filteredToplevels[root.selectedIndex] || null;
+    }
+
+    function workspaceById(workspaceId) {
+        return WorkspaceModel.workspaceById(root.ordinaryWorkspaces, workspaceId);
+    }
+
+    function preserveWindowSelection(callback) {
+        var selectedTop = root.selectedToplevel();
+        callback();
+        root.hoveredIndex = -1;
+        root.clearPreview();
+        root.modelRevision++;
+        var selected = selectedTop ? root.filteredToplevels.indexOf(selectedTop) : -1;
+        if (selected < 0)
+            selected = root.filteredToplevels.indexOf(Hyprland.activeToplevel);
+        root.selectedIndex = selected >= 0 ? selected : 0;
+    }
+
     function setWorkspaceScope(value) {
         var next = value === "current" ? "current" : "all";
         if (next === "current" && !root.workspaceForScreen(root.keyboardScreenName))
             return;
         if (next === root.workspaceScope)
             return;
-        root.workspaceScope = next;
-        root.hoveredIndex = -1;
-        root.clearPreview();
-        root.modelRevision++;
-        root.selectedIndex = Math.max(0, root.filteredToplevels.indexOf(Hyprland.activeToplevel));
+        root.preserveWindowSelection(function () {
+            root.workspaceScope = next;
+            root.selectedWorkspaceId = 0;
+        });
+    }
+
+    function setWorkspaceFilter(workspaceId) {
+        var workspace = root.workspaceById(workspaceId);
+        if (!workspace)
+            return false;
+        root.workspaceCursorId = workspace.id;
+        if (root.workspaceScope === "workspace" && root.selectedWorkspaceId === workspace.id)
+            return true;
+        root.preserveWindowSelection(function () {
+            root.workspaceScope = "workspace";
+            root.selectedWorkspaceId = workspace.id;
+        });
+        return true;
     }
 
     function toggleWorkspaceScope() {
         root.setWorkspaceScope(root.workspaceScope === "all" ? "current" : "all");
+    }
+
+    function workspaceCursorEntry() {
+        var workspace = root.workspaceById(root.workspaceCursorId);
+        if (workspace)
+            return workspace;
+        return root.ordinaryWorkspaces.length > 0 ? root.ordinaryWorkspaces[0] : null;
+    }
+
+    function moveWorkspaceCursor(direction) {
+        root.workspaceCursorId = WorkspaceModel.cycleWorkspaceId(root.ordinaryWorkspaces, root.workspaceCursorId, direction);
+        root.closeWorkspaceMenu();
+    }
+
+    function showWorkspaceCursor() {
+        var workspace = root.workspaceCursorEntry();
+        return workspace ? root.setWorkspaceFilter(workspace.id) : false;
+    }
+
+    function firstWorkspaceMenuEntry() {
+        for (var index = 0; index < root.workspaceMenuEntries.length; index++)
+            if (root.workspaceMenuEntries[index].enabled !== false)
+                return index;
+        return -1;
+    }
+
+    function moveWorkspaceMenuCursor(direction) {
+        var entries = root.workspaceMenuEntries;
+        if (entries.length === 0)
+            return;
+        var index = root.workspaceMenuCursorIndex;
+        for (var step = 0; step < entries.length; step++) {
+            index = (index + (direction < 0 ? -1 : 1) + entries.length) % entries.length;
+            if (entries[index].enabled !== false) {
+                root.workspaceMenuCursorIndex = index;
+                return;
+            }
+        }
+    }
+
+    function openWorkspaceMenu(workspaceId, position) {
+        var workspace = root.workspaceById(workspaceId);
+        if (!workspace)
+            return;
+        root.workspaceCursorId = workspace.id;
+        root.workspaceMenuWorkspaceId = workspace.id;
+        root.workspaceMenuPosition = position || Qt.point(0, 0);
+        root.workspaceMenuCursorIndex = 0;
+        root.workspaceMenuOpen = true;
+        root.workspaceMenuCursorIndex = root.firstWorkspaceMenuEntry();
+    }
+
+    function closeWorkspaceMenu() {
+        root.workspaceMenuOpen = false;
+        root.workspaceMenuWorkspaceId = 0;
+        root.workspaceMenuCursorIndex = 0;
+    }
+
+    function activateWorkspaceMenuAction(action) {
+        var workspaceId = root.workspaceMenuWorkspaceId;
+        root.closeWorkspaceMenu();
+        if (action === "show")
+            root.setWorkspaceFilter(workspaceId);
+        else if (action === "move")
+            root.moveSelectedWindowToWorkspace(workspaceId);
+        else if (action === "inspect")
+            root.requestInspector(root.selectedToplevel());
+    }
+
+    function activateWorkspaceMenuCursor() {
+        var entry = root.workspaceMenuEntries[root.workspaceMenuCursorIndex];
+        if (entry && entry.enabled !== false)
+            root.activateWorkspaceMenuAction(String(entry.action || ""));
     }
 
     function refreshHyprlandState() {
@@ -845,6 +1008,132 @@ Item {
             root.moveCursorToWindow ? "true" : "false"
         ]);
         root.dismiss();
+    }
+
+    function windowForAddress(address) {
+        var wanted = WorkspaceModel.normalizedAddress(address);
+        if (!wanted)
+            return null;
+        for (var index = 0; index < root.allToplevels.length; index++) {
+            var top = root.allToplevels[index];
+            if (WorkspaceModel.normalizedAddress(WindowModel.addressFor(top)) === wanted)
+                return top;
+        }
+        return null;
+    }
+
+    function inspectorPayloadFor(top) {
+        if (!top)
+            return null;
+        var address = WindowModel.addressFor(top);
+        if (!address)
+            return null;
+        var monitor = top.monitor || null;
+        var workspace = top.workspace || null;
+        var workspaceId = WorkspaceModel.workspaceIdFor(workspace);
+        var actions = [
+            {id: "focus", label: "Focus window", enabled: true},
+            {id: "close", label: "Close window", enabled: WindowModel.waylandFor(top) !== null, destructive: true}
+        ];
+        for (var index = 0; index < root.ordinaryWorkspaces.length && actions.length < 12; index++) {
+            var target = root.ordinaryWorkspaces[index];
+            actions.push({
+                id: "move-to-workspace:" + target.id,
+                label: "Move to Workspace " + target.id,
+                enabled: target.id !== workspaceId,
+                reason: target.id === workspaceId ? "Window is already on this workspace" : ""
+            });
+        }
+        return {
+            kind: "window",
+            id: address,
+            name: String(top.title || "Untitled window"),
+            subtitle: (WindowModel.appIdFor(top) || "Application") + "  ·  Workspace " + (workspaceId || "—"),
+            iconSource: root.iconFor(top),
+            iconGrayscale: true,
+            facts: [
+                {id: "application", label: "Application", value: WindowModel.appIdFor(top) || "Unknown"},
+                {id: "workspace", label: "Workspace", value: String((workspace && (workspace.name || workspace.id)) || "—")},
+                {id: "monitor", label: "Display", value: String((monitor && monitor.name) || "Unknown")},
+                {id: "address", label: "Window ID", value: address}
+            ],
+            actions: actions
+        };
+    }
+
+    function requestInspector(top) {
+        var payload = root.inspectorPayloadFor(top);
+        if (!payload)
+            return false;
+        root.closeWorkspaceMenu();
+        root.inspectRequested(payload, root.keyboardScreenName);
+        return true;
+    }
+
+    // Inspector actions arrive after a separate surface has been opened. Never
+    // retain the original QML object: re-resolve its stable Hyprland address so
+    // a closed or replaced window cannot receive a stale action.
+    function performInspectorAction(actionId, context) {
+        var action = String(actionId || "");
+        var data = context && typeof context === "object" ? context : {};
+        var top = root.windowForAddress(data.address || data.id || "");
+        if (!top)
+            return false;
+        if (action === "focus" || action === "open") {
+            root.activate(top);
+            return true;
+        }
+        if (action === "close") {
+            root.requestClose(top);
+            return true;
+        }
+        var matchedWorkspace = /^move-to-workspace:([1-9][0-9]{0,2})$/.exec(action);
+        var targetWorkspaceId = matchedWorkspace
+            ? Number(matchedWorkspace[1])
+            : Number(data.targetWorkspaceId || 0);
+        if (action === "move-to-workspace" || matchedWorkspace)
+            return root.moveWindowToWorkspace(top, targetWorkspaceId);
+        return false;
+    }
+
+    function showWorkspaceNotice(message) {
+        root.workspaceNotice = String(message || "");
+        workspaceNoticeTimer.restart();
+    }
+
+    function moveSelectedWindowToWorkspace(workspaceId) {
+        return root.moveWindowToWorkspace(root.selectedToplevel(), workspaceId);
+    }
+
+    function moveWindowToWorkspace(top, workspaceId) {
+        if (!top) {
+            root.showWorkspaceNotice("No selected window to move");
+            return false;
+        }
+        if (workspaceMoveProcess.running) {
+            root.showWorkspaceNotice("A window move is already in progress");
+            return false;
+        }
+        var request = WorkspaceModel.moveRequest(WindowModel.addressFor(top), workspaceId, root.ordinaryWorkspaces);
+        if (!request.ok) {
+            root.showWorkspaceNotice(request.error);
+            return false;
+        }
+        if (WorkspaceModel.toplevelWorkspaceId(top) === request.workspaceId) {
+            root.showWorkspaceNotice("Window is already on Workspace " + request.workspaceId);
+            return false;
+        }
+        root.pendingMoveAddress = request.address;
+        root.pendingMoveTitle = String(top.title || WindowModel.appIdFor(top) || "Window");
+        root.pendingMoveWorkspaceId = request.workspaceId;
+        workspaceMoveProcess.command = [
+            "/bin/bash",
+            root.pluginDir + "/move-window-to-workspace",
+            request.address,
+            String(request.workspaceId)
+        ];
+        workspaceMoveProcess.running = true;
+        return true;
     }
 
     function requestClose(top) {
@@ -943,9 +1232,11 @@ Item {
     }
 
     function workspaceScopeLabelForScreen(screenName) {
-        return root.workspaceScope === "current"
-            ? "Workspace " + root.activeWorkspaceLabelForScreen(screenName)
-            : "All workspaces";
+        if (root.workspaceScope === "current")
+            return "Workspace " + root.activeWorkspaceLabelForScreen(screenName);
+        if (root.workspaceScope === "workspace")
+            return "Workspace " + root.selectedWorkspaceId;
+        return "All workspaces";
     }
 
     function isOnScreen(top, screenName) {
@@ -970,11 +1261,16 @@ Item {
     function toplevelsForScreen(screenName) {
         var needle = root.filterText.toLowerCase();
         var currentWorkspace = root.workspaceForScreen(screenName);
+        var selectedWorkspace = root.workspaceScope === "workspace"
+            ? root.workspaceById(root.selectedWorkspaceId)
+            : null;
         var candidates = root.toplevelsOnScreen(screenName);
         var result = [];
         for (var index = 0; index < candidates.length; index++) {
             var top = candidates[index];
             if (root.workspaceScope === "current" && !root.isOnWorkspace(top, currentWorkspace))
+                continue;
+            if (root.workspaceScope === "workspace" && (!selectedWorkspace || !root.isOnWorkspace(top, selectedWorkspace)))
                 continue;
             var haystack = WindowModel.searchTextFor(top);
             if (!needle || haystack.indexOf(needle) !== -1)
@@ -1289,6 +1585,62 @@ Item {
             }
             return;
         }
+        if (root.workspaceMenuOpen) {
+            if (event.key === Qt.Key_Escape) {
+                root.closeWorkspaceMenu();
+            } else if (event.key === Qt.Key_Up || event.key === Qt.Key_Left
+                    || event.key === Qt.Key_Backtab
+                    || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+                root.moveWorkspaceMenuCursor(-1);
+            } else if (event.key === Qt.Key_Down || event.key === Qt.Key_Right
+                    || event.key === Qt.Key_Tab) {
+                root.moveWorkspaceMenuCursor(1);
+            } else if (event.key === Qt.Key_Home) {
+                root.workspaceMenuCursorIndex = root.firstWorkspaceMenuEntry();
+            } else if (event.key === Qt.Key_End) {
+                for (var menuIndex = root.workspaceMenuEntries.length - 1; menuIndex >= 0; menuIndex--)
+                    if (root.workspaceMenuEntries[menuIndex].enabled !== false) {
+                        root.workspaceMenuCursorIndex = menuIndex;
+                        break;
+                    }
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                root.activateWorkspaceMenuCursor();
+            } else if (event.key === Qt.Key_Menu
+                    || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+                // Keep an already-open menu stable.
+            } else {
+                return;
+            }
+            event.accepted = true;
+            return;
+        }
+        var controlOnly = Boolean(event.modifiers & Qt.ControlModifier)
+            && !(event.modifiers & (Qt.AltModifier | Qt.MetaModifier));
+        if (controlOnly && (event.key === Qt.Key_Left || event.key === Qt.Key_Right)) {
+            root.moveWorkspaceCursor(event.key === Qt.Key_Left ? -1 : 1);
+            event.accepted = true;
+            return;
+        }
+        if (controlOnly && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+            if (event.modifiers & Qt.ShiftModifier)
+                root.moveSelectedWindowToWorkspace(root.workspaceCursorId);
+            else
+                root.showWorkspaceCursor();
+            event.accepted = true;
+            return;
+        }
+        if (event.key === Qt.Key_Menu
+                || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+            root.openWorkspaceMenu(root.workspaceCursorId, Qt.point(0, 0));
+            event.accepted = true;
+            return;
+        }
+        if (event.key === Qt.Key_I
+                && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
+            root.requestInspector(root.selectedToplevel());
+            event.accepted = true;
+            return;
+        }
         if (event.key === Qt.Key_Escape) {
             if (root.previewIndex >= 0 || root.previewExitIndex >= 0)
                 root.clearPreview();
@@ -1331,6 +1683,11 @@ Item {
     Connections {
         target: Hyprland.toplevels
         function onValuesChanged() { root.handleToplevelCollectionChanged(); }
+    }
+
+    Connections {
+        target: Hyprland.workspaces
+        function onValuesChanged() { root.handleDisplayStateChanged(); }
     }
 
     Instantiator {
@@ -1377,6 +1734,33 @@ Item {
             if (root.previewIndex < 0)
                 root.previewSlowMotion = false;
         }
+    }
+
+    Process {
+        id: workspaceMoveProcess
+        running: false
+        stderr: StdioCollector { id: workspaceMoveError }
+        onExited: function(exitCode) {
+            var title = root.pendingMoveTitle;
+            var target = root.pendingMoveWorkspaceId;
+            root.pendingMoveAddress = "";
+            root.pendingMoveTitle = "";
+            root.pendingMoveWorkspaceId = 0;
+            if (exitCode === 0) {
+                root.showWorkspaceNotice(title + " moved to Workspace " + target);
+                root.refreshHyprlandState();
+                root.modelRevision++;
+            } else {
+                var message = String(workspaceMoveError.text || "").trim();
+                root.showWorkspaceNotice(message || "Window could not be moved");
+            }
+        }
+    }
+
+    Timer {
+        id: workspaceNoticeTimer
+        interval: 3200
+        onTriggered: root.workspaceNotice = ""
     }
 
     NumberAnimation {
@@ -1741,7 +2125,9 @@ Item {
                 MouseArea {
                     anchors.fill: parent
                     onClicked: {
-                        if (root.previewIndex >= 0 || root.previewExitIndex >= 0)
+                        if (root.workspaceMenuOpen)
+                            root.closeWorkspaceMenu();
+                        else if (root.previewIndex >= 0 || root.previewExitIndex >= 0)
                             root.clearPreview();
                         else
                             root.dismiss();
@@ -1803,7 +2189,11 @@ Item {
                             Text {
                                 Layout.maximumWidth: Style.space(176)
                                 text: searchBar.width < Style.space(640)
-                                    ? (root.workspaceScope === "all" ? "All" : "WS " + overviewWindow.screenWorkspaceLabel)
+                                    ? (root.workspaceScope === "all"
+                                        ? "All"
+                                        : (root.workspaceScope === "workspace"
+                                            ? "WS " + root.selectedWorkspaceId
+                                            : "WS " + overviewWindow.screenWorkspaceLabel))
                                     : overviewWindow.screenScopeLabel
                                 textFormat: Text.PlainText
                                 color: Color.accent
@@ -1829,6 +2219,174 @@ Item {
                                     font.family: Style.font.menuFamily
                                     font.pixelSize: Style.font.caption
                                 }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        id: workspaceRail
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: Math.min(Style.space(900), overviewWindow.width - Style.space(48))
+                        Layout.preferredHeight: Style.space(56)
+                        radius: 0
+                        color: Color.menu.background
+                        border.color: Color.menu.border
+                        border.width: Math.max(1, Style.normalBorderWidth)
+                        Accessible.role: Accessible.ToolBar
+                        Accessible.name: "Workspace board"
+                        Accessible.description: "Shows ordinary workspaces in numeric order. Control Left and Right choose a workspace. Control Enter shows it. Control Shift Enter moves the selected window."
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: Style.spacing.md
+                            anchors.rightMargin: Style.spacing.md
+                            spacing: Style.spacing.md
+
+                            ColumnLayout {
+                                Layout.preferredWidth: Style.space(72)
+                                spacing: 0
+
+                                Text {
+                                    text: "DESKS"
+                                    textFormat: Text.PlainText
+                                    color: Color.menu.text
+                                    font.family: Style.font.menuFamily
+                                    font.pixelSize: Style.font.bodySmall
+                                    font.bold: true
+                                }
+
+                                Text {
+                                    text: root.ordinaryWorkspaces.length + " OPEN"
+                                    textFormat: Text.PlainText
+                                    color: Color.menu.text
+                                    opacity: 0.58
+                                    font.family: Style.font.menuFamily
+                                    font.pixelSize: Style.font.caption
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: Math.max(1, Style.normalBorderWidth)
+                                Layout.preferredHeight: Style.space(34)
+                                color: Color.menu.border
+                            }
+
+                            Flickable {
+                                id: workspaceFlick
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                contentWidth: workspaceRow.implicitWidth
+                                contentHeight: height
+                                clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+
+                                Row {
+                                    id: workspaceRow
+                                    height: parent.height
+                                    spacing: Style.spacing.sm
+
+                                    Repeater {
+                                        model: root.workspaceBoardEntries
+
+                                        delegate: Rectangle {
+                                            id: workspaceTile
+                                            required property var modelData
+                                            required property int index
+                                            readonly property bool allTile: modelData.id === 0
+                                            readonly property bool scoped: allTile
+                                                ? root.workspaceScope === "all"
+                                                : (root.workspaceScope === "workspace" && root.selectedWorkspaceId === modelData.id)
+                                                    || (root.workspaceScope === "current" && modelData.active)
+                                            readonly property bool keyboardCursor: !allTile && root.workspaceCursorId === modelData.id
+                                            width: allTile ? Style.space(64) : Style.space(76)
+                                            height: Style.space(40)
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            radius: 0
+                                            color: scoped ? Color.menu.selectedBackground : "transparent"
+                                            border.color: keyboardCursor ? Color.menu.selectedText : Color.menu.border
+                                            border.width: keyboardCursor ? 2 : 1
+                                            Accessible.role: Accessible.Button
+                                            Accessible.name: modelData.label
+                                            Accessible.description: allTile
+                                                ? String(modelData.count) + " windows across all workspaces"
+                                                : (modelData.active ? "Active. " : "")
+                                                    + (modelData.occupied ? String(modelData.count) + " windows. " : "Empty. ")
+                                                    + (scoped ? "Shown in the overview." : "")
+                                            Accessible.focusable: !allTile
+                                            Accessible.focused: keyboardCursor
+                                            Accessible.selectable: true
+                                            Accessible.selected: scoped
+                                            Accessible.onPressAction: {
+                                                if (allTile)
+                                                    root.setWorkspaceScope("all");
+                                                else
+                                                    root.setWorkspaceFilter(modelData.id);
+                                            }
+
+                                            Column {
+                                                anchors.centerIn: parent
+                                                spacing: 0
+
+                                                Text {
+                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                    text: workspaceTile.allTile ? "ALL" : String(workspaceTile.modelData.id)
+                                                    textFormat: Text.PlainText
+                                                    color: workspaceTile.scoped ? Color.menu.selectedText : Color.menu.text
+                                                    font.family: Style.font.menuFamily
+                                                    font.pixelSize: Style.font.body
+                                                    font.bold: workspaceTile.scoped || workspaceTile.modelData.active
+                                                }
+
+                                                Text {
+                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                    text: workspaceTile.allTile
+                                                        ? String(workspaceTile.modelData.count)
+                                                        : (workspaceTile.modelData.active ? "ACTIVE" : (workspaceTile.modelData.occupied ? String(workspaceTile.modelData.count) + " OPEN" : "EMPTY"))
+                                                    textFormat: Text.PlainText
+                                                    color: workspaceTile.scoped ? Color.menu.selectedText : Color.menu.text
+                                                    opacity: workspaceTile.scoped ? 0.84 : 0.55
+                                                    font.family: Style.font.menuFamily
+                                                    font.pixelSize: Style.font.caption
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onEntered: {
+                                                    if (!workspaceTile.allTile)
+                                                        root.workspaceCursorId = workspaceTile.modelData.id;
+                                                }
+                                                onClicked: function(mouse) {
+                                                    if (mouse.button === Qt.RightButton && !workspaceTile.allTile) {
+                                                        var point = workspaceTile.mapToItem(keyCatcher, mouse.x, mouse.y);
+                                                        root.openWorkspaceMenu(workspaceTile.modelData.id, point);
+                                                    } else if (workspaceTile.allTile) {
+                                                        root.setWorkspaceScope("all");
+                                                    } else {
+                                                        root.setWorkspaceFilter(workspaceTile.modelData.id);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                Layout.maximumWidth: Style.space(220)
+                                visible: root.workspaceNotice.length > 0
+                                text: root.workspaceNotice
+                                textFormat: Text.PlainText
+                                color: Color.accent
+                                font.family: Style.font.menuFamily
+                                font.pixelSize: Style.font.caption
+                                font.bold: true
+                                elide: Text.ElideRight
+                                Accessible.role: Accessible.StaticText
+                                Accessible.name: root.workspaceNotice
                             }
                         }
                     }
@@ -1878,7 +2436,9 @@ Item {
                                 ? "No matching windows"
                                 : (root.workspaceScope === "current"
                                     ? "No windows on Workspace " + overviewWindow.screenWorkspaceLabel
-                                    : "No open windows")
+                                    : (root.workspaceScope === "workspace"
+                                        ? "No windows on Workspace " + root.selectedWorkspaceId
+                                        : "No open windows"))
                             textFormat: Text.PlainText
                             color: Color.menu.text
                             opacity: 0.7
@@ -1893,7 +2453,7 @@ Item {
                         visible: root.showFooter
 
                         Text {
-                            text: "← ↑ ↓ → navigate   Space preview   Tab scope   Shift+Q close   Enter open   Esc close"
+                            text: "Arrows windows   Ctrl+←/→ desks   Ctrl+Enter show   Ctrl+Shift+Enter move   I info   Menu actions"
                             textFormat: Text.PlainText
                             color: Color.menu.text
                             opacity: 0.7
@@ -1923,6 +2483,111 @@ Item {
                                 onEntered: settingsControl.hovered = true
                                 onExited: settingsControl.hovered = false
                                 onClicked: root.openSettings()
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    id: workspaceContextMenu
+                    visible: root.workspaceMenuOpen
+                    z: 160
+                    width: Style.space(284)
+                    height: workspaceMenuColumn.implicitHeight + Style.spacing.lg * 2
+                    x: root.workspaceMenuPosition.x > 0
+                        ? Math.max(Style.spacing.md, Math.min(root.workspaceMenuPosition.x, keyCatcher.width - width - Style.spacing.md))
+                        : Math.round((keyCatcher.width - width) / 2)
+                    y: root.workspaceMenuPosition.y > 0
+                        ? Math.max(Style.space(112), Math.min(root.workspaceMenuPosition.y, keyCatcher.height - height - Style.spacing.md))
+                        : Style.space(116)
+                    radius: 0
+                    color: Color.menu.background
+                    border.color: Color.menu.border
+                    border.width: 2
+                    Accessible.role: Accessible.PopupMenu
+                    Accessible.name: "Workspace " + root.workspaceMenuWorkspaceId + " commands"
+                    Accessible.description: "Use arrow keys to choose a command. Enter or Space activates it. Escape closes the menu."
+                    Accessible.focusable: true
+                    Accessible.focused: visible && keyCatcher.activeFocus
+
+                    Column {
+                        id: workspaceMenuColumn
+                        anchors.centerIn: parent
+                        width: parent.width - Style.spacing.lg * 2
+                        spacing: Style.spacing.xs
+
+                        Text {
+                            width: parent.width
+                            height: Style.space(28)
+                            verticalAlignment: Text.AlignVCenter
+                            text: "WORKSPACE " + root.workspaceMenuWorkspaceId
+                            textFormat: Text.PlainText
+                            color: Color.menu.text
+                            opacity: 0.62
+                            font.family: Style.font.menuFamily
+                            font.pixelSize: Style.font.caption
+                            font.bold: true
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            color: Color.menu.border
+                        }
+
+                        Repeater {
+                            model: root.workspaceMenuEntries
+
+                            delegate: Rectangle {
+                                id: workspaceMenuRow
+                                required property var modelData
+                                required property int index
+                                readonly property bool rowEnabled: modelData.enabled !== false
+                                readonly property bool current: rowEnabled && root.workspaceMenuCursorIndex === index
+                                width: workspaceMenuColumn.width
+                                height: Style.space(38)
+                                radius: 0
+                                color: current || (rowEnabled && workspaceMenuMouse.containsMouse)
+                                    ? Color.menu.selectedBackground
+                                    : "transparent"
+                                Accessible.role: Accessible.MenuItem
+                                Accessible.name: String(modelData.label || "")
+                                Accessible.description: rowEnabled ? "Activate command" : "Unavailable command"
+                                Accessible.focusable: rowEnabled
+                                Accessible.focused: current
+                                Accessible.selected: current
+                                Accessible.onPressAction: workspaceMenuRow.activate()
+
+                                function activate() {
+                                    if (workspaceMenuRow.rowEnabled)
+                                        root.activateWorkspaceMenuAction(String(workspaceMenuRow.modelData.action || ""));
+                                }
+
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: Style.spacing.md
+                                    anchors.rightMargin: Style.spacing.md
+                                    verticalAlignment: Text.AlignVCenter
+                                    text: String(workspaceMenuRow.modelData.label || "")
+                                    textFormat: Text.PlainText
+                                    color: workspaceMenuRow.current || (workspaceMenuRow.rowEnabled && workspaceMenuMouse.containsMouse)
+                                        ? Color.menu.selectedText
+                                        : Color.menu.text
+                                    opacity: workspaceMenuRow.rowEnabled ? 1 : 0.44
+                                    font.family: Style.font.menuFamily
+                                    font.pixelSize: Style.font.bodySmall
+                                    elide: Text.ElideRight
+                                }
+
+                                MouseArea {
+                                    id: workspaceMenuMouse
+                                    anchors.fill: parent
+                                    enabled: workspaceMenuRow.rowEnabled
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onEntered: root.workspaceMenuCursorIndex = workspaceMenuRow.index
+                                    onClicked: workspaceMenuRow.activate()
+                                }
                             }
                         }
                     }

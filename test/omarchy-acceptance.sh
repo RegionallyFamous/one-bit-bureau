@@ -143,6 +143,19 @@ select_desktop_item_by_id() {
   sleep 0.3
 }
 
+desktop_item_center() {
+  local item_id="$1"
+  local record screen_name local_x local_y monitor_x monitor_y
+
+  record=$(jq -er --arg id "$item_id" '
+    to_entries[] | select(.value[$id] != null) | [.key, .value[$id].x, .value[$id].y] | @tsv
+  ' "$BUREAU_CONFIG/desktop-icon-positions.json" | head -n 1)
+  read -r screen_name local_x local_y <<<"$record"
+  monitor_x=$(hyprctl -j monitors | jq -er --arg name "$screen_name" '.[] | select(.name == $name) | .x | floor')
+  monitor_y=$(hyprctl -j monitors | jq -er --arg name "$screen_name" '.[] | select(.name == $name) | .y | floor')
+  printf '%s %s\n' "$((monitor_x + local_x + 60))" "$((monitor_y + local_y + 60))"
+}
+
 decoded_pixel_hash() {
   local image="$1"
   ffmpeg -v error -i "$image" -map 0:v:0 -f md5 - 2>/dev/null | sed -n 's/^MD5=//p'
@@ -303,6 +316,8 @@ mkdir -p "$HOME/Desktop" "$THEMES_DIR" "$(dirname "$PLUGIN_DIR")" "$BUREAU_CONFI
 mkdir -p "$(dirname "$QA_DESKTOP_ENTRY")" "$(dirname "$QA_NATIVE_ICON")"
 mkdir -p "$HOME/Desktop/Projects"
 printf 'One-Bit Bureau runtime proof\n' >"$HOME/Desktop/ONE-BIT-BUREAU-QA.txt"
+printf 'Route Alpha\n' >"$HOME/Desktop/Route Alpha.txt"
+printf 'Route Beta\n' >"$HOME/Desktop/Route Beta.txt"
 cp "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/One-Bit Bureau Photo.png"
 cp "$FIXTURE/docs/assets/proof-photo.png" "$QA_NATIVE_ICON"
 printf '%s\n' \
@@ -445,6 +460,45 @@ cmp -s "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/One-Bit Bureau Phot
   fail "the grayscale desktop preview changed the original photo file"
 pass "One-Bit Bureau keeps the original photo intact behind a constant grayscale desktop preview"
 
+wtype -M ctrl -k i -m ctrl
+wait_until "the shared Inspector opens for a desktop object" 15 layer_on_screen regionallyfamous.one-bit-bureau.inspector
+wait_until "the desktop Inspector paints its facts" 15 screen_contains "FACTS"
+screenshot "success-one-bit-bureau-02c-desktop-inspector"
+wtype -k Escape
+wait_until "Escape closes the desktop Inspector" 10 layer_absent regionallyfamous.one-bit-bureau.inspector
+
+for route_item in "Route Alpha.txt" "Route Beta.txt" "Projects"; do
+  wait_until "One-Bit Bureau saves a position for $route_item" 15 \
+    bash -c "jq -e --arg id '$route_item' 'any(to_entries[]; .value[\$id] != null)' '$BUREAU_CONFIG/desktop-icon-positions.json'"
+done
+select_desktop_item_by_id "Route Alpha.txt"
+read -r route_beta_x route_beta_y < <(desktop_item_center "Route Beta.txt")
+move_pointer_to "$route_beta_x" "$route_beta_y" "the pointer reaches the second routing item"
+wtype -M ctrl
+ydotool click 0xC0 >/dev/null
+wtype -m ctrl
+sleep 0.5
+screenshot "success-one-bit-bureau-02d-desktop-multi-selection"
+
+read -r route_alpha_x route_alpha_y < <(desktop_item_center "Route Alpha.txt")
+read -r route_target_x route_target_y < <(desktop_item_center "Projects")
+move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the selected routing group"
+ydotool click 0x40 >/dev/null
+move_pointer_to "$route_target_x" "$route_target_y" "the selected group reaches Projects"
+wait_until "the named route slip resolves two items into Projects" 10 screen_contains "2 items"
+screenshot "success-one-bit-bureau-02e-desktop-route-slip"
+ydotool click 0x80 >/dev/null
+wait_until "the desktop route moves both selected files" 20 \
+  bash -c "[[ -f '$HOME/Desktop/Projects/Route Alpha.txt' && -f '$HOME/Desktop/Projects/Route Beta.txt' && ! -e '$HOME/Desktop/Route Alpha.txt' && ! -e '$HOME/Desktop/Route Beta.txt' ]]"
+wait_until "the desktop route receipt offers Undo" 15 screen_contains "Undo"
+screenshot "success-one-bit-bureau-02f-desktop-route-receipt"
+wtype -M ctrl -k z -m ctrl
+wait_until "Undo restores both routed files" 20 \
+  bash -c "[[ -f '$HOME/Desktop/Route Alpha.txt' && -f '$HOME/Desktop/Route Beta.txt' && ! -e '$HOME/Desktop/Projects/Route Alpha.txt' && ! -e '$HOME/Desktop/Projects/Route Beta.txt' ]]"
+wait_until "the desktop reports the completed Undo" 15 screen_contains "Undid"
+screenshot "success-one-bit-bureau-02g-desktop-route-undone"
+pass "One-Bit Bureau routes a bounded multi-selection with a named verb, receipt, and proven Undo"
+
 capture_dock_icon_inner_pixels "$QA_APP_ID" "$ARTIFACTS/one-bit-bureau-unmatched-auto.png"
 auto_icon_red_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-unmatched-auto.png" r)
 auto_icon_green_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-unmatched-auto.png" g)
@@ -498,15 +552,25 @@ wait_until "the trusted-launcher proof window closes" 10 window_absent '^one-bit
   fail "the dock exposes its first app menu"
 wait_until "the dock app menu opens" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getMenuOpen) == 'true' ]]"
-[[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock getMenuCurrentAction) == "setIcon" ]] ||
+[[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock getMenuCurrentAction) == "inspect" ]] ||
   fail "the dock menu starts on Get Info"
+wtype -k Return
+wait_until "the shared Inspector opens for a dock application" 15 layer_on_screen regionallyfamous.one-bit-bureau.inspector
+wait_until "the application Inspector paints window facts" 15 screen_contains "Windows"
+screenshot "success-one-bit-bureau-05-dock-application-inspector"
+wtype -k Escape
+wait_until "Escape closes the application Inspector" 10 layer_absent regionallyfamous.one-bit-bureau.inspector
+[[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock openMenuFirst) == "true" ]] ||
+  fail "the dock menu reopens after Inspector dismissal"
+wait_until "the dock app menu reopens" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getMenuOpen) == 'true' ]]"
 wtype -k End
 [[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock getMenuCurrentAction) == "toggleAutoHide" ]] ||
   fail "End reaches the last enabled dock command"
 wtype -k Up
 [[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock getMenuCurrentAction) == "manageIcons" ]] ||
   fail "Up skips dock-menu separators and reaches Manage Icons"
-screenshot "success-one-bit-bureau-05-dock-keyboard-menu"
+screenshot "success-one-bit-bureau-05a-dock-keyboard-menu"
 wtype -k Return
 wait_until "Manage Icons opens from the dock keyboard menu" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconPickerOpen) == 'true' ]]"
@@ -535,10 +599,33 @@ wait_until "Escape closes Manage Icons" 10 \
 
 setsid -f foot --app-id=one-bit-bureau-qa-one --title="One-Bit Bureau Notes" >/dev/null 2>&1
 setsid -f foot --app-id=one-bit-bureau-qa-two --title="One-Bit Bureau Project" >/dev/null 2>&1
+setsid -f foot --app-id=one-bit-bureau-qa-ledger --title="Ledger Alpha" >/dev/null 2>&1
+setsid -f foot --app-id=one-bit-bureau-qa-ledger --title="Ledger Beta" >/dev/null 2>&1
 wait_until "the first proof window opens" 20 window_present '^one-bit-bureau-qa-one$'
 wait_until "the second proof window opens" 20 window_present '^one-bit-bureau-qa-two$'
+wait_until "both Window Ledger proof windows open" 20 \
+  bash -c "(( \$(hyprctl -j clients | jq '[.[] | select(.class == \"one-bit-bureau-qa-ledger\")] | length') == 2 ))"
 sleep 3
 omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
+
+mapfile -t ledger_addresses < <(hyprctl -j clients | jq -er '.[] | select(.class == "one-bit-bureau-qa-ledger") | .address' | sort)
+(( ${#ledger_addresses[@]} == 2 )) || fail "the Window Ledger proof exposes two stable addresses"
+hyprctl dispatch workspace 2 >/dev/null
+sleep 0.5
+"$PLUGIN_DIR/components/overview/move-window-to-workspace" "${ledger_addresses[1]}" 2 >/dev/null
+hyprctl dispatch workspace 1 >/dev/null
+wait_until "the Window Ledger tracks one proof window on Workspace 2" 15 \
+  bash -c "hyprctl -j clients | jq -e --arg address '${ledger_addresses[1]}' 'any(.[]; .address == \$address and .workspace.id == 2)' >/dev/null"
+wait_until "the dock aggregates both proof windows under one app" 15 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getWindowCount one-bit-bureau-qa-ledger) == '2' ]]"
+[[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock openWindowListForApp one-bit-bureau-qa-ledger) == "true" ]] ||
+  fail "the dock opens the explicit Window Ledger"
+wait_until "the Window Ledger panel opens" 10 layer_on_screen one-bit-bureau-window-ledger
+wait_until "the Window Ledger paints both named windows" 10 screen_contains "Ledger Alpha"
+screenshot "success-one-bit-bureau-07a-window-ledger"
+omarchy-shell regionallyfamous.one-bit-bureau.dock closeWindowList >/dev/null
+wait_until "the Window Ledger panel closes" 10 layer_absent one-bit-bureau-window-ledger
+pass "One-Bit Bureau keeps one dock identity with truthful cross-workspace window state"
 
 monitor_width=$(hyprctl -j monitors | jq -er '.[0] | (.width / .scale) | floor')
 monitor_height=$(hyprctl -j monitors | jq -er '.[0] | (.height / .scale) | floor')
@@ -581,11 +668,32 @@ screenshot "success-one-bit-bureau-11-app-switcher-keyboard"
 wtype -k Escape
 wait_until "Escape cancels One-Bit Bureau's app switcher" 10 layer_absent one-bit-bureau-dock-alt-tab
 
+overview_move_address=$(hyprctl -j clients | jq -er '.[] | select(.class == "one-bit-bureau-qa-one") | .address' | head -n 1)
+bash "$PLUGIN_DIR/components/dock/scripts/focus-window" "$overview_move_address" >/dev/null
+wait_until "the overview move proof window is active on Workspace 1" 10 \
+  bash -c "hyprctl -j activewindow | jq -e --arg address '$overview_move_address' '.address == \$address and .workspace.id == 1' >/dev/null"
 omarchy-shell shell summon "$PLUGIN_ID" '{}' >/dev/null
 wait_until "One-Bit Bureau overview opens" 20 layer_on_screen one-bit-bureau-window-overview
 wait_until "One-Bit Bureau overview instructions paint" 20 screen_contains "navigate"
 sleep 2
 screenshot "success-one-bit-bureau-12-overview"
+
+wtype -k i
+wait_until "the shared Inspector opens for the selected overview window" 15 layer_on_screen regionallyfamous.one-bit-bureau.inspector
+wait_until "the window Inspector paints its workspace facts" 15 screen_contains "Workspace"
+screenshot "success-one-bit-bureau-12a-window-inspector"
+wtype -k Escape
+wait_until "Escape closes the window Inspector without dismissing Overview" 10 layer_absent regionallyfamous.one-bit-bureau.inspector
+layer_on_screen one-bit-bureau-window-overview || fail "Overview remains open after Inspector dismissal"
+
+wtype -M ctrl -k Right -m ctrl
+wtype -M ctrl -M shift -k Return -m shift -m ctrl
+wait_until "the overview workspace board moves the selected window to Workspace 2" 20 \
+  bash -c "hyprctl -j clients | jq -e --arg address '$overview_move_address' 'any(.[]; .address == \$address and .workspace.id == 2)' >/dev/null"
+layer_on_screen one-bit-bureau-window-overview || fail "Overview remains open after a workspace move"
+wait_until "the overview reports the completed workspace move" 10 screen_contains "Moved"
+screenshot "success-one-bit-bureau-12b-workspace-board-move"
+pass "One-Bit Bureau routes a selected window through the overview workspace board"
 
 omarchy-shell shell hide "$PLUGIN_ID" >/dev/null
 wait_until "One-Bit Bureau overview layer closes" 20 layer_absent one-bit-bureau-window-overview

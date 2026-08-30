@@ -9,6 +9,8 @@
 - Confirm all twelve rendered app icons match `pack.json`, the font family names and checksums match `fonts/README.md`, and both license texts ship.
 - Confirm the desktop policy exposes only regular local PNG, JPEG, WebP, and BMP files at or below 32 MiB as previews; SVG, GIF, oversized, remote, inline, missing, and disallowed-path inputs must fall back without being decoded by the shell.
 - Confirm the repository contains no symlinks or executable files; this is required because the same repository is also an Omarchy theme source.
+- Run the desktop transaction-helper tests and verify local-path/type/count/byte limits, collision-free copy and move, partial receipts, private atomic journals, child timeout/parent-death containment, launcher demotion, changed-destination rejection, and exact hash-proven Undo.
+- Run the Inspector, Window Ledger, and workspace-model suites through `tests/static.sh`; confirm `Experience.qml` owns exactly one Inspector and routes desktop, app, and window actions back to their live owner for re-resolution.
 - Run `npm --prefix shortlink ci`, `npm --prefix shortlink test`, remove the generated `shortlink/node_modules`, and then run the repository static gate. Confirm the Worker typecheck, routes, methods, redirects, bootstrap behavior, and plugin/theme source-safety checks all pass.
 - Compare the live `https://bureau.regionallyfamous.com/install` bytes with `shortlink/src/install.sh`, run `bash -n` against the live response, and verify the landing page, canonical source/release redirects, 404/405 behavior, HTTPS certificate, and response security headers.
 - Review every bundled upstream diff and refresh `THIRD_PARTY_NOTICES.md` when importing updates.
@@ -26,13 +28,17 @@
 
 - Verify the desktop service with an empty folder, many files, a long filename, a trusted launcher, an untrusted launcher, Trash, drag/drop, and two displays.
 - Verify one click selects, a second click does not accidentally open, double-click and Return open, and clicking empty ground clears selection.
+- Verify Control/Shift multi-selection, group dragging, exact route slips, folder and Trash destinations, invalid-target reasons, Escape cancellation, partial/error receipts, Control+Z, and Undo refusal after destination mutation or source collision.
+- Open the shared Inspector from a desktop object, dock app, and overview window. Verify stable Identity/Facts/Actions regions, visible disabled reasons, stale/missing targets, destructive confirmation, focus restoration, Escape, accessibility, and reduced motion.
 - Verify safe local photographs render as stable grayscale desktop thumbnails; selecting one changes only its enclosing rule and name rail, the source file remains byte-identical, and opening it shows the original color image. Verify unsupported and unsafe images use the authored one-bit picture fallback, which reverses with its name rail.
 - Verify untrusted launchers default to Cancel, and both Enter and Escape cancel without executing the launcher.
 - Verify the clean first-run dock seeds Files, Chromium, and Foot; all three use their One-Bit Bureau associations, painted-alpha crops, 48px boxes, and a shared optical center without clipping or crowding.
 - Verify dock launch, focus-existing-window, pin/unpin, reorder, auto-hide, previews, icon management, and the opt-in app-switcher binding in floating and tiled layouts.
+- Open two windows under one app identity across two workspaces. Verify 1/2/3+ marks, active and workspace-split text, most-recent-window focus, the titled Window Ledger, explicit Activate/Close, stale-address fallback, and no accidental duplicate launch.
 - Verify automatic app-icon associations for Files, terminal, browser, and one communication app. Add an unmatched app and confirm its automatic native fallback is grayscale in the dock, drag ghost, preview fallback, app switcher, and icon manager; then confirm explicit Native mode restores the original color and custom files plus manual pack choices render as supplied, all without network access.
 - Verify dock and desktop menus preserve their row order while unavailable commands remain visible and dimmed.
 - Verify overview hot corner, summon/hide IPC, keyboard navigation, search, preview, close-window action, workspace changes, and two displays.
+- Verify the overview workspace rail's stable ordinary-workspace ordering, occupancy, Control+Left/Right selection, Control+Enter scope, Control+Shift+Enter move, context parity, stale destination error, and that the overview remains open while the card re-homes.
 - Verify overview selection inverts only the ownership rail, the preview body remains stable, and the active window retains its separate double-rule marker.
 - Verify active-app title truncation, an iconless app, an application with a changing title, vertical bar layout, and settings persistence.
 - Verify stock Quick Look, launcher, clipboard, emoji menu, notifications, OSD, lock screen, and theme switching still work.
@@ -47,6 +53,7 @@
 - Capture a clean One-Bit Bureau desktop at 16:9 with desktop objects and the launch shelf visible.
 - Capture 16:10 and 21:9 desktops to inspect the protected icon lane, central application field, perimeter illustration crop, desktop icon bounds, and shelf placement. At least one non-16:9 capture must include a selected real photograph.
 - Capture the overview, dock menu, icon manager in keyboard-focus and manual-association states, dock preview, app switcher, launcher, menu selected/disabled state, selected real photograph, unsupported-image fallback, notification, terminal ANSI palette, lock screen, and unlock picker.
+- Capture the Inspector for a desktop object, dock application, and window; a two-item route slip; successful receipt and Undo; a rejected route; a cross-workspace Window Ledger; and the workspace board before and after a move.
 - Record a short clip covering dock reveal/hide, app switching, and overview open/close.
 - Keep the wallpaper-only `preview.png` honest as a theme-picker wallpaper preview; publish real runtime captures separately and label them as runtime evidence.
 - Record the public repository URL, release commit, Omarchy build, viewport geometry/scaling, lifecycle commands, and artifact hashes alongside the captures. A manually staged checkout, SVG proof, wallpaper crop, or `preview.png` is not lifecycle or runtime evidence.

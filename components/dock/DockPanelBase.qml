@@ -6,6 +6,7 @@ import Quickshell.Wayland
 import qs.Commons
 import "DockModel.js" as DockModel
 import "IconResolver.js" as IconResolver
+import "WindowLedger.js" as WindowLedger
 
 Item {
   id: root
@@ -13,6 +14,7 @@ Item {
   property var shell: null
   property var pluginRegistry: null
   property var manifest: null
+  property var service: null
   property string home: Quickshell.env("HOME")
   property string iconDir: home + "/.config/omarchy/one-bit-bureau/icons"
   property string iconMapPath: home + "/.config/omarchy/one-bit-bureau/dock-icons.json"
@@ -36,6 +38,18 @@ Item {
   // changes; powers the Alt+Tab switcher ordering (an app switcher cycles by
   // recency, not by the dock's pinned-first visual order).
   property var mruIds: []
+  // Canonical per-app window truth for every dock surface. Each entry contains
+  // ordered window records plus count, active, and workspace split metadata.
+  // DockPanel exposes this map read-only for Experience/Inspector integration.
+  property var windowLedger: ({})
+  property var windowMruByApp: ({})
+  property int windowStateRevision: 0
+  property bool windowListOpen: false
+  property point lastMenuPosition: Qt.point(0, 0)
+
+  // Inspector integration stays narrow: the dock owns app/window truth and
+  // asks its host to open the shared Inspector with a normalized context.
+  signal inspectorRequested(var context, var invokingScreen, point invokingPosition)
   // Repeater model: stable id strings. Replaced only when the id set changes
   // (apps opened/closed); reorders and pin/running toggles never touch it, so
   // no delegate is torn down by dragging or state changes.
@@ -72,7 +86,7 @@ Item {
   property int peekPx: 0
   // Hide is suppressed while any transient UI is active so the dock does not
   // vanish under a menu, preview, picker or drag.
-  property bool hideSuppressed: root.menuOpen || root.pickerOpen || root.previewVisible || root.floatingId !== "" || !!(root.altTab && root.altTab.active)
+  property bool hideSuppressed: root.menuOpen || root.pickerOpen || root.previewVisible || root.windowListOpen || root.floatingId !== "" || !!(root.altTab && root.altTab.active)
   property bool edgeHovered: false
   // Combined engagement — dockHovered OR edgeHovered. While true, hide is
   // suppressed and must not be scheduled. Extracted to avoid the fragile 5px
@@ -93,6 +107,10 @@ Item {
   property string focusHelperPath: manifest && manifest.__sourceDir
     ? String(manifest.__sourceDir) + "/components/dock/scripts/focus-window"
     : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/dock/scripts/focus-window"
+  property string focusRequestAppId: ""
+  property var focusFallbackAddresses: []
+  property var focusAttemptedAddresses: []
+  property var queuedFocusRequest: null
   property string stateHelperPath: manifest && manifest.__sourceDir
     ? String(manifest.__sourceDir) + "/components/dock/scripts/one-bit-bureau-state"
     : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/dock/scripts/one-bit-bureau-state"
@@ -193,10 +211,17 @@ Item {
     function getMenuOpen(): bool { return dockMenu.opened }
     function getMenuCurrentIndex(): int { return dockMenu.currentIndex }
     function getMenuCurrentAction(): string { return dockMenu.currentAction() }
+    function getWindowListOpen(): bool { return windowListPanel.opened }
+    function getWindowListCount(): int { return windowListPanel.windowList.length }
+    function getWindowCount(appId: string): int {
+      return root.windowLedgerFor(String(appId || "").replace(/\.desktop$/, "")).count
+    }
     function getAutoHidden(): bool { return root.autoHidden }
     function getEdgeHovered(): bool { return root.edgeHovered }
     function getAltTabActive(): bool { return altTab.active }
     function openMenuForApp(appId: string): bool { return root.openMenuForApp(appId) }
+    function openWindowListForApp(appId: string): bool { return root.openWindowListForApp(appId) }
+    function closeWindowList(): bool { windowListPanel.dismiss(); return true }
     function openMenuFirst(): bool {
       return root.dockItems.length > 0 ? root.openMenuForApp(String(root.dockItems[0])) : false
     }
@@ -331,6 +356,127 @@ Item {
     return output
   }
 
+  function currentWorkspaceDescriptor() {
+    var workspace = Hyprland.focusedWorkspace
+    return workspace ? {
+      id: Number(workspace.id || 0),
+      name: String(workspace.name || "")
+    } : null
+  }
+
+  function activeWindowAddress() {
+    var active = Hyprland.activeToplevel
+    return WindowLedger.normalizeAddress(active && active.address)
+  }
+
+  function emptyWindowLedger() {
+    return {
+      count: 0,
+      countLabel: "0",
+      active: false,
+      currentWorkspaceCount: 0,
+      otherWorkspaceCount: 0,
+      windows: []
+    }
+  }
+
+  function windowLedgerFor(id) {
+    // Make bindings that call this function depend on ledger replacement.
+    var ledger = root.windowLedger
+    return ledger && ledger[id] ? ledger[id] : root.emptyWindowLedger()
+  }
+
+  function rawWindowsForApp(id) {
+    var output = []
+    var wanted = String(id || "")
+    try {
+      var values = Hyprland.toplevels.values
+      for (var i = 0; i < values.length; i++) {
+        var candidate = values[i]
+        if (root.dockIdForHyprlandWindow(candidate) !== wanted) continue
+        var ipc = candidate.lastIpcObject || {}
+        var workspace = candidate.workspace || ipc.workspace || null
+        var position = root.array2(ipc.at)
+        var size = root.array2(ipc.size)
+        var address = WindowLedger.normalizeAddress(candidate.address)
+        output.push({
+          address: address,
+          title: String(candidate.title || ""),
+          active: address !== "" && address === root.activeWindowAddress(),
+          mapped: ipc.mapped !== false,
+          minimized: !!ipc.minimized,
+          pinned: ipc.pinned === true,
+          workspaceId: workspace ? Number(workspace.id || 0) : 0,
+          workspaceName: workspace ? String(workspace.name || "") : "",
+          x: position[0] || 0,
+          y: position[1] || 0,
+          w: size[0] || 0,
+          h: size[1] || 0,
+          waylandToplevel: candidate.wayland || null
+        })
+      }
+    } catch (error) {}
+    return output
+  }
+
+  function rebuildWindowLedger() {
+    var grouped = {}
+    try {
+      var values = Hyprland.toplevels.values
+      for (var i = 0; i < values.length; i++) {
+        var candidate = values[i]
+        var id = root.dockIdForHyprlandWindow(candidate)
+        if (!id) continue
+        if (!grouped[id]) grouped[id] = []
+        var ipc = candidate.lastIpcObject || {}
+        var workspace = candidate.workspace || ipc.workspace || null
+        var position = root.array2(ipc.at)
+        var size = root.array2(ipc.size)
+        var address = WindowLedger.normalizeAddress(candidate.address)
+        grouped[id].push({
+          address: address,
+          title: String(candidate.title || ""),
+          active: address !== "" && address === root.activeWindowAddress(),
+          mapped: ipc.mapped !== false,
+          minimized: !!ipc.minimized,
+          pinned: ipc.pinned === true,
+          workspaceId: workspace ? Number(workspace.id || 0) : 0,
+          workspaceName: workspace ? String(workspace.name || "") : "",
+          x: position[0] || 0,
+          y: position[1] || 0,
+          w: size[0] || 0,
+          h: size[1] || 0,
+          waylandToplevel: candidate.wayland || null
+        })
+      }
+    } catch (error) {}
+
+    var currentWorkspace = root.currentWorkspaceDescriptor()
+    var activeAddress = root.activeWindowAddress()
+    var next = {}
+    for (var appId in grouped) {
+      var ordered = WindowLedger.orderWindows(
+        grouped[appId], root.windowMruByApp[appId] || [], currentWorkspace, activeAddress)
+      for (var j = 0; j < ordered.length; j++) {
+        ordered[j].onCurrentWorkspace = WindowLedger.sameWorkspace(ordered[j], currentWorkspace)
+        ordered[j].workspaceLabel = WindowLedger.workspaceLabel(ordered[j])
+      }
+      next[appId] = WindowLedger.summarizeWindows(ordered, currentWorkspace, activeAddress)
+    }
+    root.windowLedger = next
+    root.windowStateRevision++
+
+    if (root.previewAppId) {
+      var previewLedger = root.windowLedgerFor(root.previewAppId)
+      if (!previewLedger.count) root.hidePreview()
+      else root.previewWindows = previewLedger.windows
+    }
+    if (windowListPanel.opened) {
+      var listLedger = root.windowLedgerFor(windowListPanel.appId)
+      windowListPanel.windowList = listLedger.windows
+    }
+  }
+
   function desktopIdForWindow(window) {
     var raw = String(window.appId || window.desktopId || window.className || window.initialClass || "").replace(/\.desktop$/, "")
     return DockModel.resolveDesktopId(raw, root.appEntries)
@@ -382,24 +528,64 @@ Item {
     return fallback
   }
 
-  function focusWindowAddress(address) {
-    if (!address) return false
+  function startNextFocusAttempt() {
+    if (!root.focusFallbackAddresses.length) return false
+    var addresses = root.focusFallbackAddresses.slice()
+    var normalized = WindowLedger.normalizeAddress(addresses.shift())
+    root.focusFallbackAddresses = addresses
+    if (!normalized) return root.startNextFocusAttempt()
+
     // This Omarchy build uses Hyprland's Lua dispatcher syntax. The older
     // `workspace ...` / `focuswindow ...` strings are parsed as Lua and fail.
     // Focusing by address also switches to the window's workspace without
     // going through Toplevel.activate(), which can warp the pointer.
-    var normalized = String(address)
-    if (normalized.indexOf("0x") !== 0) normalized = "0x" + normalized
-    if (!/^0x[0-9a-fA-F]+$/.test(normalized) || focusWindowProcess.running)
-      return false
+    var attempted = root.focusAttemptedAddresses.slice()
+    attempted.push(normalized)
+    root.focusAttemptedAddresses = attempted
     focusWindowProcess.command = ["bash", root.focusHelperPath, normalized]
     focusWindowProcess.running = true
     return true
   }
 
+  function focusWindowAddresses(appId, addresses) {
+    var clean = []
+    for (var i = 0; i < (addresses || []).length; i++) {
+      var address = WindowLedger.normalizeAddress(addresses[i])
+      if (address && clean.indexOf(address) === -1) clean.push(address)
+    }
+    if (!clean.length) return false
+    var request = { appId: String(appId || ""), addresses: clean }
+    if (focusWindowProcess.running || root.focusFallbackAddresses.length) {
+      // Last request wins while the helper is restoring cursor state. This
+      // remains a focus request; it is never converted into an app launch.
+      root.queuedFocusRequest = request
+      return true
+    }
+    root.focusRequestAppId = request.appId
+    root.focusFallbackAddresses = request.addresses
+    root.focusAttemptedAddresses = []
+    return root.startNextFocusAttempt()
+  }
+
+  function focusWindowAddress(address) {
+    return root.focusWindowAddresses("", [address])
+  }
+
   function focusExistingWindow(hyprWindow) {
     if (!hyprWindow || !hyprWindow.address) return false
     return root.focusWindowAddress(hyprWindow.address)
+  }
+
+  function focusAppWindows(appId) {
+    var ledger = root.windowLedgerFor(appId)
+    if (!ledger.count) {
+      // Hyprland and the foreign-toplevel protocol may update on adjacent
+      // frames. Re-read once, but do not launch merely because resolution is
+      // temporarily stale.
+      root.rebuildWindowLedger()
+      ledger = root.windowLedgerFor(appId)
+    }
+    return root.focusWindowAddresses(appId, WindowLedger.focusAddresses(ledger.windows))
   }
 
   onShellChanged: if (root.shell) root.refreshApps()
@@ -420,6 +606,7 @@ Item {
 
   function refreshItems() {
     root.runningIds = normalizeRunning()
+    root.rebuildWindowLedger()
     // The session order is authoritative: it preserves drag rearrangements of
     // any app (pinned or running) while dropping apps that closed and
     // appending newly opened ones. Pinned apps stay pinned; running apps are
@@ -583,14 +770,12 @@ Item {
   function handleClick(item) {
     if (!item) return
     if (item.running) {
-      try {
-        // Never fall back to Toplevel.activate() here: it can warp the cursor.
-        // Existing windows must be focused through Hyprland's IPC path.
-        var hyprWindow = root.hyprlandWindowForItem(item)
-        if (!root.focusExistingWindow(hyprWindow))
-          console.warn("regionallyfamous.one-bit-bureau.dock: could not resolve running window for " + item.id)
-        return
-      } catch (error) {}
+      // Never fall back to launch for a known-running app. The compositor and
+      // foreign-toplevel feeds can differ for a frame; a duplicate process is
+      // worse than a focus request that safely does nothing and can be retried.
+      if (!root.focusAppWindows(item.id))
+        console.warn("regionallyfamous.one-bit-bureau.dock: running window state is not focusable yet for " + item.id)
+      return
     }
     var entry = DockModel.entryFor(item.id, root.appEntries)
     if (root.shell && root.shell.appLibrary && typeof root.shell.appLibrary.launch === "function")
@@ -625,6 +810,11 @@ Item {
     if (i >= 0) list.splice(i, 1)
     list.unshift(id)
     root.mruIds = list
+  }
+
+  function touchWindowMru(id, address) {
+    if (!id || !address) return
+    root.windowMruByApp = WindowLedger.touchMru(root.windowMruByApp, id, address, 32)
   }
 
   function altTabAppData(id) {
@@ -693,11 +883,10 @@ Item {
   }
 
   function activateApp(id, name) {
-    try {
-      // Same no-warp focus path as clicking the dock: never Toplevel.activate().
-      var hyprWindow = root.hyprlandWindowForItem({ id: id })
-      if (hyprWindow && root.focusExistingWindow(hyprWindow)) return
-    } catch (error) {
+    if (root.runningIds.indexOf(id) !== -1) {
+      if (!root.focusAppWindows(id))
+        console.warn("regionallyfamous.one-bit-bureau.dock: app switch target is not focusable yet for " + id)
+      return
     }
     var entry = DockModel.entryFor(id, root.appEntries)
     var label = name || (entry && entry.name) || id
@@ -707,6 +896,21 @@ Item {
 
   Process {
     id: focusWindowProcess
+    onExited: function(exitCode, exitStatus) {
+      if (exitCode !== 0 && root.focusFallbackAddresses.length) {
+        Qt.callLater(root.startNextFocusAttempt)
+        return
+      }
+      if (exitCode !== 0 && root.focusRequestAppId)
+        console.warn("regionallyfamous.one-bit-bureau.dock: all focus candidates became stale for " + root.focusRequestAppId)
+      root.focusRequestAppId = ""
+      root.focusFallbackAddresses = []
+      root.focusAttemptedAddresses = []
+      var queued = root.queuedFocusRequest
+      root.queuedFocusRequest = null
+      if (queued)
+        Qt.callLater(function() { root.focusWindowAddresses(queued.appId, queued.addresses) })
+    }
   }
 
   function savePinned() {
@@ -720,7 +924,9 @@ Item {
   function openMenu(item, position, returnFocusItem) {
     root.tooltipItem = null
     root.hidePreview()
+    if (windowListPanel.opened) windowListPanel.dismiss()
     root.menuOpen = true
+    root.lastMenuPosition = Qt.point(position.x, position.y)
     dockMenu.itemData = item
     dockMenu.returnFocusItem = returnFocusItem || null
     dockMenu.requestedPosition = Qt.point(position.x, position.y - dockMenu.height - 12)
@@ -742,6 +948,141 @@ Item {
     return true
   }
 
+  function inspectorContextForApp(appId) {
+    var id = String(appId || "").replace(/\.desktop$/, "").slice(0, 256)
+    var entry = DockModel.entryFor(id, root.appEntries) || ({})
+    var ledger = root.windowLedgerFor(id)
+    var name = entry.name || entry.displayName || id || "Application"
+    var pinned = root.pinnedIds.indexOf(id) !== -1
+    var running = root.runningIds.indexOf(id) !== -1
+    return {
+      kind: "app",
+      id: id,
+      name: name,
+      subtitle: running
+        ? (ledger.count === 1 ? "1 window" : ledger.count + " windows")
+        : "Not running",
+      iconSource: root.iconSourceFor(id),
+      iconGrayscale: root.iconUsesAutomaticNativeFallback(id),
+      facts: [
+        { id: "pinned", label: "Dock", value: pinned ? "Pinned" : "Not pinned" },
+        { id: "running", label: "State", value: running ? (ledger.active ? "Active" : "Running") : "Not running" },
+        { id: "windows", label: "Windows", value: String(ledger.count) },
+        { id: "currentWorkspace", label: "This workspace", value: String(ledger.currentWorkspaceCount) },
+        { id: "otherWorkspaces", label: "Other workspaces", value: String(ledger.otherWorkspaceCount) }
+      ],
+      actions: [
+        { id: "activate", label: running ? "Activate" : "Open", enabled: true },
+        { id: "new-window", label: "New Window", enabled: true },
+        {
+          id: "show-windows",
+          label: "Show Windows",
+          enabled: ledger.count > 0,
+          reason: ledger.count > 0 ? "" : "No windows are open."
+        },
+        {
+          id: "close",
+          label: "Close Recent Window",
+          enabled: ledger.count > 0,
+          reason: ledger.count > 0 ? "" : "No windows are open.",
+          destructive: true
+        },
+        { id: "toggle-pin", label: pinned ? "Unpin from Dock" : "Pin to Dock", enabled: true },
+        { id: "set-icon", label: "Change Icon", enabled: true }
+      ]
+    }
+  }
+
+  function requestInspector(item) {
+    if (!item || !item.id) return false
+    root.menuOpen = false
+    dockMenu.opened = false
+    root.hidePreview()
+    root.inspectorRequested(
+      root.inspectorContextForApp(item.id),
+      root.dockScreen,
+      root.lastMenuPosition)
+    return true
+  }
+
+  function contextAppId(context) {
+    var value = context || {}
+    var raw = String(value.appId || value.desktopId || value.id || "").replace(/\.desktop$/, "").slice(0, 256)
+    if (!raw) return ""
+    var resolved = DockModel.resolveDesktopId(raw, root.appEntries)
+    if (root.delegateById[resolved] || root.runningIds.indexOf(resolved) !== -1 || root.pinnedIds.indexOf(resolved) !== -1)
+      return resolved
+    for (var i = 0; i < root.appEntries.length; i++) {
+      var entry = root.appEntries[i] || {}
+      var id = String(entry.id || entry.desktopId || "").replace(/\.desktop$/, "")
+      if (id.toLowerCase() === raw.toLowerCase()) return id
+    }
+    return resolved || raw
+  }
+
+  // Called by the shared Inspector host after actionRequested. App identity is
+  // always re-resolved here so a stale context cannot act on an old delegate.
+  function performInspectorAction(actionId, context) {
+    var action = String(actionId || "")
+    var id = root.contextAppId(context)
+    if (!id) return false
+    var item = root.inspectorContextForApp(id)
+    if (action === "open" || action === "activate" || action === "dock.activate") {
+      root.handleClick({ id: id, name: item.name, running: item.running })
+      return true
+    }
+    if (action === "new-window" || action === "newWindow" || action === "dock.new-window") {
+      root.handleClick({ id: id, name: item.name, running: false })
+      return true
+    }
+    if (action === "show-windows" || action === "showWindows" || action === "dock.show-windows")
+      return root.openWindowListForApp(id)
+    if (action === "close" || action === "close-window" || action === "dock.close-window")
+      return root.closeWindow(id)
+    if (action === "toggle-pin" || action === "togglePin" || action === "dock.toggle-pin") {
+      root.pinnedIds = DockModel.togglePinned(root.pinnedIds, id)
+      root.refreshItems()
+      root.savePinned()
+      return true
+    }
+    if (action === "set-icon" || action === "setIcon" || action === "dock.set-icon") {
+      root.openIconPicker(id, item.name, false)
+      return true
+    }
+    return false
+  }
+
+  function openWindowList(item, position, returnFocusItem) {
+    if (!item || !item.id) return false
+    root.rebuildWindowLedger()
+    var ledger = root.windowLedgerFor(item.id)
+    if (!ledger.count) return false
+    root.hidePreview()
+    root.menuOpen = false
+    dockMenu.opened = false
+    root.windowListOpen = true
+    windowListPanel.appId = item.id
+    windowListPanel.appName = item.name || root.appNameFor(item.id)
+    windowListPanel.windowList = ledger.windows
+    windowListPanel.returnFocusItem = returnFocusItem || null
+    windowListPanel.requestedPosition = position || Qt.point(dockWindow.width / 2, dockWindow.height - root.dockHeight)
+    windowListPanel.opened = true
+    return true
+  }
+
+  function openWindowListForApp(appId) {
+    var id = String(appId || "").replace(/\.desktop$/, "").slice(0, 256)
+    var delegate = root.delegateById[id]
+    var focusItem = delegate && delegate.focusTarget ? delegate.focusTarget : null
+    var position = focusItem
+      ? focusItem.mapToItem(null, focusItem.width / 2, 0)
+      : Qt.point(dockWindow.width / 2, dockWindow.height - root.dockHeight)
+    root.enabled = true
+    root.autoHidden = false
+    if (focusItem) focusItem.forceActiveFocus()
+    return root.openWindowList({ id: id, name: root.appNameFor(id) }, position, focusItem)
+  }
+
   function menuAction(action, item) {
     if (action === "toggleAutoHide") {
       root.autoHide = !root.autoHide
@@ -752,6 +1093,8 @@ Item {
     if (action === "togglePin") root.pinnedIds = DockModel.togglePinned(root.pinnedIds, item.id)
     else if (action === "newWindow") handleClick({ id: item.id, name: item.name, running: false })
     else if (action === "close") closeWindow(item.id)
+    else if (action === "inspect") root.requestInspector(item)
+    else if (action === "showWindows") root.openWindowList(item, root.lastMenuPosition, dockMenu.returnFocusItem)
     else if (action === "setIcon") root.openIconPicker(item.id, item.name, false)
     else if (action === "manageIcons") root.openIconManager()
     if (action === "togglePin") { refreshItems(); savePinned() }
@@ -780,15 +1123,42 @@ Item {
     return true
   }
 
+  function closeWindowData(data) {
+    if (!data) return false
+    var address = WindowLedger.normalizeAddress(data.address)
+    try {
+      var values = Hyprland.toplevels.values
+      for (var i = 0; i < values.length; i++) {
+        var candidate = values[i]
+        if (WindowLedger.normalizeAddress(candidate.address) !== address) continue
+        var wayland = candidate.wayland
+        if (wayland && typeof wayland.close === "function") {
+          wayland.close()
+          return true
+        }
+      }
+    } catch (error) {}
+    // A list row may still hold the valid foreign-toplevel object while the
+    // Hyprland wrapper is between collection updates.
+    if (data.waylandToplevel && typeof data.waylandToplevel.close === "function") {
+      data.waylandToplevel.close()
+      return true
+    }
+    return false
+  }
+
   function closeWindow(id) {
+    var ledger = root.windowLedgerFor(id)
+    if (ledger.windows.length && root.closeWindowData(ledger.windows[0])) return true
     try {
       var values = ToplevelManager.toplevels.values
       for (var i = values.length - 1; i >= 0; i--) {
         var window = values[i]
         var windowId = root.desktopIdForWindow(window)
-        if (windowId === id && typeof window.close === "function") { window.close(); return }
+        if (windowId === id && typeof window.close === "function") { window.close(); return true }
       }
     } catch (error) {}
+    return false
   }
 
   // Drag controller ---------------------------------------------------------
@@ -916,6 +1286,20 @@ Item {
     }
   }
 
+  function tooltipTextFor(item) {
+    if (!item) return ""
+    var name = item.name || item.id
+    var count = Number(item.windowCount || 0)
+    if (!count) return name
+    var state = count + (count === 1 ? " window" : " windows")
+    var here = Number(item.currentWorkspaceWindowCount || 0)
+    var elsewhere = Number(item.otherWorkspaceWindowCount || 0)
+    if (here && elsewhere) state += " · " + here + " here, " + elsewhere + " elsewhere"
+    else if (elsewhere) state += " · other workspace"
+    else state += " · current workspace"
+    return name + " · " + state
+  }
+
   // Preview controller ------------------------------------------------------
   function onItemHoverChanged(item, isVisible, centerX) {
     if (!item || item.separator) return
@@ -957,40 +1341,12 @@ Item {
   }
 
   function gatherWindowsForApp(id) {
-    var output = []
-    try {
-      var values = Hyprland.toplevels.values
-      for (var i = 0; i < values.length; i++) {
-        var candidate = values[i]
-        var ids = []
-        if (candidate.wayland && candidate.wayland.appId) ids.push(String(candidate.wayland.appId).toLowerCase())
-        var ipc = candidate.lastIpcObject || {}
-        if (ipc.appId) ids.push(String(ipc.appId).toLowerCase())
-        if (ipc["class"]) ids.push(String(ipc["class"]).toLowerCase())
-        if (ipc.initialClass) ids.push(String(ipc.initialClass).toLowerCase())
-        var match = false
-        for (var j = 0; j < ids.length; j++) {
-          if (ids[j] === String(id).toLowerCase()) { match = true; break }
-          if (root.desktopIdForWindow({ appId: ids[j], title: candidate.title }) === id) { match = true; break }
-        }
-        if (!match) continue
-        var pos = root.array2(ipc.at)
-        var size = root.array2(ipc.size)
-        output.push({
-          address: String(candidate.address || ""),
-          title: String(candidate.title || ""),
-          active: !!(ipc.focused || candidate.focused),
-          mapped: !!ipc.mapped,
-          minimized: !!ipc.minimized,
-          workspaceId: ipc.workspace ? ipc.workspace.id : -1,
-          x: pos[0] || 0,
-          y: pos[1] || 0,
-          w: size[0] || 0,
-          h: size[1] || 0
-        })
-      }
-    } catch (error) {}
-    return output
+    var ledger = root.windowLedgerFor(id)
+    if (!ledger.count) {
+      root.rebuildWindowLedger()
+      ledger = root.windowLedgerFor(id)
+    }
+    return ledger.windows.slice()
   }
 
   // Window preview cards ----------------------------------------------------
@@ -1262,10 +1618,31 @@ Item {
   Connections {
     target: Hyprland
     function onActiveToplevelChanged() {
-      // Keep the Alt+Tab MRU list in sync with focus changes. The switcher
-      // only tracks apps the dock knows about.
-      var mruId = root.dockIdForHyprlandWindow(Hyprland.activeToplevel)
-      if (mruId && root.runningIds.indexOf(mruId) !== -1) root.touchMru(mruId)
+      var active = Hyprland.activeToplevel
+      var mruId = root.dockIdForHyprlandWindow(active)
+      if (mruId) {
+        root.touchMru(mruId)
+        root.touchWindowMru(mruId, active && active.address)
+      }
+      root.rebuildWindowLedger()
+    }
+    function onFocusedWorkspaceChanged() { root.rebuildWindowLedger() }
+  }
+
+  Connections {
+    target: Hyprland.toplevels
+    function onValuesChanged() { root.refreshItems() }
+  }
+
+  Instantiator {
+    model: Hyprland.toplevels
+    delegate: Connections {
+      required property var modelData
+      target: modelData
+      function onWorkspaceChanged() { root.rebuildWindowLedger() }
+      function onLastIpcObjectChanged() { root.rebuildWindowLedger() }
+      function onTitleChanged() { root.rebuildWindowLedger() }
+      function onWaylandHandleChanged() { root.rebuildWindowLedger() }
     }
   }
 
@@ -1273,13 +1650,6 @@ Item {
     target: ToplevelManager.toplevels
     function onValuesChanged() {
       root.refreshItems()
-      // The preview mirrors the live window set without touching the dock
-      // model: cards appear/disappear as windows open/close.
-      if (root.previewVisible && root.previewAppId) {
-        var wins = root.gatherWindowsForApp(root.previewAppId)
-        if (!wins.length) root.hidePreview()
-        else root.previewWindows = wins
-      }
     }
   }
   Connections {
@@ -1306,6 +1676,7 @@ Item {
     renameProcess.running = false
     settingsRenameProcess.running = false
     layerRuleProcess.running = false
+    focusWindowProcess.running = false
   }
 
   Process {
@@ -1373,6 +1744,7 @@ Item {
             height: root.iconSize + 16
             x: 0
             property bool animating: false
+            readonly property var ledgerData: root.windowLedgerFor(modelData)
 
             // Live metadata mirrored from observable root state so a pin or
             // running toggle updates the delegate in place instead of the
@@ -1382,7 +1754,12 @@ Item {
               name: root.appNameFor(modelData),
               icon: root.appIconNameFor(modelData),
               pinned: root.pinnedIds.indexOf(modelData) !== -1,
-              running: root.runningIds.indexOf(modelData) !== -1
+              running: root.runningIds.indexOf(modelData) !== -1,
+              active: wrapper.ledgerData.active,
+              windowCount: wrapper.ledgerData.count,
+              windowCountLabel: wrapper.ledgerData.countLabel,
+              currentWorkspaceWindowCount: wrapper.ledgerData.currentWorkspaceCount,
+              otherWorkspaceWindowCount: wrapper.ledgerData.otherWorkspaceCount
             })
 
             property alias targetScale: dockItem.targetScale
@@ -1422,6 +1799,7 @@ Item {
               grayscaleIcon: root.iconUsesAutomaticNativeFallback(modelData)
               onItemLeftClicked: function(clickedItem) { root.handleClick(clickedItem) }
               onItemRightClicked: function(clickedItem, position) { root.openMenu(clickedItem, position, dockItem) }
+              onWindowListRequested: function(clickedItem, position) { root.openWindowList(clickedItem, position, dockItem) }
               onDragMoved: function(draggedItem, position) {
                 root.onDragMoved(draggedItem,
                   dockItem.mapToItem(null, position.x, position.y),
@@ -1498,7 +1876,7 @@ Item {
       Text {
         id: tooltipText
         anchors.centerIn: parent
-        text: root.tooltipItem ? (root.tooltipItem.name || root.tooltipItem.id) : ""
+        text: root.tooltipTextFor(root.tooltipItem)
         color: Color.tooltip.text
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
@@ -1565,6 +1943,14 @@ Item {
     autoHideEnabled: root.autoHide
     onActionTriggered: function(actionName, selectedItem) { root.menuAction(actionName, selectedItem) }
     onOpenedChanged: if (!opened) root.menuOpen = false
+  }
+
+  WindowListPanel {
+    id: windowListPanel
+    screen: root.dockScreen
+    onActivated: function(windowData) { root.focusWindowAddresses(windowListPanel.appId, [windowData.address]) }
+    onCloseRequested: function(windowData) { root.closeWindowData(windowData) }
+    onOpenedChanged: root.windowListOpen = opened
   }
 
   IconPickerPanel {

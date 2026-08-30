@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.regionallyfamous.one-bit-bureau",
   "name": "One-Bit Bureau",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "author": "RegionallyFamous",
   "license": "MIT",
   "description": "The shell half of a one-install Omarchy experience with desktop files, a dock, window overview, active-application rail, and safe object-first interaction.",

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -euo pipefail
+
+address=${1:-}
+workspace_id=${2:-}
+
+if [[ ! $address =~ ^0x[0-9a-fA-F]+$ ]]; then
+  echo "invalid window address" >&2
+  exit 64
+fi
+
+if [[ ! $workspace_id =~ ^[1-9][0-9]{0,2}$ ]] || (( workspace_id > 999 )); then
+  echo "invalid ordinary workspace" >&2
+  exit 64
+fi
+
+if ! hyprctl -j clients | jq -e --arg address "${address,,}" \
+  'any(.[]; ((.address // "") | ascii_downcase) == $address)' >/dev/null; then
+  echo "window is no longer available" >&2
+  exit 66
+fi
+
+if ! hyprctl -j workspaces | jq -e --argjson workspace "$workspace_id" \
+  'any(.[]; .id == $workspace and .id > 0)' >/dev/null; then
+  echo "workspace is no longer available" >&2
+  exit 66
+fi
+
+hyprctl dispatch movetoworkspacesilent "$workspace_id,address:$address" >/dev/null

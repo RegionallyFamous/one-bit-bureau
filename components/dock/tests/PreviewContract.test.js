@@ -64,7 +64,7 @@ test("dock items expose an accessible press action and keyboard context menu", (
   assert.match(dockItem, /Accessible\.role:\s*Accessible\.Button/)
   assert.match(dockItem, /Accessible\.name:/)
   assert.match(dockItem, /Accessible\.focusable:\s*true/)
-  assert.match(dockItem, /Accessible\.selected:\s*!!root\.itemData\.running/)
+  assert.match(dockItem, /Accessible\.selected:\s*!!root\.itemData\.active/)
   assert.match(dockItem, /Accessible\.onPressAction:/)
   assert.match(dockItem, /Qt\.Key_Menu/)
   assert.match(dockItem, /Qt\.Key_F10[\s\S]*Qt\.ShiftModifier/)

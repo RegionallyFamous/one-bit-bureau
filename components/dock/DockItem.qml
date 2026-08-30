@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import "IconResolver.js" as IconResolver
+import "WindowLedger.js" as WindowLedger
 
 Item {
   id: root
@@ -23,14 +24,13 @@ Item {
   readonly property bool iconReady: icon.status === Image.Ready
   readonly property bool packNormalized: icon.packCrop !== null
   readonly property real iconCenterOffset: (icon.y + icon.height / 2) - (root.height / 2)
-  readonly property string accessibleState: root.itemData.running
-    ? (root.itemData.pinned ? "Pinned application, running" : "Application, running")
-    : (root.itemData.pinned ? "Pinned application" : "Application")
+  readonly property string accessibleState: WindowLedger.accessibleDescription(root.itemData)
 
   signal dragMoved(var itemData, point position)
   signal dragFinished(var itemData, point position)
   signal itemLeftClicked(var itemData)
   signal itemRightClicked(var itemData, point position)
+  signal windowListRequested(var itemData, point position)
   signal tooltipRequested(var itemData, bool visible, real centerX)
   signal hoverPointerChanged(var itemData, bool inside, real pointerX)
   signal keyboardFocusChanged(var itemData, bool focused)
@@ -43,7 +43,7 @@ Item {
   Accessible.name: root.itemData.name || root.itemData.id
   Accessible.description: root.accessibleState
   Accessible.focusable: true
-  Accessible.selected: !!root.itemData.running
+  Accessible.selected: !!root.itemData.active
   Accessible.onPressAction: root.itemLeftClicked(root.itemData)
 
   onActiveFocusChanged: root.keyboardFocusChanged(root.itemData, root.activeFocus)
@@ -56,6 +56,11 @@ Item {
     }
     if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
       root.itemRightClicked(root.itemData, root.mapToItem(null, root.width / 2, 0))
+      event.accepted = true
+      return
+    }
+    if (event.key === Qt.Key_Up && Number(root.itemData.windowCount || 0) > 0) {
+      root.windowListRequested(root.itemData, root.mapToItem(null, root.width / 2, 0))
       event.accepted = true
       return
     }
@@ -120,15 +125,51 @@ Item {
     }
   }
 
-  Rectangle {
+  // Window Ledger mark. The badge tells the exact 1 / 2 / 3+ count; its
+  // inversion identifies the active app. Filled and outlined pips distinguish
+  // windows here from windows on another workspace without adding color.
+  Row {
     anchors.horizontalCenter: parent.horizontalCenter
-    anchors.top: icon.bottom
-    anchors.topMargin: 2
-    width: 16
-    height: 2
-    radius: 0
-    color: Color.foreground
-    visible: !!root.itemData.running
+    anchors.bottom: parent.bottom
+    anchors.bottomMargin: 1
+    height: 10
+    spacing: 3
+    visible: Number(root.itemData.windowCount || 0) > 0
+
+    Rectangle {
+      width: Number(root.itemData.windowCount || 0) > 2 ? 18 : 14
+      height: 10
+      color: root.itemData.active ? Color.foreground : Color.background
+      border.color: Color.foreground
+      border.width: 1
+
+      Text {
+        anchors.centerIn: parent
+        text: root.itemData.windowCountLabel || String(root.itemData.windowCount || "")
+        color: root.itemData.active ? Color.background : Color.foreground
+        font.family: Style.font.family
+        font.pixelSize: 8
+        font.bold: true
+      }
+    }
+
+    Rectangle {
+      anchors.verticalCenter: parent.verticalCenter
+      width: 6
+      height: 6
+      color: Color.foreground
+      visible: Number(root.itemData.currentWorkspaceWindowCount || 0) > 0
+    }
+
+    Rectangle {
+      anchors.verticalCenter: parent.verticalCenter
+      width: 6
+      height: 6
+      color: Color.background
+      border.color: Color.foreground
+      border.width: 1
+      visible: Number(root.itemData.otherWorkspaceWindowCount || 0) > 0
+    }
   }
 
   MouseArea {

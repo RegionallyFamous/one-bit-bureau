@@ -2,7 +2,18 @@
 
 Research date: 2026-08-30
 
-Status: product direction and implementation roadmap. This document does not claim that the proposed behavior has shipped.
+Status: implemented in One-Bit Bureau 1.1.0, with the explicit cross-window Wayland limit recorded below.
+
+## Implementation result
+
+The roadmap shipped as one interaction system rather than four disconnected widgets:
+
+- The shared Inspector handles desktop objects, dock apps, and overview windows with one bounded Identity/Facts/Actions model.
+- Desktop routing supports bounded multi-selection, desktop folders, Trash, local external drops, named verbs, receipts, partial/error states, and Undo only for unchanged hash-proven regular-file moves.
+- The dock keeps one app identity and exposes truthful count, active, current-workspace, other-workspace, most-recent-window, and explicit window-list state.
+- The overview workspace board shows stable ordinary-workspace occupancy and moves the selected window through a validated address-and-workspace helper while remaining open.
+
+One proposed route did not pass the platform gate: an internal manual desktop-icon drag cannot reliably become a native drop inside a separate Wayland dock `PanelWindow`. One-Bit Bureau therefore supports native external file drops and its proven same-surface routes without claiming desktop-to-dock dragging.
 
 ## Research question
 
@@ -30,7 +41,7 @@ One-Bit Bureau already has the right foundation: real Desktop files, select-befo
 | KDE Plasma | Keep the common workflow obvious, make expert accelerators additive, provide keyboard and pointer parity, show meaningful drag previews, and communicate failures with a next action. [Simple by default](https://develop.kde.org/hig/simple_by_default/), [Powerful when needed](https://develop.kde.org/hig/powerful_when_needed/), [Accessibility](https://develop.kde.org/hig/accessibility/), [Status changes](https://develop.kde.org/hig/status_changes/) | Settings sprawl. Customization is not a substitute for choosing a coherent default behavior. |
 | Current macOS | Give selected objects a real Get Info view; predict drag results; support multi-item dragging, spring loading where justified, alternate non-drag commands, and Undo when reversal is reliable. [Get Info](https://support.apple.com/en-au/guide/mac-help/mchlp1774/mac), [Drag and drop](https://developer.apple.com/design/human-interface-guidelines/drag-and-drop), [Undo and redo](https://developer.apple.com/design/human-interface-guidelines/undo-and-redo) | A fake universal app menu, Dock magnification, Aqua behavior, and Apple icon silhouettes. Those would imitate a surface without reproducing the platform integration that makes it work. |
 
-## Current product gaps
+## Pre-1.1 product gaps
 
 The source audit found four concrete gaps rather than a need for another visual overhaul.
 
@@ -53,7 +64,7 @@ visible noun -> explicit verb -> visible result -> reliable recovery
 
 The original visual vocabulary should remain abstract rather than historical: stable bitmap plates for information, a compact `noun -> verb -> destination` equation for pending operations, a local completion plate for results, and restrained nested-corner marks for window counts. “Routing slip,” “receipt,” and “ledger” are internal design concepts, not an excuse for faux paper, tabs, stamps, clipboards, or filing-cabinet decoration.
 
-## Feasibility gate
+## Original feasibility gate
 
 | Territory | Verdict | Smallest credible release |
 |---|---|---|

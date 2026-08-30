@@ -14,7 +14,8 @@ PanelWindow {
   property Item returnFocusItem: null
   property int currentIndex: -1
   readonly property var menuEntries: [
-    { action: "setIcon", label: "Get Info", separator: false, enabled: true },
+    { action: "inspect", label: "Get Info", separator: false, enabled: true },
+    { action: "showWindows", label: "Show Windows" + (root.itemData && root.itemData.windowCount ? " (" + root.itemData.windowCount + ")" : ""), separator: false, enabled: !!(root.itemData && root.itemData.windowCount > 0) },
     { action: "", label: "", separator: true, enabled: false },
     { action: "togglePin", label: root.itemData && root.itemData.pinned ? "Unpin" : "Pin", separator: false, enabled: true },
     { action: "newWindow", label: "New Window", separator: false, enabled: true },
@@ -95,7 +96,7 @@ PanelWindow {
     id: menu
     x: Math.max(12, Math.min(root.requestedPosition.x, root.width - width - 12))
     y: Math.max(12, Math.min(root.requestedPosition.y, root.height - height - 12))
-    width: 180
+    width: 220
     height: menuColumn.implicitHeight + 16
     radius: 0
     color: Color.menu.background
