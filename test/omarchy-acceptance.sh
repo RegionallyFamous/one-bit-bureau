@@ -298,16 +298,16 @@ prepare_showcase_desktop() {
   move_directory_contents "$HOME/Desktop" "$SHOWCASE_DESKTOP_STASH"
   showcase_active=true
 
-  mkdir -p "$HOME/Desktop/Projects" "$HOME/Desktop/Reference"
-  printf 'Welcome to One-Bit Bureau.\n\nOpen the dock, inspect a file, or move a window to another desk.\n' >"$HOME/Desktop/Welcome.txt"
-  printf 'Current work\n' >"$HOME/Desktop/Projects/Current Work.txt"
-  printf 'Reference material\n' >"$HOME/Desktop/Reference/Desk Manual.txt"
-  cp -- "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/Desk Photo.png"
+  mkdir -p "$HOME/Desktop/Current Work" "$HOME/Desktop/Reference"
+  printf 'ONE-BIT BUREAU / FIELD GUIDE\n\nInspect a file. Open the dock. Move a window to another desk.\n' >"$HOME/Desktop/Field Guide.txt"
+  printf 'Release layouts and current drafts\n' >"$HOME/Desktop/Current Work/Release Desk.txt"
+  printf 'Bureau manuals and visual references\n' >"$HOME/Desktop/Reference/Bureau Manual.txt"
+  cp -- "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/Desk Study.png"
 
-  mkdir -p "$SHOWCASE_FILES/Projects" "$SHOWCASE_FILES/Reference" "$SHOWCASE_FILES/Archive"
-  printf 'One-Bit Bureau field notes\n' >"$SHOWCASE_FILES/Field Notes.txt"
-  printf '# Launch checklist\n\n- Review the desk\n- Open the Window Ledger\n- Move work to Desk 2\n' >"$SHOWCASE_FILES/Launch Checklist.md"
-  cp -- "$FIXTURE/docs/assets/proof-photo.png" "$SHOWCASE_FILES/Desk Photo.png"
+  mkdir -p "$SHOWCASE_FILES/Current Work" "$SHOWCASE_FILES/Reference" "$SHOWCASE_FILES/Archive"
+  printf 'ONE-BIT BUREAU / STUDIO NOTES\n\nA calm desk, accountable windows, and reversible work.\n' >"$SHOWCASE_FILES/Studio Notes.txt"
+  printf '# Release checklist\n\n- Review the desk composition\n- Account for every open window\n- Move the active draft to Desk 2\n' >"$SHOWCASE_FILES/Release Checklist.md"
+  cp -- "$FIXTURE/docs/assets/proof-photo.png" "$SHOWCASE_FILES/Desk Study.png"
 
   printf '%s\n' \
     '{"version":1,"pinned":["org.gnome.Nautilus","chromium","libreoffice-writer","obsidian","foot"],"order":["org.gnome.Nautilus","chromium","libreoffice-writer","obsidian","foot"]}' \
@@ -327,14 +327,16 @@ prepare_showcase_desktop() {
     --argjson secondY "$second_y" \
     --argjson thirdY "$third_y" \
     '{($screen): {
-      "Projects": {x: $rightX, y: $topY},
+      "Current Work": {x: $rightX, y: $topY},
       "Reference": {x: $rightX, y: $secondY},
-      "Welcome.txt": {x: $rightX, y: $thirdY},
-      "Desk Photo.png": {x: $leftX, y: $topY}
+      "Field Guide.txt": {x: $rightX, y: $thirdY},
+      "Desk Study.png": {x: $leftX, y: $topY}
     }}' >"$BUREAU_CONFIG/desktop-icon-positions.json"
 
   wait_until "the showcase desktop contains only its four curated objects" 20 \
-    bash -c "python3 '$PLUGIN_DIR/components/desktop/bin/desktop-index' | jq -e '[.items[] | select(.kind != \"trash\") | .id] | sort == [\"Desk Photo.png\",\"Projects\",\"Reference\",\"Welcome.txt\"]' >/dev/null"
+    bash -c "python3 '$PLUGIN_DIR/components/desktop/bin/desktop-index' | jq -e '[.items[] | select(.kind != \"trash\") | .id] | sort == [\"Current Work\",\"Desk Study.png\",\"Field Guide.txt\",\"Reference\"]' >/dev/null"
+  omarchy-shell regionallyfamous.one-bit-bureau.dock getDockItemIds \
+    >"$ARTIFACTS/one-bit-bureau-showcase-initial-dock-ids.json"
   wait_until "the showcase dock loads five curated application icons" 20 \
     bash -c "(( \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getItemCount) == 5 ))"
   wait_until "the showcase dock renders all five curated application icons" 20 \
@@ -959,17 +961,18 @@ wait_until "the lock preview closes" 10 layer_absent omarchy-lock-preview
 # identities, and controllable terminal windows. Keep that evidence, then
 # stage a separate public gallery with ordinary names and real Omarchy apps so
 # release screenshots demonstrate a believable workday instead of QA debris.
-close_windows '^one-bit-bureau-qa-' || true
-wait_until "the showcase starts without synthetic proof windows" 15 \
-  bash -c "hyprctl -j clients | jq -e 'all(.[]; (.class | startswith(\"one-bit-bureau-qa-\") | not))' >/dev/null"
-prepare_showcase_desktop
+close_windows '.*' || true
+wait_until "the showcase starts without leftover application windows" 20 \
+  bash -c "hyprctl -j clients | jq -e 'length == 0' >/dev/null"
 focus_empty_desktop
 wtype -k Escape
 wait_until "the showcase dismisses the earlier functional receipt" 10 screen_lacks "cannot be routed"
 screen_lacks "QA" || fail "the showcase desktop contains no QA labels"
+prepare_showcase_desktop
+focus_empty_desktop
 screenshot "success-one-bit-bureau-21-showcase-desktop"
 
-select_desktop_item_by_id "Welcome.txt"
+select_desktop_item_by_id "Field Guide.txt"
 wtype -M ctrl -k i -m ctrl
 wait_until "the showcase opens the shared Inspector for a normal document" 15 \
   layer_on_screen regionallyfamous.one-bit-bureau.inspector
