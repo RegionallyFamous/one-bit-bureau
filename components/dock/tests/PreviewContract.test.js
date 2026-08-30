@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const panelBase = fs.readFileSync(path.join(here, "..", "DockPanelBase.qml"), "utf8")
+const dockItem = fs.readFileSync(path.join(here, "..", "DockItem.qml"), "utf8")
 const previewPanel = fs.readFileSync(path.join(here, "..", "WindowPreviewPanel.qml"), "utf8")
 
 test("preview cards commit immediately with app-icon fallbacks", () => {
@@ -31,4 +32,10 @@ test("the plugin never replaces global Alt+Tab bindings at runtime", () => {
 test("window focus delegates temporary cursor state to the trap-safe helper", () => {
   assert.match(panelBase, /focusWindowProcess\.command = \["bash", root\.focusHelperPath, normalized\]/)
   assert.doesNotMatch(panelBase, /pendingCursorPosition|focusNoWarpProcess|restoreCursorWarps/)
+})
+
+test("dock artwork is vertically centered and exposes its live offset", () => {
+  assert.match(dockItem, /PackAwareImage \{[\s\S]*?anchors\.verticalCenter: parent\.verticalCenter/)
+  assert.match(dockItem, /readonly property real iconCenterOffset:/)
+  assert.match(panelBase, /function getMaxIconCenterOffset\(\): int/)
 })

@@ -136,6 +136,8 @@ wait_until "Paper Jam renders every seeded dock icon" 15 dock_has_rendered_icons
 wait_until "Paper Jam normalizes every seeded dock icon" 15 dock_has_normalized_pack_icons
 [[ $(omarchy-shell regionallyfamous.paper-jam-84.dock getIconSize) == "48" ]] || fail "Paper Jam uses the approved 48px dock icon box"
 pass "Paper Jam uses the approved 48px dock icon box"
+[[ $(omarchy-shell regionallyfamous.paper-jam-84.dock getMaxIconCenterOffset) == "0" ]] || fail "Paper Jam centers dock artwork on the shelf axis"
+pass "Paper Jam centers dock artwork on the shelf axis"
 
 run_helper="$PLUGIN_DIR/components/dock/scripts/paper-jam-run"
 kill_ready_pid_file="$ARTIFACTS/paper-jam-kill-ready.pid"

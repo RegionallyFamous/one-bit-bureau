@@ -21,6 +21,7 @@ Item {
   property point pressPosition: Qt.point(0, 0)
   readonly property bool iconReady: icon.status === Image.Ready
   readonly property bool packNormalized: icon.packCrop !== null
+  readonly property real iconCenterOffset: (icon.y + icon.height / 2) - (root.height / 2)
 
   signal dragMoved(var itemData, point position)
   signal dragFinished(var itemData, point position)
@@ -69,7 +70,7 @@ Item {
   PackAwareImage {
     id: icon
     anchors.horizontalCenter: parent.horizontalCenter
-    anchors.top: parent.top
+    anchors.verticalCenter: parent.verticalCenter
     width: root.iconSize
     height: root.iconSize
     source: root.iconSource()

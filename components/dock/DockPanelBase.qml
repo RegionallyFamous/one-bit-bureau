@@ -142,6 +142,7 @@ Item {
     function getReadyIconCount(): int { return root.readyIconCount() }
     function getNormalizedPackIconCount(): int { return root.normalizedPackIconCount() }
     function getIconSize(): int { return root.iconSize }
+    function getMaxIconCenterOffset(): int { return Math.round(root.maxIconCenterOffset()) }
     function setScreen(name: string): bool {
       var requested = String(name || "").slice(0, 160)
       for (var i = 0; i < Quickshell.screens.length; i++) {
@@ -439,6 +440,16 @@ Item {
         count++
     }
     return count
+  }
+
+  function maxIconCenterOffset() {
+    var maximum = 0
+    for (var id in root.delegateById) {
+      var delegate = root.delegateById[id]
+      if (delegate)
+        maximum = Math.max(maximum, Math.abs(delegate.iconCenterOffset))
+    }
+    return maximum
   }
 
   // New delegates seed their animated properties from the item's last visual
@@ -1238,6 +1249,7 @@ Item {
             property alias targetOpacity: dockItem.targetOpacity
             readonly property bool iconReady: dockItem.iconReady
             readonly property bool packNormalized: dockItem.packNormalized
+            readonly property real iconCenterOffset: dockItem.iconCenterOffset
 
             Behavior on x {
               enabled: wrapper.animating
