@@ -5,7 +5,7 @@
   "version": "1.1.0",
   "author": "RegionallyFamous",
   "license": "MIT",
-  "description": "The shell half of a one-install Omarchy experience with desktop files, a dock, window overview, active-application rail, and safe object-first interaction.",
+  "description": "A one-bit Macintosh-inspired Omarchy workbench with desktop files, dock, Inspector, Window Ledger, workspace board, original icons, and theme.",
   "icon": "components/overview/assets/icon.png",
   "kinds": [
     "service",

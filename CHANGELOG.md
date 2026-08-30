@@ -9,12 +9,16 @@
 - Added a hardened local transaction helper with bounded JSON receipts, private atomic journals, collision-free destinations, cross-filesystem rollback, partial-batch reporting, launcher trust demotion, hash-proven Undo, and parent-death containment for the `gio trash` child.
 - Added a truthful per-app Window Ledger with 1/2/3+ marks, active and cross-workspace state, deterministic most-recently-used focus, explicit Activate and Close actions, and no duplicate launch when compositor state is stale.
 - Added the overview workspace board with stable ordinary-workspace ordering, occupancy, keyboard and context parity, validated window moves, and an overview that remains open after routing.
+- Expanded the original offline icon system to 32 authored roles covering all 36 launcher-visible applications in a fresh Omarchy Quattro install, with a one-bit Application fallback for unresolved icons and a grayscale-native fallback that keeps uncommon applications recognizable without breaking the composition.
+- Hardened compositor identity reconciliation so every live Wayland window maps to at most one Hyprland ledger record, generated Chromium identities group correctly, stale compositor remnants cannot create ghost dock entries, and real multi-window applications retain truthful counts across workspaces.
+- Added an end-user-focused README, detailed technical wiki, and a deliberately staged real-application gallery using local offline content, a grayscale Files study, five matching dock marks, and acceptance assertions that reject first-run windows or other visual debris.
 - Corrected Dock **Get Info** so it opens the shared Inspector while **Manage Icons** remains a distinct command.
 - Preserved one deliberate Wayland limit: internal desktop drags do not pretend to cross into the separate dock layer-shell window. Native external file drops and every proven in-surface route remain supported.
 
 ### Release verification
 
-- Added 18 adversarial filesystem-helper tests, 50 desktop contracts, 63 dock/Window Ledger tests, 10 Inspector tests, 8 overview/workspace tests, shared-host source contracts, and new graphical acceptance scenes for Inspector, multi-route/receipt/Undo, Window Ledger, and workspace moves.
+- Expanded the local gate to 64 desktop Python tests, 69 dock and Window Ledger tests, 10 Inspector tests, 9 overview and workspace tests, shared-host source contracts, strict theme rendering, icon-catalog coverage, and controller-death containment checks.
+- Expanded the disposable x86_64 graphical suite with Inspector, multi-route/receipt/Undo, Window Ledger, workspace movement, unmatched-icon fallback, exact public lifecycle, and a debris-intolerant 45-frame review gallery.
 
 ## 1.0.2 — 2026-08-30
 
