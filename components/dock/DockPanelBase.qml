@@ -358,6 +358,7 @@ Item {
       var values = Hyprland.toplevels.values
       for (var i = 0; i < values.length; i++) {
         var item = values[i]
+        if (!root.hyprlandWindowIsLive(item)) continue
         var id = root.dockIdForHyprlandWindow(item)
         if (id && output.indexOf(id) === -1) output.push(id)
       }
@@ -371,6 +372,16 @@ Item {
       }
     } catch (error) {}
     return output
+  }
+
+  function hyprlandWindowIsLive(window) {
+    if (!window) return false
+    var ipc = window.lastIpcObject || {}
+    // Quickshell can retain a Hyprland toplevel object for a short period
+    // after its compositor client closes. The mapped flag is the authoritative
+    // boundary: minimized and off-workspace windows remain mapped, while a
+    // closed stale object must not keep a ghost application in the dock.
+    return ipc.mapped !== false
   }
 
   function currentWorkspaceDescriptor() {
@@ -410,6 +421,7 @@ Item {
       var values = Hyprland.toplevels.values
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
+        if (!root.hyprlandWindowIsLive(candidate)) continue
         if (root.dockIdForHyprlandWindow(candidate) !== wanted) continue
         var ipc = candidate.lastIpcObject || {}
         var workspace = candidate.workspace || ipc.workspace || null
@@ -442,6 +454,7 @@ Item {
       var values = Hyprland.toplevels.values
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
+        if (!root.hyprlandWindowIsLive(candidate)) continue
         var id = root.dockIdForHyprlandWindow(candidate)
         if (!id) continue
         if (!grouped[id]) grouped[id] = []
@@ -511,6 +524,7 @@ Item {
       var values = Hyprland.toplevels.values
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
+        if (!root.hyprlandWindowIsLive(candidate)) continue
         var ids = []
         if (candidate.wayland && candidate.wayland.appId) ids.push(String(candidate.wayland.appId).toLowerCase())
         var ipc = candidate.lastIpcObject || {}
@@ -532,6 +546,7 @@ Item {
       var values = Hyprland.toplevels.values
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
+        if (!root.hyprlandWindowIsLive(candidate)) continue
         var ids = []
         if (candidate.wayland && candidate.wayland.appId) ids.push(String(candidate.wayland.appId).toLowerCase())
         var ipc = candidate.lastIpcObject || {}
@@ -1658,7 +1673,7 @@ Item {
       required property var modelData
       target: modelData
       function onWorkspaceChanged() { root.rebuildWindowLedger() }
-      function onLastIpcObjectChanged() { root.rebuildWindowLedger() }
+      function onLastIpcObjectChanged() { root.refreshItems() }
       function onTitleChanged() { root.rebuildWindowLedger() }
       function onWaylandHandleChanged() { root.rebuildWindowLedger() }
     }

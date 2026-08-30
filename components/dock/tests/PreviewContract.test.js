@@ -69,6 +69,14 @@ test("foreign-toplevel changes refresh Hyprland class metadata before aggregatio
   )
 })
 
+test("unmapped compositor remnants cannot survive as ghost dock applications", () => {
+  assert.match(panelBase, /function hyprlandWindowIsLive\(window\)/)
+  assert.match(panelBase, /return ipc\.mapped !== false/)
+  assert.match(panelBase, /function normalizeRunning\(\)[\s\S]*?if \(!root\.hyprlandWindowIsLive\(item\)\) continue/)
+  assert.match(panelBase, /function rebuildWindowLedger\(\)[\s\S]*?if \(!root\.hyprlandWindowIsLive\(candidate\)\) continue/)
+  assert.match(panelBase, /function onLastIpcObjectChanged\(\) \{ root\.refreshItems\(\) \}/)
+})
+
 test("dock items expose an accessible press action and keyboard context menu", () => {
   assert.match(dockItem, /Accessible\.role:\s*Accessible\.Button/)
   assert.match(dockItem, /Accessible\.name:/)
