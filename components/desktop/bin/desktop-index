@@ -45,6 +45,7 @@ IMAGE_SUFFIXES = {
 
 # Raster-only: SVG/GIF can pull remote resources or do unbounded decode work.
 SAFE_ICON_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+SAFE_PREVIEW_SUFFIXES = SAFE_ICON_SUFFIXES
 
 MAX_ITEMS = 256
 MAX_PATH_ARGS = 256
@@ -54,6 +55,7 @@ MAX_ID_LENGTH = 255
 MAX_ICON_LENGTH = 4096
 MAX_DESKTOP_FILE_BYTES = 64 * 1024
 MAX_ICON_FILE_BYTES = 2 * 1024 * 1024
+MAX_PREVIEW_FILE_BYTES = 32 * 1024 * 1024
 MAX_ERROR_LENGTH = 240
 
 ALLOWED_URL_SCHEMES = frozenset({"http", "https", "mailto", "file", "trash"})
@@ -313,6 +315,10 @@ def item_for(path: Path) -> dict:
         kind = "link"
     elif suffix in IMAGE_SUFFIXES:
         kind = "image"
+        if is_allowed_local_image(
+            path, MAX_PREVIEW_FILE_BYTES, SAFE_PREVIEW_SUFFIXES
+        ):
+            preview = str(path.expanduser().resolve())
 
     return {
         "id": path.name[:MAX_ID_LENGTH],

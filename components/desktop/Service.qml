@@ -151,7 +151,7 @@ Item {
     if (kind === "folder" || item.isDir)
       return "folder"
     if (kind === "image")
-      return "image"
+      return root.hasImagePreview(item) ? "" : "image"
     if (kind === "file") {
       var filename = String(item.name || item.path || "").toLowerCase()
       if (/\.(7z|bz2|gz|rar|tar|tgz|xz|zip)$/.test(filename))
@@ -170,6 +170,12 @@ Item {
 
   function usesCategoryIcon(item) {
     return root.categoryIconName(item) !== ""
+  }
+
+  function hasImagePreview(item) {
+    return !!(item
+      && item.kind === "image"
+      && root.localFileUrl(String(item.preview || "")))
   }
 
   function objectIconSource(item, selected) {
@@ -904,10 +910,13 @@ Item {
                 width: panel.host.iconSize
                 height: panel.host.iconSize
                 source: panel.host.objectIconSource(iconRoot.modelData, iconRoot.selected)
-                fillMode: Image.PreserveAspectFit
+                fillMode: panel.host.hasImagePreview(iconRoot.modelData)
+                  ? Image.PreserveAspectCrop
+                  : Image.PreserveAspectFit
                 asynchronous: true
                 cache: true
-                smooth: !panel.host.usesCategoryIcon(iconRoot.modelData)
+                smooth: panel.host.hasImagePreview(iconRoot.modelData)
+                  || !panel.host.usesCategoryIcon(iconRoot.modelData)
                 sourceSize.width: panel.host.iconSize * Screen.devicePixelRatio
                 sourceSize.height: panel.host.iconSize * Screen.devicePixelRatio
               }

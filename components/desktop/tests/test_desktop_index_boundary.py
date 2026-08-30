@@ -81,16 +81,63 @@ class DesktopIndexBoundaryTest(unittest.TestCase):
             self.assertTrue(link.is_symlink())
             self.assertEqual(target.read_text(encoding="utf-8"), "keep me")
 
-    def test_image_item_uses_object_kind_without_exposing_a_thumbnail(self) -> None:
+    def test_safe_raster_image_exposes_a_local_thumbnail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             image = Path(temporary) / "photo.png"
             image.write_bytes(b"not decoded by the indexer")
 
-            with mock.patch.object(self.index, "guess_icon", return_value="image-x-generic"):
+            with mock.patch.object(
+                self.index, "guess_icon", return_value="image-x-generic"
+            ), mock.patch.object(
+                self.index, "allowed_icon_roots", return_value=[Path(temporary)]
+            ):
+                item = self.index.item_for(image)
+
+            self.assertEqual(item["kind"], "image")
+            self.assertEqual(item["preview"], str(image.resolve()))
+
+    def test_animated_or_vector_image_falls_back_to_the_bitmap_icon(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "drawing.svg"
+            image.write_text("<svg/>", encoding="utf-8")
+
+            with mock.patch.object(
+                self.index, "guess_icon", return_value="image-x-generic"
+            ), mock.patch.object(
+                self.index, "allowed_icon_roots", return_value=[Path(temporary)]
+            ):
                 item = self.index.item_for(image)
 
             self.assertEqual(item["kind"], "image")
             self.assertEqual(item["preview"], "")
+
+    def test_thumbnail_file_size_ceiling_accepts_exactly_the_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            at_limit = root / "at-limit.png"
+            over_limit = root / "over-limit.png"
+            with at_limit.open("wb") as handle:
+                handle.truncate(self.index.MAX_PREVIEW_FILE_BYTES)
+            with over_limit.open("wb") as handle:
+                handle.truncate(self.index.MAX_PREVIEW_FILE_BYTES + 1)
+
+            with mock.patch.object(
+                self.index, "allowed_icon_roots", return_value=[root]
+            ):
+                self.assertTrue(
+                    self.index.is_allowed_local_image(
+                        at_limit,
+                        self.index.MAX_PREVIEW_FILE_BYTES,
+                        self.index.SAFE_PREVIEW_SUFFIXES,
+                    )
+                )
+                self.assertFalse(
+                    self.index.is_allowed_local_image(
+                        over_limit,
+                        self.index.MAX_PREVIEW_FILE_BYTES,
+                        self.index.SAFE_PREVIEW_SUFFIXES,
+                    )
+                )
 
     def test_trash_refuses_items_outside_the_desktop(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

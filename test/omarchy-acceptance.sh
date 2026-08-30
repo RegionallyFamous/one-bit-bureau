@@ -80,6 +80,8 @@ mkdir -p "$HOME/Desktop" "$THEMES_DIR" "$(dirname "$PLUGIN_DIR")"
 mkdir -p "$HOME/Desktop/Projects"
 printf 'Paper Jam runtime proof\n' >"$HOME/Desktop/PAPER-JAM-QA.txt"
 cp "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/Paper Jam Photo.png"
+python3 "$FIXTURE/components/desktop/bin/desktop-index" | jq -e --arg photo "$HOME/Desktop/Paper Jam Photo.png" '.items[] | select(.path == $photo) | .kind == "image" and .preview == $photo' >/dev/null || fail "Desktop index exposes the real photo as a safe local preview"
+pass "Desktop index exposes the real photo as a safe local preview"
 
 printf 'keep target\n' >"$HOME/PAPER-JAM-SYMLINK-TARGET.txt"
 ln -s "$HOME/PAPER-JAM-SYMLINK-TARGET.txt" "$HOME/Desktop/Symlink to keep.txt"
