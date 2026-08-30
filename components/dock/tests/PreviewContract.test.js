@@ -101,6 +101,8 @@ test("acceptance can open and inspect the icon manager over narrow IPC", () => {
   assert.match(panelBase, /function getIconPickerMode\(\): string/)
   assert.match(panelBase, /function getMenuCurrentAction\(\): string/)
   assert.match(panelBase, /function getAutoHidden\(\): bool/)
+  assert.match(panelBase, /property int edgeHeight: 6/)
+  assert.match(panelBase, /function getEdgeHovered\(\): bool/)
   assert.match(panelBase, /function getAltTabActive\(\): bool/)
   assert.match(panelBase, /function openMenuForApp\(appId: string\): bool/)
 })

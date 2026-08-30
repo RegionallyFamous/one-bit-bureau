@@ -68,7 +68,7 @@ Item {
   property int showDelay: 100
   property int hideDuration: 380
   property int showDuration: 280
-  property int edgeHeight: 3
+  property int edgeHeight: 6
   property int peekPx: 0
   // Hide is suppressed while any transient UI is active so the dock does not
   // vanish under a menu, preview, picker or drag.
@@ -194,6 +194,7 @@ Item {
     function getMenuCurrentIndex(): int { return dockMenu.currentIndex }
     function getMenuCurrentAction(): string { return dockMenu.currentAction() }
     function getAutoHidden(): bool { return root.autoHidden }
+    function getEdgeHovered(): bool { return root.edgeHovered }
     function getAltTabActive(): bool { return altTab.active }
     function openMenuForApp(appId: string): bool { return root.openMenuForApp(appId) }
     function openMenuFirst(): bool {
@@ -1648,7 +1649,7 @@ Item {
     mask: Region {}
   }
 
-  // Edge hot-zone: a 3px invisible strip at the screen bottom that reveals
+  // Edge hot-zone: a 6px invisible strip at the screen bottom that reveals
   // the dock even when it is fully slid off-screen and keeps it visible while
   // the cursor lingers at the edge. Using its own PanelWindow keeps
   // hit-testing alive while dockWindow's mask is off-screen or gapped (8px).

@@ -563,7 +563,9 @@ wait_until "the dock auto-hides away from the pointer" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getAutoHidden) == 'true' ]]"
 wait_until "the auto-hide edge target remains available" 10 layer_on_screen one-bit-bureau-dock-edge
 screenshot "success-one-bit-bureau-09-dock-auto-hidden"
-move_pointer_to $((monitor_width / 2)) $((monitor_height - 1)) "the pointer reaches the dock reveal edge"
+move_pointer_to $((monitor_width / 2)) $((monitor_height - 3)) "the pointer reaches the dock reveal edge"
+wait_until "the dock reveal edge receives pointer hover" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getEdgeHovered) == 'true' ]]"
 wait_until "the dock reveals from its edge target" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getAutoHidden) == 'false' ]]"
 screenshot "success-one-bit-bureau-10-dock-auto-hide-revealed"

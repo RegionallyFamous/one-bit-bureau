@@ -7,6 +7,7 @@
 - Render safe local photograph previews in grayscale on the desktop while preserving the original file bytes and full-color opened view.
 - Render unmatched automatic native app icons in grayscale across the dock, drag ghost, preview fallback, app switcher, and icon manager.
 - Keep authored One-Bit roles, manual pack assignments, and custom icon files unchanged; explicit Native mode restores the application's original color icon.
+- Widen the invisible auto-hide reveal edge to six logical pixels and verify pointer engagement before reveal, improving reliability on scaled and synthetic pointer paths.
 
 ### Release verification
 
