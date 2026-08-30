@@ -44,6 +44,11 @@ Item {
   property var inspectorSubject: null
   property bool inspectorOpen: false
   property string inspectorScreen: ""
+  property bool routeVisible: false
+  property bool routeValid: false
+  property string routeReason: ""
+  property string routeSummary: ""
+  property string routeScreen: ""
   readonly property int maxItems: 256
   readonly property int maxOperationItems: 64
   readonly property int maxListChars: 262144
@@ -74,6 +79,32 @@ Item {
 
   signal inspectRequested(var payload, string screenName)
   signal inspectorCloseRequested()
+
+  IpcHandler {
+    target: "regionallyfamous.one-bit-bureau.desktop"
+    function getRouteVisible(): bool { return root.routeVisible }
+    function getRouteValid(): bool { return root.routeValid }
+    function getRouteReason(): string { return root.routeReason }
+    function getRouteSummary(): string { return root.routeSummary }
+  }
+
+  function publishRouteState(screenName, visible, valid, reason, summary) {
+    root.routeScreen = String(screenName || "")
+    root.routeVisible = visible === true
+    root.routeValid = valid === true
+    root.routeReason = root.plainText(reason, 160)
+    root.routeSummary = root.plainText(summary, 280)
+  }
+
+  function clearRouteState(screenName) {
+    if (root.routeScreen !== String(screenName || ""))
+      return
+    root.routeVisible = false
+    root.routeValid = false
+    root.routeReason = ""
+    root.routeSummary = ""
+    root.routeScreen = ""
+  }
 
   function padTopFor(screen) {
     var bar = shell && shell.bar ? shell.bar : null
@@ -1316,6 +1347,7 @@ Item {
         panel.currentRoute = route
         panel.routeEligibilityResolved = route.resolved === true
         panel.routeVisible = true
+        host.publishRouteState(panel.screenName, true, route.valid, route.reason, panel.routeText)
         if (panel.routeEligibilityResolved && panel.routeValid && panel.routeTarget
             && panel.springOpenedTargetId !== panel.routeTargetId
             && (panel.routeTarget.kind === "folder" || panel.routeTarget.isDir))
@@ -1323,6 +1355,7 @@ Item {
       }
 
       function clearRoute() {
+        host.clearRouteState(panel.screenName)
         springOpenTimer.stop()
         panel.routeNoun = ""
         panel.routeVerb = ""

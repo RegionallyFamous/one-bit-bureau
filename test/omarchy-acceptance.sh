@@ -495,7 +495,7 @@ screenshot "success-one-bit-bureau-02c-desktop-inspector"
 wtype -k Escape
 wait_until "Escape closes the desktop Inspector" 10 layer_absent regionallyfamous.one-bit-bureau.inspector
 
-for route_item in "Route Alpha.txt" "Route Beta.txt" "Projects"; do
+for route_item in "Route Alpha.txt" "Route Beta.txt" "Projects" "Untrusted QA.desktop"; do
   wait_until "One-Bit Bureau saves a position for $route_item" 15 \
     bash -c "jq -e --arg id '$route_item' 'any(to_entries[]; .value[\$id] != null)' '$BUREAU_CONFIG/desktop-icon-positions.json'"
 done
@@ -532,6 +532,24 @@ wait_until "Undo restores both routed files" 20 \
 sleep 0.5
 screenshot "success-one-bit-bureau-02g-desktop-route-undone"
 pass "One-Bit Bureau routes a bounded multi-selection with a named verb, receipt, and proven Undo"
+
+select_desktop_item_by_id "Route Alpha.txt"
+read -r route_reject_x route_reject_y < <(desktop_item_center "Untrusted QA.desktop")
+move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the rejected-route source"
+ydotool click 0x40 >/dev/null
+sleep 0.1
+drag_pointer_to "$route_reject_x" "$route_reject_y" "the selected file reaches an application launcher"
+wait_until "the desktop reports an exact rejected route" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteVisible) == 'true' && \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteValid) == 'false' && \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteReason) == 'Applications do not accept desktop files here' ]]"
+screenshot "success-one-bit-bureau-02h-desktop-route-rejected"
+ydotool click 0x80 >/dev/null
+wait_until "the rejected desktop route closes" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteVisible) == 'false' ]]"
+[[ -f $HOME/Desktop/Route\ Alpha.txt && -f $HOME/Desktop/Route\ Beta.txt ]] ||
+  fail "the rejected desktop route changed its sources"
+wait_until "the rejected desktop route paints a local refusal receipt" 10 screen_contains "cannot be routed"
+screenshot "success-one-bit-bureau-02i-desktop-route-rejection-receipt"
+pass "One-Bit Bureau names and safely refuses an invalid desktop route"
 
 capture_dock_icon_inner_pixels "$QA_APP_ID" "$ARTIFACTS/one-bit-bureau-unmatched-auto.png"
 auto_icon_red_hash=$(decoded_channel_hash "$ARTIFACTS/one-bit-bureau-unmatched-auto.png" r)
@@ -655,7 +673,7 @@ mapfile -t ledger_addresses < <(hyprctl -j clients | jq -er '.[] | select(.class
 hyprctl dispatch 'hl.dsp.focus({ workspace = "2" })' >/dev/null 2>&1 ||
   hyprctl dispatch workspace 2 >/dev/null
 sleep 0.5
-"$PLUGIN_DIR/components/overview/move-window-to-workspace" "${ledger_addresses[1]}" 2 >/dev/null
+bash "$PLUGIN_DIR/components/overview/move-window-to-workspace" "${ledger_addresses[1]}" 2 >/dev/null
 hyprctl dispatch 'hl.dsp.focus({ workspace = "1" })' >/dev/null 2>&1 ||
   hyprctl dispatch workspace 1 >/dev/null
 wait_until "the Window Ledger tracks one proof window on Workspace 2" 15 \
@@ -765,6 +783,7 @@ omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 
 [[ $(omarchy-shell lock preview) == "ok" ]] || fail "the Omarchy lock preview opens"
 wait_until "the One-Bit Bureau lock preview is visible" 15 layer_on_screen omarchy-lock-preview
+sleep 1
 screenshot "success-one-bit-bureau-16-lock-preview"
 omarchy-shell lock hidePreview >/dev/null
 wait_until "the lock preview closes" 10 layer_absent omarchy-lock-preview

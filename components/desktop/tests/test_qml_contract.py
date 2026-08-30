@@ -131,6 +131,12 @@ class DesktopQmlContractTest(unittest.TestCase):
         self.assertIn('"Target does not accept files"', SERVICE)
         self.assertIn("panel.routeTargetId === String(iconRoot.modelData.id", SERVICE)
         self.assertIn('Accessible.name: panel.dragItems.length + " selected items"', SERVICE)
+        self.assertIn('target: "regionallyfamous.one-bit-bureau.desktop"', SERVICE)
+        self.assertIn("function getRouteVisible(): bool", SERVICE)
+        self.assertIn("function getRouteValid(): bool", SERVICE)
+        self.assertIn("function getRouteReason(): string", SERVICE)
+        self.assertIn("host.publishRouteState(panel.screenName", SERVICE)
+        self.assertIn("host.clearRouteState(panel.screenName)", SERVICE)
 
     def test_external_drops_accept_only_bounded_local_paths(self) -> None:
         self.assertIn("function localPath(value)", SERVICE)
