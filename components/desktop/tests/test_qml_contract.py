@@ -140,6 +140,7 @@ class DesktopQmlContractTest(unittest.TestCase):
         self.assertIn("root.lastRouteSummary = root.routeSummary", SERVICE)
         self.assertIn("host.publishRouteState(panel.screenName", SERVICE)
         self.assertIn("host.clearRouteState(panel.screenName)", SERVICE)
+        self.assertIn("Math.max(host.padBottom, 112)", SERVICE)
 
     def test_external_drops_accept_only_bounded_local_paths(self) -> None:
         self.assertIn("function localPath(value)", SERVICE)

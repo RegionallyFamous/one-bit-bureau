@@ -1948,7 +1948,10 @@ Item {
         width: Math.min(620, Math.max(260, routeLabel.implicitWidth + 28))
         height: routeLabel.implicitHeight + 20
         x: Math.round(panel.width / 2 - width / 2)
-        y: Math.max(panel.padTop + 8, panel.height - height - host.padBottom)
+        // The dock is a separate layer-shell surface and can paint above this
+        // desktop layer. Reserve its visual footprint so the signature route
+        // sentence never sits behind dock icons.
+        y: Math.max(panel.padTop + 8, panel.height - height - Math.max(host.padBottom, 112))
         radius: 0
         color: Color.popups.background
         border.width: 2
