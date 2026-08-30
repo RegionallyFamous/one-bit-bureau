@@ -297,9 +297,13 @@ close_showcase_extras() {
   done
 }
 
-showcase_has_no_extra_windows() {
+showcase_has_only_curated_windows() {
   hyprctl -j clients | jq -e '
-    all(.[]; .class != "soffice" and .title != "Chromium Additional Terms of Service")
+    length == 4 and
+    ([.[] | select((.title // "") | startswith("Bureau Field Guide"))] | length == 1) and
+    ([.[] | select((.title // "") | startswith("Bureau Release Desk"))] | length == 1) and
+    ([.[] | select(.class == "org.gnome.Nautilus")] | length == 1) and
+    ([.[] | select(.class == "libreoffice-writer")] | length == 1)
   ' >/dev/null
 }
 
@@ -386,6 +390,8 @@ prepare_showcase_desktop() {
   blue_hash=$(decoded_channel_hash "$SHOWCASE_FILES/Desk Study.png" b)
   [[ $red_hash == $green_hash && $green_hash == $blue_hash ]] ||
     fail "the Files desk study contains only grayscale pixels"
+  [[ $(find "$SHOWCASE_FILES" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | paste -sd '|' -) == "Desk Study.png|Release Checklist.md|Studio Notes.txt" ]] ||
+    fail "the Files showcase contains only its three authored artifacts"
 
   ORIGINAL_NAUTILUS_VIEW=$(gsettings get org.gnome.nautilus.preferences default-folder-viewer 2>/dev/null || true)
   [[ -n $ORIGINAL_NAUTILUS_VIEW ]] || fail "the showcase records Files' original presentation"
@@ -476,8 +482,8 @@ launch_showcase_apps() {
   wait_until "the showcase opens the real Writer application" 30 window_present '^libreoffice-writer$'
   sleep 5
   close_showcase_extras
-  wait_until "the showcase removes delayed first-run and start-center windows" 15 \
-    showcase_has_no_extra_windows
+  wait_until "the showcase contains only its four curated application windows" 15 \
+    showcase_has_only_curated_windows
   pass "the showcase opens Chromium, Files, and Writer with offline local content"
   omarchy-shell regionallyfamous.one-bit-bureau.dock getDockItemIds \
     >"$ARTIFACTS/one-bit-bureau-showcase-dock-ids.json"
@@ -1114,6 +1120,13 @@ writer_address=$(hyprctl -j clients | jq -er '.[] | select(.class == "libreoffic
 [[ -n $guide_address && -n $release_address && -n $writer_address ]] ||
   fail "the showcase exposes stable addresses for its real applications"
 
+# The Workspace Board routes only to workspaces that presently exist. Create
+# Desk 2 explicitly after the clean gallery reset, then return to Desk 1 once
+# the Release Desk window keeps that destination alive.
+hyprctl dispatch 'hl.dsp.focus({ workspace = "2" })' >/dev/null 2>&1 ||
+  hyprctl dispatch workspace 2 >/dev/null
+wait_until "the showcase creates Desk 2 before routing" 10 \
+  bash -c "hyprctl -j activeworkspace | jq -e '.id == 2' >/dev/null"
 bash "$PLUGIN_DIR/components/overview/move-window-to-workspace" "$release_address" 2 >/dev/null
 wait_until "the showcase places one browser window on Desk 2" 15 \
   bash -c "hyprctl -j clients | jq -e --arg address '$release_address' 'any(.[]; .address == \$address and .workspace.id == 2)' >/dev/null"
