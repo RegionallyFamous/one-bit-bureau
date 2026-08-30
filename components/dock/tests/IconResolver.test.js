@@ -57,3 +57,17 @@ test("associates common Linux apps with Paper Jam roles", () => {
   assert.equal(resolver.automaticPackRole({ id: "md.obsidian.Obsidian" }), "notes")
   assert.equal(resolver.automaticPackRole({ id: "org.example.Encode" }), "")
 })
+
+test("normalizes every bundled raster without touching unrelated icons", () => {
+  assert.deepEqual(Object.keys(resolver.PACK_CROPS).sort(), Array.from(resolver.PACK_ROLES).sort())
+  for (const role of resolver.PACK_ROLES) {
+    const crop = resolver.packCropForSource(`file:///plugin/components/dock/assets/app-icons/${role}.png?v=2`)
+    assert.ok(crop, `${role} has a crop`)
+    assert.ok(crop.x >= 0 && crop.y >= 0)
+    assert.ok(crop.width > 0 && crop.height > 0)
+    assert.ok(crop.x + crop.width <= 256)
+    assert.ok(crop.y + crop.height <= 256)
+  }
+  assert.equal(resolver.packCropForSource("file:///home/user/icons/browser.png"), null)
+  assert.equal(resolver.packCropForSource("image://icon/browser"), null)
+})

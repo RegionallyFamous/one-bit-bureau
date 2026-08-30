@@ -101,7 +101,7 @@ Item {
         color: Color.background
       }
 
-      Image {
+      PackAwareImage {
         id: iconImage
         anchors.centerIn: parent
         width: 64

@@ -140,6 +140,8 @@ Item {
     function getAutoHide(): bool { return root.autoHide }
     function getItemCount(): int { return root.dockItems.length }
     function getReadyIconCount(): int { return root.readyIconCount() }
+    function getNormalizedPackIconCount(): int { return root.normalizedPackIconCount() }
+    function getIconSize(): int { return root.iconSize }
     function setScreen(name: string): bool {
       var requested = String(name || "").slice(0, 160)
       for (var i = 0; i < Quickshell.screens.length; i++) {
@@ -424,6 +426,16 @@ Item {
     for (var id in root.delegateById) {
       var delegate = root.delegateById[id]
       if (delegate && delegate.iconReady)
+        count++
+    }
+    return count
+  }
+
+  function normalizedPackIconCount() {
+    var count = 0
+    for (var id in root.delegateById) {
+      var delegate = root.delegateById[id]
+      if (delegate && delegate.packNormalized)
         count++
     }
     return count
@@ -1193,7 +1205,7 @@ Item {
         anchors.centerIn: parent
         anchors.verticalCenterOffset: 0
         width: root.layoutWidth - 2 * root.sidePadding
-        height: 56
+        height: root.iconSize + 16
 
         Behavior on width {
           NumberAnimation { duration: 90; easing.type: Easing.Linear }
@@ -1206,7 +1218,7 @@ Item {
             required property string modelData
             // The wrapper spans the fixed slot so the icon remains centered.
             width: root.slotWidth * targetScale
-            height: 56
+            height: root.iconSize + 16
             x: 0
             property bool animating: false
 
@@ -1225,6 +1237,7 @@ Item {
             property alias targetLift: dockItem.targetLift
             property alias targetOpacity: dockItem.targetOpacity
             readonly property bool iconReady: dockItem.iconReady
+            readonly property bool packNormalized: dockItem.packNormalized
 
             Behavior on x {
               enabled: wrapper.animating
@@ -1549,7 +1562,7 @@ Item {
         border.width: 2
       }
 
-      Image {
+      PackAwareImage {
         anchors.centerIn: parent
         width: root.iconSize * root.ghostScale
         height: root.iconSize * root.ghostScale

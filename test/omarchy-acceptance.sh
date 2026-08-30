@@ -32,6 +32,12 @@ dock_has_rendered_icons() {
   [[ $count =~ ^[0-9]+$ ]] && (( count >= 3 ))
 }
 
+dock_has_normalized_pack_icons() {
+  local count
+  count=$(omarchy-shell regionallyfamous.paper-jam-84.dock getNormalizedPackIconCount 2>/dev/null || true)
+  [[ $count =~ ^[0-9]+$ ]] && (( count >= 3 ))
+}
+
 collect_diagnostics() {
   {
     echo "==> plugin catalog"
@@ -127,6 +133,9 @@ wait_until "Paper Jam dock auto-hide is disabled for visual proof" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.paper-jam-84.dock getAutoHide) == 'false' ]]"
 wait_until "Paper Jam seeds a useful first-run dock" 15 dock_has_seeded_items
 wait_until "Paper Jam renders every seeded dock icon" 15 dock_has_rendered_icons
+wait_until "Paper Jam normalizes every seeded dock icon" 15 dock_has_normalized_pack_icons
+[[ $(omarchy-shell regionallyfamous.paper-jam-84.dock getIconSize) == "48" ]] || fail "Paper Jam uses the approved 48px dock icon box"
+pass "Paper Jam uses the approved 48px dock icon box"
 
 run_helper="$PLUGIN_DIR/components/dock/scripts/paper-jam-run"
 kill_ready_pid_file="$ARTIFACTS/paper-jam-kill-ready.pid"

@@ -20,6 +20,7 @@ Item {
   property string iconSourceOverride: ""
   property point pressPosition: Qt.point(0, 0)
   readonly property bool iconReady: icon.status === Image.Ready
+  readonly property bool packNormalized: icon.packCrop !== null
 
   signal dragMoved(var itemData, point position)
   signal dragFinished(var itemData, point position)
@@ -65,7 +66,7 @@ Item {
     border.width: mouse.containsMouse ? 2 : 0
   }
 
-  Image {
+  PackAwareImage {
     id: icon
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.top: parent.top

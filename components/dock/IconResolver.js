@@ -29,6 +29,24 @@ var PACK_ALIASES = {
 
 var PACK_ROLES = Object.keys(PACK_ALIASES)
 
+// Alpha bounds measured from the bundled 256x256 raster originals. Keeping
+// the source files untouched preserves their authored masters while the UI
+// presents the painted artwork at a consistent visual size.
+var PACK_CROPS = {
+    browser: { x: 23, y: 46, width: 207, height: 145 },
+    calendar: { x: 23, y: 13, width: 214, height: 230 },
+    chat: { x: 20, y: 34, width: 216, height: 190 },
+    code: { x: 44, y: 25, width: 175, height: 193 },
+    files: { x: 37, y: 19, width: 189, height: 199 },
+    games: { x: 24, y: 24, width: 218, height: 199 },
+    mail: { x: 14, y: 34, width: 217, height: 188 },
+    music: { x: 45, y: 13, width: 177, height: 222 },
+    notes: { x: 28, y: 18, width: 192, height: 210 },
+    settings: { x: 30, y: 36, width: 202, height: 188 },
+    terminal: { x: 28, y: 13, width: 199, height: 230 },
+    video: { x: 58, y: 13, width: 158, height: 219 }
+}
+
 function sanitizeName(value) {
     return String(value || "").replace(/\.desktop$/i, "").replace(/[-_]+/g, " ").trim()
 }
@@ -122,6 +140,15 @@ function automaticPackRole(item) {
     return ""
 }
 
+function packCropForSource(source) {
+    var value = String(source || "").split("?")[0].split("#")[0]
+    if (value.indexOf("/components/dock/assets/app-icons/") === -1) return null
+    for (var role in PACK_CROPS) {
+        if (value.endsWith("/" + role + ".png")) return PACK_CROPS[role]
+    }
+    return null
+}
+
 function resolveIcon(item) {
     var data = item || {}
     var icon = String(data.icon || data.iconName || "").trim()
@@ -142,6 +169,7 @@ if (typeof module !== "undefined" && module.exports) {
         FALLBACK_MAP: FALLBACK_MAP,
         PACK_ALIASES: PACK_ALIASES,
         PACK_ROLES: PACK_ROLES,
+        PACK_CROPS: PACK_CROPS,
         sanitizeName: sanitizeName,
         normalizeId: normalizeId,
         customIconEntry: customIconEntry,
@@ -150,6 +178,7 @@ if (typeof module !== "undefined" && module.exports) {
         customIconMode: customIconMode,
         hasCustomOverride: hasCustomOverride,
         automaticPackRole: automaticPackRole,
+        packCropForSource: packCropForSource,
         resolveIcon: resolveIcon
     }
 }

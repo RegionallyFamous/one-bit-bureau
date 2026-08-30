@@ -289,7 +289,7 @@ PanelWindow {
             color: Util.alpha(Color.foreground, 0.07)
             visible: root.mode === "picker"
 
-            Image {
+            PackAwareImage {
               id: previewImage
               anchors.centerIn: parent
               width: 40
@@ -476,7 +476,7 @@ PanelWindow {
                   radius: 16
                   color: Util.alpha(Color.foreground, 0.06)
 
-                  Image {
+                  PackAwareImage {
                     anchors.centerIn: parent
                     width: 68
                     height: 68
@@ -536,7 +536,7 @@ PanelWindow {
               radius: 10
               color: rowMouse.containsMouse ? Util.alpha(Color.foreground, 0.08) : (index % 2 === 1 ? Util.alpha(Color.foreground, 0.03) : "transparent")
 
-              Image {
+              PackAwareImage {
                 id: rowIcon
                 anchors.left: parent.left
                 anchors.leftMargin: 10

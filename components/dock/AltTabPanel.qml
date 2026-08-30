@@ -155,7 +155,7 @@ PanelWindow {
             visible: root.selectedIndex === index
           }
 
-          Image {
+          PackAwareImage {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter: parent.verticalCenter
             width: root.iconSize
