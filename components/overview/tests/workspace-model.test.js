@@ -27,6 +27,18 @@ test("orders only bounded ordinary workspaces", () => {
   assert.equal(entries[1].active, true)
 })
 
+test("accepts Quickshell array-like workspace collections", () => {
+  const qmlValues = {
+    0: { id: 2, name: "2" },
+    1: { id: 1, name: "1" },
+    length: 2
+  }
+  const entries = model.ordinaryWorkspaces({ values: qmlValues }, [], { id: 1 })
+
+  assert.deepEqual(Array.from(entries, entry => entry.id), [1, 2])
+  assert.equal(entries[0].active, true)
+})
+
 test("derives occupancy from real windows", () => {
   const entries = model.ordinaryWorkspaces(
     [{ id: 1 }, { id: 4 }],

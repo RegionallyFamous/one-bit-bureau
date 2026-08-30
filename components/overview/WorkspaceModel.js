@@ -2,14 +2,28 @@
 
 var MAX_ORDINARY_WORKSPACE_ID = 999
 
-function valuesOf(value) {
-    if (!value)
-        return [];
+function arrayLikeValues(value) {
+    if (!value || typeof value === "string")
+        return null;
     if (Array.isArray(value))
         return value;
-    if (Array.isArray(value.values))
-        return value.values;
-    return [];
+    var length = Number(value.length);
+    if (!isFinite(length) || Math.floor(length) !== length || length < 0 || length > 4096)
+        return null;
+    var result = [];
+    for (var index = 0; index < length; index++)
+        result.push(value[index]);
+    return result;
+}
+
+function valuesOf(value) {
+    var direct = arrayLikeValues(value);
+    if (direct !== null)
+        return direct;
+    var nested = value && typeof value.values !== "function"
+        ? arrayLikeValues(value.values)
+        : null;
+    return nested !== null ? nested : [];
 }
 
 function ordinaryWorkspaceId(value) {
