@@ -381,7 +381,11 @@ launch_showcase_apps() {
     bash -c "hyprctl -j clients | jq -e 'any(.[]; ((.title // \"\") | startswith(\"Bureau Release Desk\")))' >/dev/null"
   wait_until "the showcase opens the real Files application" 30 window_present '^org.gnome.Nautilus$'
   wait_until "the showcase opens the real Writer application" 30 window_present '^libreoffice-writer$'
+  close_windows '^soffice$' || true
+  wait_until "the showcase closes LibreOffice's extra start center" 15 window_absent '^soffice$'
   pass "the showcase opens Chromium, Files, and Writer with offline local content"
+  wait_until "the showcase keeps all real windows under the five curated app identities" 20 \
+    bash -c "(( \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getItemCount) == 5 ))"
   sleep 4
 }
 

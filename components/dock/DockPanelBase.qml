@@ -493,7 +493,7 @@ Item {
       window.desktopId,
       window.className,
       window.initialClass
-    ], root.appEntries)
+    ], root.appEntries, root.pinnedIds)
   }
 
   function hyprlandWindowFor(window) {
@@ -809,7 +809,7 @@ Item {
       if (ipc.appId) ids.push(String(ipc.appId))
       if (ipc["class"]) ids.push(String(ipc["class"]))
       if (ipc.initialClass) ids.push(String(ipc.initialClass))
-      return DockModel.resolveDesktopIds(ids, root.appEntries)
+      return DockModel.resolveDesktopIds(ids, root.appEntries, root.pinnedIds)
     } catch (error) {}
     return ""
   }

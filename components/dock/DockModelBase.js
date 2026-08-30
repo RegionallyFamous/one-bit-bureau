@@ -286,8 +286,8 @@ function lookupWords(value) {
 
 // Resolve a compositor app/class id to a canonical desktop-entry id without
 // broad substring matching. Exact ids and declared window classes win. A
-// desktop name is only accepted as a whole token phrase, and the longest
-// matching name wins so "Visual Studio Code" cannot collapse into "Code".
+// desktop name or canonical id is only accepted as a whole token phrase, and
+// the longest match wins so "Visual Studio Code" cannot collapse into "Code".
 function resolveDesktopId(rawValue, entries) {
     var original = normalizeId(rawValue)
     var lower = original.toLowerCase()
@@ -306,17 +306,34 @@ function resolveDesktopId(rawValue, entries) {
 
     var rawWords = lookupWords(original)
     var paddedRaw = " " + rawWords + " "
+    // Chromium's Wayland app-mode windows use a chrome-<site>-<profile> class
+    // even when the installed desktop entry is chromium and is displayed as
+    // "Web". Keep this compatibility alias whole-token and conditional on the
+    // corresponding installed entry so an arbitrary substring cannot claim it.
+    if (paddedRaw.indexOf(" chrome ") !== -1) {
+        var chromiumId = knownDesktopId("chromium", list)
+        if (chromiumId) return chromiumId
+        var googleChromeId = knownDesktopId("google-chrome", list)
+        if (googleChromeId) return googleChromeId
+    }
     var bestId = ""
     var bestLength = 0
     for (i = 0; i < list.length; i++) {
         var entry = list[i] && list[i].entry ? list[i].entry : (list[i] || {})
         var id = normalizeId(entry.id || entry.desktopId)
-        var nameWords = lookupWords(entry.name || entry.displayName)
-        if (!id || nameWords.length < 4) continue
-        if (paddedRaw.indexOf(" " + nameWords + " ") === -1) continue
-        if (nameWords.length > bestLength) {
-            bestId = id
-            bestLength = nameWords.length
+        if (!id) continue
+        var phrases = [
+            lookupWords(entry.name || entry.displayName),
+            lookupWords(id)
+        ]
+        for (var phraseIndex = 0; phraseIndex < phrases.length; phraseIndex++) {
+            var phrase = phrases[phraseIndex]
+            if (phrase.length < 4) continue
+            if (paddedRaw.indexOf(" " + phrase + " ") === -1) continue
+            if (phrase.length > bestLength) {
+                bestId = id
+                bestLength = phrase.length
+            }
         }
     }
     return bestId || original
@@ -336,9 +353,19 @@ function knownDesktopId(rawValue, entries) {
 
 // Hyprland can expose several identities for the same window: a generated
 // Wayland app id, the live class, and the initial class. Prefer the first
-// candidate that resolves to a real desktop entry, rather than accepting an
-// unknown generated id before reaching a canonical later candidate.
-function resolveDesktopIds(rawValues, entries) {
+// candidate that resolves to a real desktop entry or existing pinned identity,
+// rather than accepting an unknown generated id before a canonical candidate.
+function preferredDesktopId(rawValue, preferredIds) {
+    var value = normalizeId(rawValue).toLowerCase()
+    var values = preferredIds || []
+    for (var i = 0; i < values.length; i++) {
+        var candidate = normalizeId(values[i])
+        if (candidate && candidate.toLowerCase() === value) return candidate
+    }
+    return ""
+}
+
+function resolveDesktopIds(rawValues, entries, preferredIds) {
     var values = rawValues || []
     var fallback = ""
     for (var i = 0; i < values.length; i++) {
@@ -348,6 +375,19 @@ function resolveDesktopIds(rawValues, entries) {
         if (!fallback && resolved) fallback = resolved
         var known = knownDesktopId(resolved, entries)
         if (known) return known
+        var preferred = preferredDesktopId(resolved, preferredIds)
+        if (preferred) return preferred
+    }
+    // App-mode Chromium windows say chrome-<site>-<profile>, not chromium.
+    // If Chromium is already a pinned identity, prefer it without requiring
+    // the filtered launcher catalog to expose the desktop entry.
+    for (var rawIndex = 0; rawIndex < values.length; rawIndex++) {
+        var words = " " + lookupWords(values[rawIndex]) + " "
+        if (words.indexOf(" chrome ") === -1) continue
+        var preferredChromium = preferredDesktopId("chromium", preferredIds)
+        if (preferredChromium) return preferredChromium
+        var preferredGoogleChrome = preferredDesktopId("google-chrome", preferredIds)
+        if (preferredGoogleChrome) return preferredGoogleChrome
     }
     return fallback
 }
@@ -483,6 +523,7 @@ if (typeof module !== "undefined" && module.exports) {
         lookupWords: lookupWords,
         resolveDesktopId: resolveDesktopId,
         knownDesktopId: knownDesktopId,
+        preferredDesktopId: preferredDesktopId,
         resolveDesktopIds: resolveDesktopIds,
         buildDockItems: buildDockItems,
         hashContent: hashContent,

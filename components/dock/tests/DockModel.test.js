@@ -113,15 +113,32 @@ test("desktop id resolution avoids substring app collisions", () => {
 
 test("desktop id resolution prefers a known later compositor identity", () => {
   const entries = [
-    { id: "chromium", name: "Chromium", startupWmClass: "chromium" },
+    { id: "chromium", name: "Web", startupWmClass: "chromium" },
     { id: "libreoffice-writer", name: "LibreOffice Writer", startupWmClass: "libreoffice-writer" }
   ]
+  assert.equal(model.resolveDesktopId("chromium-local-app-Default", entries), "chromium")
+  assert.equal(
+    model.resolveDesktopId("chrome-__home_omarchy_demo_site_index.html-Default", entries),
+    "chromium"
+  )
   assert.equal(
     model.resolveDesktopIds(["generated-local-app-id", "chromium", "Chromium"], entries),
     "chromium"
   )
   assert.equal(
     model.resolveDesktopIds(["soffice-generated-window", "libreoffice-writer"], entries),
+    "libreoffice-writer"
+  )
+  assert.equal(
+    model.resolveDesktopIds(
+      ["chrome-__home_omarchy_demo_site_index.html-Default"],
+      [],
+      ["chromium"]
+    ),
+    "chromium"
+  )
+  assert.equal(
+    model.resolveDesktopIds(["soffice", "libreoffice-writer"], [], ["libreoffice-writer"]),
     "libreoffice-writer"
   )
   assert.equal(model.resolveDesktopIds(["unknown-first", "unknown-second"], entries), "unknown-first")
