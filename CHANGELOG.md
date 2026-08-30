@@ -1,24 +1,21 @@
 # Changelog
 
-## 0.6.0 — One clean Paper Jam
+## Unreleased
 
-- Renamed the unpublished internal identity to `io.github.regionallyfamous.paper-jam-84`, namespaced all runtime targets and user state, and added a non-destructive migration from Alumina-era local files.
-- Added twelve original offline ImageGen app-role icons with automatic Linux app association, manual pack selection, native-icon opt-out, and migration-compatible local mappings.
-- Replaced direct shell-side state loading with a no-follow, size-capped, record-capped reader; removed external icon search and fallback screenshot/ImageMagick jobs so background work has a small, deterministic lifetime.
-- Added original plugin, About, screensaver, and unlock branding plus a generated 1920×1080 Plymouth preview.
-- Bundled Monaspace Krypton NF 1.400 and Departure Mono 1.500 with upstream licenses and checksums; fonts install without silently changing the selected system font.
-- Added a Git-native `paper-jam` coordinator, source-owned theme lifecycle, commit-aligned updates, and ownership-aware removal.
-- Preserved every Omarchy `Super` navigation chord by passing Meta-modified keys through focused desktop, overview, and switcher surfaces.
+### Product changes
 
-## 0.5.1 — Picture means icon
+- Established the complete `io.github.regionallyfamous.one-bit-bureau` identity across runtime targets, theme ownership, commands, user state, branding, and public documentation.
+- Added the original Bitmap Workbench wallpaper, expressive raster desktop objects, original branding, a branded unlock mark with a 1920×1080 preview, and twelve offline app-role icons.
+- Restored real, unmodified desktop thumbnails for bounded local PNG, JPEG, WebP, and BMP files. Selection changes the enclosure and name rail without recoloring the photograph; unsupported or unsafe image inputs use the authored one-bit picture fallback.
+- Seeded new docks with Files, Chromium, and Foot, normalized all twelve bundled app-role icons to their painted alpha bounds, and centered them optically inside balanced 48px dock boxes.
+- Added automatic Linux app association, manual pack selection, a native-icon opt-out, and a deterministic local icon manager with no external artwork service.
+- Added real desktop files, a bottom dock, a searchable window overview, active-application context, safe object-first launcher handling, and pass-through behavior for Omarchy's native `Super` navigation chords.
+- Added no-follow, size-capped, record-capped state loading and bounded helper lifetimes; no external icon search, fallback screenshot process, or ImageMagick job runs in the shell.
+- Bundled Monaspace Krypton NF 1.400 and Departure Mono 1.500 with upstream licenses and checksums. Setup registers them without changing the selected Omarchy font.
+- Added original About and screensaver branding with ownership-aware restoration, plus a Git-native `one-bit-bureau` coordinator, source-owned theme lifecycle, commit-aligned updates, and ownership-aware removal.
+- Added `one-bit-bureau motion reduce|full|status` around the native inline `reducedMotion` setting so One-Bit Bureau surfaces can remove nonessential transitions without adding a parallel preference store.
 
-- Replaced literal desktop photo thumbnails with the dedicated ImageGen-authored one-bit picture-file icon in both runtime and the static design proof.
+### Release verification
 
-## 0.5.0 — Paper Jam ’84 (unpublished development)
-
-- Reframed the vintage edition as Paper Jam ’84 while temporarily preserving the Alumina development namespace.
-- Replaced the desktop object family and wallpaper with original ImageGen-authored bitmap artwork, added a real-color photo path, and added an original one-bit image fallback.
-- Made local installation atomic, collision-safe, and rollback-capable; added an ownership record so uninstall removes only this release and restores only settings it still owns.
-- Kept copied launchers untrusted unless they originate in canonical application directories, made launcher generation keyfile-safe, and made Trash operate on symlinks rather than their targets.
-- Removed runtime global Alt+Tab takeover, fixed preview batch commits, made focus cursor restoration trap-safe, and persisted one-output ownership across every dock surface.
-- Added regression coverage for desktop trust/path policy, dock lifecycle and app matching, setup/uninstall recovery, ownership tampering, and user-modified settings.
+- Implemented keyboard navigation, visible focus, assistive-technology labels, practical hit targets, and reduced-motion behavior across the desktop, dock, overview, settings, and icon manager; the disposable runtime pass remains the release gate.
+- Expanded the disposable-guest acceptance test to exercise the exact public Git install, adopt, activate, update, and removal path. Runtime evidence and rollback results will be recorded only after that test runs against the final public release commit.

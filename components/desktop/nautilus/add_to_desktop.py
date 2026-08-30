@@ -11,7 +11,7 @@ class AddToDesktopAction(GObject.GObject, Nautilus.MenuProvider):
     def _script(self):
         candidates = [
             os.path.expanduser(
-                "~/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/desktop/bin/add-to-desktop"
+                "~/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/desktop/bin/add-to-desktop"
             ),
         ]
         for path in candidates:

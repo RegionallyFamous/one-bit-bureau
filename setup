@@ -2,10 +2,10 @@
 
 set -Eeuo pipefail
 
-PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"
-PRODUCT_NAME="Paper Jam ’84"
-THEME_NAME="paper-jam-84"
-EXPECTED_REPO_URL="https://github.com/RegionallyFamous/paper-jam-84.git"
+PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
+PRODUCT_NAME="One-Bit Bureau"
+THEME_NAME="one-bit-bureau"
+EXPECTED_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
 LOCAL_INSTALL=0
 ADOPT_PLUGIN=0
 ASSUME_YES=0
@@ -16,15 +16,12 @@ SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
 THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
 PLUGIN_TARGET="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
-PAPER_JAM_CONFIG="$HOME/.config/omarchy/paper-jam-84"
-FONT_TARGET="$HOME/.local/share/fonts/paper-jam-84"
+ONE_BIT_BUREAU_CONFIG="$HOME/.config/omarchy/one-bit-bureau"
+FONT_TARGET="$HOME/.local/share/fonts/one-bit-bureau"
 BRANDING_TARGET="$HOME/.config/omarchy/branding"
 BRANDING_BACKUP_DIR="$STATE_DIR/backups/branding"
-COMMAND_TARGET="$HOME/.local/bin/paper-jam"
+COMMAND_TARGET="$HOME/.local/bin/one-bit-bureau"
 BRANDING_MAX_BYTES=$((1024 * 1024))
-MIGRATION_FILE_MAX_BYTES=$((10 * 1024 * 1024))
-MIGRATION_ICON_MAX_FILES=128
-MIGRATION_ICON_MAX_BYTES=$((32 * 1024 * 1024))
 
 PLUGIN_OWNED=0
 THEME_OWNED=0
@@ -49,7 +46,7 @@ THEME_SOURCE_COMMIT=""
 REMOTE_REPO_URL=""
 
 fail() {
-  echo "paper-jam setup: $*" >&2
+  echo "one-bit-bureau setup: $*" >&2
   return 1
 }
 
@@ -104,7 +101,7 @@ fi
 [[ ! -e $STATE_FILE ]] || fail "an install-state record already exists; run bash uninstall before reinstalling"
 if (( ADOPT_PLUGIN )); then
   [[ -d $PLUGIN_TARGET/.git ]] || fail "--adopt-plugin requires a Git-managed plugin at $PLUGIN_TARGET"
-  [[ $(cd -- "$SCRIPT_DIR" && pwd -P) == "$(cd -- "$PLUGIN_TARGET" && pwd -P)" ]] || fail "run the setup script from the installed Paper Jam plugin"
+  [[ $(cd -- "$SCRIPT_DIR" && pwd -P) == "$(cd -- "$PLUGIN_TARGET" && pwd -P)" ]] || fail "run the setup script from the installed One-Bit Bureau plugin"
 else
   [[ ! -e $PLUGIN_TARGET ]] || fail "plugin target already exists: $PLUGIN_TARGET"
 fi
@@ -245,7 +242,7 @@ directory_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
 if hasattr(os, "O_NOFOLLOW"):
     directory_flags |= os.O_NOFOLLOW
 parent_fd = os.open(parent, directory_flags)
-temporary = f".{name}.paper-jam-{os.getpid()}"
+temporary = f".{name}.one-bit-bureau-{os.getpid()}"
 output_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
 if hasattr(os, "O_NOFOLLOW"):
     output_flags |= os.O_NOFOLLOW
@@ -306,88 +303,6 @@ try:
 finally:
     os.close(fd)
 print(digest.hexdigest())
-PY
-}
-
-safe_copy_icon_tree() {
-  local source="$1" destination="$2"
-  python3 - "$source" "$destination" "$MIGRATION_ICON_MAX_FILES" "$MIGRATION_FILE_MAX_BYTES" "$MIGRATION_ICON_MAX_BYTES" <<'PY'
-import os
-import shutil
-import signal
-import stat
-import sys
-
-source, destination, raw_max_files, raw_file_limit, raw_total_limit = sys.argv[1:]
-max_files = int(raw_max_files)
-file_limit = int(raw_file_limit)
-total_limit = int(raw_total_limit)
-def deadline(_signum, _frame):
-    raise TimeoutError("bounded icon migration exceeded its 10-second deadline")
-signal.signal(signal.SIGALRM, deadline)
-signal.alarm(10)
-directory_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
-if hasattr(os, "O_NOFOLLOW"):
-    directory_flags |= os.O_NOFOLLOW
-source_fd = os.open(source, directory_flags)
-parent = os.path.dirname(destination)
-name = os.path.basename(destination)
-parent_fd = os.open(parent, directory_flags)
-stage_name = f".{name}.paper-jam-{os.getpid()}"
-stage_path = os.path.join(parent, stage_name)
-stage_fd = -1
-try:
-    names = sorted(os.listdir(source_fd))
-    if len(names) > max_files:
-        raise SystemExit(f"legacy icon directory exceeds {max_files} entries")
-    os.mkdir(stage_name, 0o700, dir_fd=parent_fd)
-    stage_fd = os.open(stage_name, directory_flags, dir_fd=parent_fd)
-    total = 0
-    for entry in names:
-        read_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK
-        if hasattr(os, "O_NOFOLLOW"):
-            read_flags |= os.O_NOFOLLOW
-        input_fd = os.open(entry, read_flags, dir_fd=source_fd)
-        try:
-            item_stat = os.fstat(input_fd)
-            if not stat.S_ISREG(item_stat.st_mode):
-                raise SystemExit(f"legacy icon is not a regular file: {entry}")
-            if item_stat.st_size > file_limit:
-                raise SystemExit(f"legacy icon exceeds {file_limit} bytes: {entry}")
-            total += item_stat.st_size
-            if total > total_limit:
-                raise SystemExit(f"legacy icon directory exceeds {total_limit} bytes")
-            output_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
-            if hasattr(os, "O_NOFOLLOW"):
-                output_flags |= os.O_NOFOLLOW
-            output_fd = os.open(entry, output_flags, 0o600, dir_fd=stage_fd)
-            try:
-                copied = 0
-                while True:
-                    chunk = os.read(input_fd, min(65536, file_limit + 1 - copied))
-                    if not chunk:
-                        break
-                    copied += len(chunk)
-                    if copied > file_limit:
-                        raise SystemExit(f"legacy icon exceeds {file_limit} bytes: {entry}")
-                    view = memoryview(chunk)
-                    while view:
-                        written = os.write(output_fd, view)
-                        view = view[written:]
-            finally:
-                os.close(output_fd)
-        finally:
-            os.close(input_fd)
-    os.close(stage_fd)
-    stage_fd = -1
-    os.rename(stage_name, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
-finally:
-    if stage_fd >= 0:
-        os.close(stage_fd)
-    os.close(source_fd)
-    os.close(parent_fd)
-    if os.path.isdir(stage_path):
-        shutil.rmtree(stage_path)
 PY
 }
 
@@ -535,7 +450,7 @@ rollback() {
   [[ -z $FONT_STAGE || ! -e $FONT_STAGE ]] || rm -rf "$FONT_STAGE"
   rm -f "$STATE_FILE" "$STATE_FILE.tmp"
   rmdir "$STATE_DIR" 2>/dev/null || true
-  echo "paper-jam setup rolled back after an error" >&2
+  echo "one-bit-bureau setup rolled back after an error" >&2
   exit "$status"
 }
 trap rollback ERR INT TERM
@@ -543,9 +458,9 @@ trap rollback ERR INT TERM
 install_local_plugin() {
   local plugins_dir="$HOME/.config/omarchy/plugins"
   mkdir -p "$plugins_dir"
-  PLUGIN_STAGE=$(mktemp -d "$plugins_dir/.paper-jam-plugin.XXXXXX")
+  PLUGIN_STAGE=$(mktemp -d "$plugins_dir/.one-bit-bureau-plugin.XXXXXX")
   mkdir -p "$PLUGIN_STAGE/components"
-  cp "$SCRIPT_DIR/manifest.json" "$SCRIPT_DIR/Experience.qml" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$SCRIPT_DIR/paper-jam" "$SCRIPT_DIR/update" "$SCRIPT_DIR/uninstall" "$PLUGIN_STAGE/"
+  cp "$SCRIPT_DIR/manifest.json" "$SCRIPT_DIR/Experience.qml" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$SCRIPT_DIR/one-bit-bureau" "$SCRIPT_DIR/update" "$SCRIPT_DIR/uninstall" "$PLUGIN_STAGE/"
   cp -R "$SCRIPT_DIR/components/active-window" "$SCRIPT_DIR/components/desktop" "$SCRIPT_DIR/components/dock" "$SCRIPT_DIR/components/overview" "$PLUGIN_STAGE/components/"
   rm -rf "$PLUGIN_STAGE/components/desktop/tests" "$PLUGIN_STAGE/components/dock/tests"
   find "$PLUGIN_STAGE" -type d -name __pycache__ -prune -exec rm -rf {} +
@@ -589,7 +504,7 @@ install_adopted_plugin() {
 install_local_theme() {
   local themes_dir="$HOME/.config/omarchy/themes"
   mkdir -p "$themes_dir"
-  THEME_STAGE=$(mktemp -d "$themes_dir/.paper-jam-theme.XXXXXX")
+  THEME_STAGE=$(mktemp -d "$themes_dir/.one-bit-bureau-theme.XXXXXX")
   cp -R "$SCRIPT_DIR/themes/$THEME_NAME/." "$THEME_STAGE/"
   THEME_OWNED=1
   write_state
@@ -605,7 +520,7 @@ install_remote_theme() {
     repo_url="$REMOTE_REPO_URL"
   fi
   [[ $repo_url == "$EXPECTED_REPO_URL" ]] || fail "theme setup requires the canonical origin $EXPECTED_REPO_URL"
-  source_json=$(omarchy theme source inspect "$repo_url" --json) || fail "could not inspect the Paper Jam theme source"
+  source_json=$(omarchy theme source inspect "$repo_url" --json) || fail "could not inspect the One-Bit Bureau theme source"
   THEME_SOURCE_ID=$(jq -er '.source.id' <<<"$source_json") || fail "theme source did not return an ID"
   THEME_SOURCE_URL=$(jq -er '.source.url' <<<"$source_json") || fail "theme source did not return a URL"
   [[ $THEME_SOURCE_URL == "$EXPECTED_REPO_URL" ]] || fail "theme source returned an unexpected repository URL"
@@ -615,46 +530,23 @@ install_remote_theme() {
   fi
   THEME_OWNED=1
   write_state
-  install_json=$(omarchy theme source install "$THEME_SOURCE_ID" "$THEME_NAME" --json) || fail "could not install the Paper Jam theme"
+  install_json=$(omarchy theme source install "$THEME_SOURCE_ID" "$THEME_NAME" --json) || fail "could not install the One-Bit Bureau theme"
   jq -e --arg source "$THEME_SOURCE_ID" --arg theme "$THEME_NAME" '.source.id == $source and .action.theme == $theme' <<<"$install_json" >/dev/null || fail "theme source install returned an unexpected result"
   [[ -e $THEME_TARGET ]] || fail "theme install did not create $THEME_TARGET"
 }
 
-copy_legacy_file() {
-  local source="$1"
-  local destination="$2"
-  [[ ! -L $source ]] || fail "legacy migration source must not be a symlink: $source"
-  [[ ! -e $source || -f $source ]] || fail "legacy migration source is not a regular file: $source"
-  [[ ! -L $destination ]] || fail "Paper Jam migration destination must not be a symlink: $destination"
-  if [[ -f $source && ! -e $destination ]]; then
-    safe_copy_regular "$source" "$destination" "$MIGRATION_FILE_MAX_BYTES"
-  fi
-}
-
-migrate_legacy_user_data() {
-  [[ ! -L $PAPER_JAM_CONFIG ]] || fail "Paper Jam config directory must not be a symlink: $PAPER_JAM_CONFIG"
-  [[ ! -e $PAPER_JAM_CONFIG || -d $PAPER_JAM_CONFIG ]] || fail "Paper Jam config path is not a directory: $PAPER_JAM_CONFIG"
-  mkdir -p "$PAPER_JAM_CONFIG"
-  copy_legacy_file "$HOME/.config/omarchy/alumina-dock-pinned.json" "$PAPER_JAM_CONFIG/dock-pinned.json"
-  copy_legacy_file "$HOME/.config/omarchy/alumina-dock-settings.json" "$PAPER_JAM_CONFIG/dock-settings.json"
-  copy_legacy_file "$HOME/.config/omarchy/dock-icons.json" "$PAPER_JAM_CONFIG/dock-icons.json"
-  copy_legacy_file "$HOME/.config/omarchy/desktop-icon-positions.json" "$PAPER_JAM_CONFIG/desktop-icon-positions.json"
-  legacy_icons="$HOME/.config/omarchy/icons"
-  destination_icons="$PAPER_JAM_CONFIG/icons"
-  [[ ! -L $legacy_icons ]] || fail "legacy icon directory must not be a symlink: $legacy_icons"
-  [[ ! -e $legacy_icons || -d $legacy_icons ]] || fail "legacy icon path is not a directory: $legacy_icons"
-  [[ ! -L $destination_icons ]] || fail "Paper Jam icon directory must not be a symlink: $destination_icons"
-  if [[ -d $legacy_icons && ! -e $destination_icons ]]; then
-    safe_copy_icon_tree "$legacy_icons" "$destination_icons"
-  else
-    mkdir -p "$destination_icons"
-  fi
+prepare_user_data() {
+  [[ ! -L $ONE_BIT_BUREAU_CONFIG ]] || fail "One-Bit Bureau config directory must not be a symlink: $ONE_BIT_BUREAU_CONFIG"
+  [[ ! -e $ONE_BIT_BUREAU_CONFIG || -d $ONE_BIT_BUREAU_CONFIG ]] || fail "One-Bit Bureau config path is not a directory: $ONE_BIT_BUREAU_CONFIG"
+  [[ ! -L $ONE_BIT_BUREAU_CONFIG/icons ]] || fail "One-Bit Bureau icon directory must not be a symlink: $ONE_BIT_BUREAU_CONFIG/icons"
+  [[ ! -e $ONE_BIT_BUREAU_CONFIG/icons || -d $ONE_BIT_BUREAU_CONFIG/icons ]] || fail "One-Bit Bureau icon path is not a directory: $ONE_BIT_BUREAU_CONFIG/icons"
+  mkdir -p "$ONE_BIT_BUREAU_CONFIG/icons"
 }
 
 install_fonts() {
   local fonts_dir="$HOME/.local/share/fonts"
   mkdir -p "$fonts_dir"
-  FONT_STAGE=$(mktemp -d "$fonts_dir/.paper-jam-84.XXXXXX")
+  FONT_STAGE=$(mktemp -d "$fonts_dir/.one-bit-bureau.XXXXXX")
   cp -- "$SCRIPT_DIR/fonts/DepartureMono-1.500.otf" "$SCRIPT_DIR/fonts/MonaspaceKryptonNF-Regular-1.400.otf" "$FONT_STAGE/"
   FONT_TREE_HASH=$(font_tree_hash "$FONT_STAGE") || fail "could not verify staged fonts"
   FONT_OWNED=1
@@ -683,10 +575,10 @@ install_branding() {
 install_command() {
   local command_dir="$HOME/.local/bin"
   mkdir -p "$command_dir"
-  COMMAND_HASH=$(hash_file "$PLUGIN_TARGET/paper-jam")
+  COMMAND_HASH=$(hash_file "$PLUGIN_TARGET/one-bit-bureau")
   COMMAND_OWNED=1
   write_state
-  cp -- "$PLUGIN_TARGET/paper-jam" "$COMMAND_TARGET"
+  cp -- "$PLUGIN_TARGET/one-bit-bureau" "$COMMAND_TARGET"
   chmod 755 "$COMMAND_TARGET"
 }
 
@@ -701,7 +593,7 @@ else
   install_remote_plugin
   install_remote_theme
 fi
-migrate_legacy_user_data
+prepare_user_data
 install_command
 install_fonts
 install_branding

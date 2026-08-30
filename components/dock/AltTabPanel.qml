@@ -104,7 +104,7 @@ PanelWindow {
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.namespace: "paper-jam-84-dock-alt-tab"
+  WlrLayershell.namespace: "one-bit-bureau-dock-alt-tab"
   WlrLayershell.keyboardFocus: root.active ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
   anchors { top: true; bottom: true; left: true; right: true }
   mask: Region { item: dockSurface }

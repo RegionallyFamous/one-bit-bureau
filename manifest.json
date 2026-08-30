@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.regionallyfamous.paper-jam-84",
-  "name": "Paper Jam ’84",
+  "id": "io.github.regionallyfamous.one-bit-bureau",
+  "name": "One-Bit Bureau",
   "version": "0.6.0",
   "author": "RegionallyFamous",
   "license": "MIT",
@@ -28,6 +28,7 @@
       "iconSaturation": 100,
       "iconSize": 16,
       "maxWidth": 300,
+      "reducedMotion": false,
       "showTitle": true
     },
     "schema": [
@@ -57,6 +58,12 @@
         "max": 600,
         "step": 10,
         "defaultValue": 300
+      },
+      {
+        "key": "reducedMotion",
+        "type": "boolean",
+        "label": "Reduce One-Bit Bureau motion",
+        "defaultValue": false
       },
       {
         "key": "showTitle",

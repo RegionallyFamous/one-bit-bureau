@@ -63,6 +63,14 @@ Rectangle {
     border.color: outlineColor
     border.width: outlineWidth
     opacity: card.controller.previewIndex < 0 || previewed ? 1 : 0.6
+    Accessible.role: Accessible.Button
+    Accessible.name: card.applicationName + ": " + card.windowTitle
+    Accessible.description: "Workspace " + card.workspaceName
+    Accessible.focusable: card.acceptsKeyboard
+    Accessible.focused: card.selected
+    Accessible.selectable: true
+    Accessible.selected: card.selected
+    Accessible.onPressAction: card.controller.activate(card.modelData)
 
     MouseArea {
         anchors.fill: parent
@@ -474,7 +482,7 @@ Rectangle {
     }
 
     Behavior on x {
-        enabled: card.controller.motionSettled
+        enabled: card.controller.motionSettled && !card.controller.reducedMotion
 
         NumberAnimation {
             duration: card.controller.previewAnimationDuration
@@ -484,7 +492,7 @@ Rectangle {
     }
 
     Behavior on y {
-        enabled: card.controller.motionSettled
+        enabled: card.controller.motionSettled && !card.controller.reducedMotion
 
         NumberAnimation {
             duration: card.controller.previewAnimationDuration
@@ -494,7 +502,7 @@ Rectangle {
     }
 
     Behavior on width {
-        enabled: card.controller.motionSettled
+        enabled: card.controller.motionSettled && !card.controller.reducedMotion
 
         NumberAnimation {
             duration: card.controller.previewAnimationDuration
@@ -504,7 +512,7 @@ Rectangle {
     }
 
     Behavior on height {
-        enabled: card.controller.motionSettled
+        enabled: card.controller.motionSettled && !card.controller.reducedMotion
 
         NumberAnimation {
             duration: card.controller.previewAnimationDuration
@@ -514,7 +522,7 @@ Rectangle {
     }
 
     Behavior on opacity {
-        enabled: card.controller.motionSettled
+        enabled: card.controller.motionSettled && !card.controller.reducedMotion
 
         NumberAnimation {
             duration: card.controller.previewFadeDuration

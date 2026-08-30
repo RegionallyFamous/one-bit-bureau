@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "paper-jam-84",
-  "name": "Paper Jam ’84",
+  "id": "one-bit-bureau",
+  "name": "One-Bit Bureau",
   "roles": [
     { "id": "files", "label": "Files" },
     { "id": "terminal", "label": "Terminal" },

@@ -1,6 +1,6 @@
 .pragma library
 
-// A fresh Paper Jam install should read as a dock before the user launches
+// A fresh One-Bit Bureau install should read as a dock before the user launches
 // anything. These desktop entries are Omarchy base-package invariants and can
 // still be unpinned or reordered like any other item.
 var DEFAULT_PINNED = ["org.gnome.Nautilus", "chromium", "foot"]

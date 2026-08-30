@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" shape-rendering="crispEdges">
   <rect width="1600" height="900" fill="#171716"/>
   <text x="16" y="19" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="700">STATIC DESIGN PROOF — NOT RUNTIME</text>
-  <image x="0" y="28" width="1600" height="872" href="../themes/paper-jam-84/backgrounds/paper-jam-84.png" preserveAspectRatio="xMidYMid slice"/>
+  <image x="0" y="28" width="1600" height="872" href="../themes/one-bit-bureau/backgrounds/one-bit-bureau.png" preserveAspectRatio="xMidYMid slice"/>
 
   <rect x="0" y="28" width="1600" height="30" fill="#f4f4f0" stroke="#171716" stroke-width="2"/>
   <text x="14" y="49" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Files — Documents</text>
@@ -18,8 +18,8 @@
     <text x="36" y="93" text-anchor="middle" fill="#171716" font-family="DejaVu Sans, sans-serif" font-size="12">Projects</text>
   </g>
   <g transform="translate(24 356)">
-    <rect width="72" height="72" fill="#171716" stroke="#171716" stroke-width="2"/>
-    <image x="4" y="4" width="64" height="64" href="../components/desktop/assets/image-selected.png"/>
+    <rect width="72" height="72" fill="none" stroke="#171716" stroke-width="2"/>
+    <image x="4" y="4" width="64" height="64" href="assets/proof-photo.png" preserveAspectRatio="xMidYMid slice"/>
     <rect y="78" width="72" height="22" fill="#171716" stroke="#171716"/>
     <text x="36" y="93" text-anchor="middle" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="12">Photo</text>
   </g>
@@ -46,7 +46,7 @@
     <rect x="8" y="8" width="554" height="34" fill="#171716"/>
     <text x="20" y="31" fill="#f4f4f0" font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="700">Terminal — palette check</text>
     <g font-family="DejaVu Sans Mono, monospace" font-size="15">
-      <text x="28" y="82" fill="#171716">$ omarchy theme set paper-jam-84</text>
+      <text x="28" y="82" fill="#171716">$ omarchy theme set one-bit-bureau</text>
       <text x="28" y="120" fill="#50504c">object first · stable ownership · immediate feedback</text>
       <text x="28" y="168" fill="#7a1f24">RED</text><text x="94" y="168" fill="#205a34">GREEN</text><text x="184" y="168" fill="#514300">YELLOW</text>
       <text x="294" y="168" fill="#1a4775">BLUE</text><text x="374" y="168" fill="#603667">MAGENTA</text><text x="479" y="168" fill="#13595e">CYAN</text>

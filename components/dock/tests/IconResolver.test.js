@@ -49,7 +49,7 @@ test("resolves explicit pack and native overrides", () => {
   assert.equal(resolver.hasCustomOverride(icons, "browser"), true)
 })
 
-test("associates common Linux apps with Paper Jam roles", () => {
+test("associates common Linux apps with One-Bit Bureau roles", () => {
   assert.equal(resolver.automaticPackRole({ id: "org.gnome.Nautilus" }), "files")
   assert.equal(resolver.automaticPackRole({ id: "com.mitchellh.ghostty" }), "terminal")
   assert.equal(resolver.automaticPackRole({ id: "google-chrome" }), "browser")

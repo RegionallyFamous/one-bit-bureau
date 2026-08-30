@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Pure path and trust policy for the Paper Jam desktop helpers.
+"""Pure path and trust policy for the One-Bit Bureau desktop helpers.
 
 This module deliberately has no Gtk/Gio dependency so the security-sensitive
 path rules can be unit-tested outside a running Omarchy session.

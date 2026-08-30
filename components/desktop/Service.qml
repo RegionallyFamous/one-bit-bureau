@@ -20,6 +20,8 @@ Item {
   property int padLeft: 24
   property int padRight: 24
   property int padBottom: 24
+  property string statusMessage: ""
+  property bool statusIsError: false
   readonly property int maxItems: 256
   readonly property int maxListChars: 262144
   readonly property int maxNameLength: 120
@@ -29,11 +31,11 @@ Item {
   readonly property string home: Quickshell.env("HOME")
   readonly property string pluginDir: (manifest && manifest.__sourceDir)
     ? String(manifest.__sourceDir) + "/components/desktop"
-    : (home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/desktop")
+    : (home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/desktop")
   readonly property string indexScript: pluginDir + "/bin/desktop-index"
   readonly property string addScript: pluginDir + "/bin/add-to-desktop"
   readonly property string hyperlinkScript: home + "/.local/bin/create-hyperlink"
-  readonly property string positionsPath: home + "/.config/omarchy/paper-jam-84/desktop-icon-positions.json"
+  readonly property string positionsPath: home + "/.config/omarchy/one-bit-bureau/desktop-icon-positions.json"
 
   function padTopFor(screen) {
     var bar = shell && shell.bar ? shell.bar : null
@@ -176,6 +178,22 @@ Item {
     return !!(item
       && item.kind === "image"
       && root.localFileUrl(String(item.preview || "")))
+  }
+
+  function accessibleDescription(item) {
+    if (!item)
+      return "Desktop object"
+    if (root.isUntrustedLauncher(item))
+      return "Untrusted application shortcut. Opening asks for confirmation."
+    if (root.isTrash(item))
+      return "Trash. Press to open."
+    if (root.hasImagePreview(item))
+      return "Picture file shown as an unmodified photo thumbnail. Press to open."
+    if (item.isDir || item.kind === "folder")
+      return "Folder. Press to open."
+    if (item.kind === "launcher")
+      return "Application shortcut. Press to open."
+    return "File. Press to open."
   }
 
   function objectIconSource(item, selected) {
@@ -367,14 +385,24 @@ Item {
 
   function applyList(raw) {
     var text = String(raw || "").trim()
-    if (!text)
+    if (!text) {
+      root.statusMessage = "Desktop objects could not be refreshed."
+      root.statusIsError = true
       return
+    }
     if (text.length > root.maxListChars) {
       console.warn("desktop-icons: index output exceeded resource ceiling")
+      root.statusMessage = "Desktop objects could not be refreshed because the result was too large."
+      root.statusIsError = true
       return
     }
     try {
       var data = JSON.parse(text)
+      var errorMessage = root.plainText(data.error, 240)
+      root.statusMessage = errorMessage
+        ? "Desktop could not be read: " + errorMessage
+        : data.truncated ? "Some desktop objects are not shown." : ""
+      root.statusIsError = !!errorMessage
       var incoming = Array.isArray(data.items) ? data.items.slice(0, root.maxItems) : []
       var items = []
       for (var i = 0; i < incoming.length; i++) {
@@ -403,6 +431,8 @@ Item {
       }
     } catch (e) {
       console.warn("desktop-icons: failed to parse index:", e)
+      root.statusMessage = "Desktop objects could not be refreshed."
+      root.statusIsError = true
     }
   }
 
@@ -506,6 +536,7 @@ Item {
       property bool dropping: false
       property int emptyClicks: 0
       property int trustFocusIndex: 0
+      property int menuCursorIndex: -1
       property bool _initialized: false
       property var _knownIds: ({})
 
@@ -663,6 +694,65 @@ Item {
       function closeMenu() {
         menuKind = ""
         menuItem = null
+        menuCursorIndex = -1
+      }
+
+      function firstEnabledMenuIndex(fromEnd) {
+        var entries = panel.menuEntries
+        if (!entries || entries.length === 0)
+          return -1
+        if (fromEnd) {
+          for (var i = entries.length - 1; i >= 0; i--)
+            if (entries[i].enabled !== false)
+              return i
+        } else {
+          for (var j = 0; j < entries.length; j++)
+            if (entries[j].enabled !== false)
+              return j
+        }
+        return -1
+      }
+
+      function resetMenuCursor(fromEnd) {
+        panel.menuCursorIndex = panel.firstEnabledMenuIndex(!!fromEnd)
+      }
+
+      function moveMenuCursor(delta) {
+        var entries = panel.menuEntries
+        if (!entries || entries.length === 0)
+          return
+        var start = panel.menuCursorIndex
+        if (start < 0 || start >= entries.length) {
+          panel.resetMenuCursor(delta < 0)
+          return
+        }
+        for (var step = 1; step <= entries.length; step++) {
+          var candidate = (start + delta * step) % entries.length
+          if (candidate < 0)
+            candidate += entries.length
+          if (entries[candidate].enabled !== false) {
+            panel.menuCursorIndex = candidate
+            return
+          }
+        }
+      }
+
+      function activateMenuCursor() {
+        var entries = panel.menuEntries
+        var index = panel.menuCursorIndex
+        if (!entries || index < 0 || index >= entries.length)
+          return
+        var entry = entries[index]
+        if (entry.enabled === false)
+          return
+        menuBox.activateMenu(String(entry.action || ""))
+      }
+
+      function selectedItem() {
+        for (var i = 0; i < host.items.length; i++)
+          if (host.items[i].id === host.selectedId)
+            return host.items[i]
+        return null
       }
 
       function openEmptyMenu(mouse) {
@@ -670,14 +760,38 @@ Item {
         menuItem = null
         menuX = mouse.x
         menuY = mouse.y
+        panel.resetMenuCursor(false)
       }
 
       function openItemMenu(item, iconItem, mouse) {
+        var p = contentItem.mapFromItem(iconItem, mouse.x, mouse.y)
+        panel.openItemMenuAt(item, p.x, p.y)
+      }
+
+      function openItemMenuAt(item, x, y) {
         menuKind = "item"
         menuItem = item
-        var p = contentItem.mapFromItem(iconItem, mouse.x, mouse.y)
-        menuX = p.x
-        menuY = p.y
+        menuX = x
+        menuY = y
+        panel.resetMenuCursor(false)
+      }
+
+      function openKeyboardContextMenu() {
+        var item = panel.selectedItem()
+        if (item) {
+          for (var i = 0; i < host.items.length; i++) {
+            if (host.items[i].id === item.id) {
+              var p = panel.posFor(item, i)
+              panel.openItemMenuAt(item, p.x + Math.round(host.cellW / 2), p.y + Math.round(host.cellH / 2))
+              return
+            }
+          }
+        }
+        menuKind = "empty"
+        menuItem = null
+        menuX = panel.padLeft + 12
+        menuY = panel.padTop + 12
+        panel.resetMenuCursor(false)
       }
 
       readonly property var menuEntries: {
@@ -742,7 +856,9 @@ Item {
             } else if (event.key === Qt.Key_Tab
                        || event.key === Qt.Key_Backtab
                        || event.key === Qt.Key_Left
-                       || event.key === Qt.Key_Right) {
+                       || event.key === Qt.Key_Right
+                       || event.key === Qt.Key_Up
+                       || event.key === Qt.Key_Down) {
               panel.trustFocusIndex = panel.trustFocusIndex === 0 ? 1 : 0
             } else if (event.key === Qt.Key_Space) {
               if (panel.trustFocusIndex === 0)
@@ -755,7 +871,37 @@ Item {
             event.accepted = true
             return
           }
-          if (event.key === Qt.Key_Escape) {
+          var contextMenuKey = event.key === Qt.Key_Menu
+            || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))
+          if (panel.menuKind !== "") {
+            if (event.key === Qt.Key_Escape) {
+              panel.closeMenu()
+            } else if (event.key === Qt.Key_Home) {
+              panel.resetMenuCursor(false)
+            } else if (event.key === Qt.Key_End) {
+              panel.resetMenuCursor(true)
+            } else if (event.key === Qt.Key_Up || event.key === Qt.Key_Left
+                       || event.key === Qt.Key_Backtab
+                       || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+              panel.moveMenuCursor(-1)
+            } else if (event.key === Qt.Key_Down || event.key === Qt.Key_Right
+                       || event.key === Qt.Key_Tab) {
+              panel.moveMenuCursor(1)
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                       || event.key === Qt.Key_Space) {
+              panel.activateMenuCursor()
+            } else if (contextMenuKey) {
+              // Leave an already-open context menu stable.
+            } else {
+              return
+            }
+            event.accepted = true
+            return
+          }
+          if (contextMenuKey) {
+            panel.openKeyboardContextMenu()
+            event.accepted = true
+          } else if (event.key === Qt.Key_Escape) {
             panel.closeMenu()
             event.accepted = true
           } else if (event.key === Qt.Key_Delete && host.selectedId) {
@@ -847,6 +993,42 @@ Item {
         z: 5
       }
 
+      Rectangle {
+        id: statusBox
+        visible: host.statusMessage !== ""
+          && Quickshell.screens.length > 0
+          && panel.modelData === Quickshell.screens[0]
+        z: 19
+        width: Math.min(420, Math.max(0, panel.width - 48))
+        height: statusText.implicitHeight + 20
+        x: Math.round(panel.width / 2 - width / 2)
+        y: panel.padTop
+        radius: 0
+        color: Color.popups.background
+        border.width: 2
+        border.color: host.statusIsError ? Color.urgent : Color.popups.border
+        Accessible.role: host.statusIsError ? Accessible.AlertMessage : Accessible.StaticText
+        Accessible.name: statusText.text
+        Accessible.description: host.statusIsError
+          ? "Desktop service error"
+          : "Desktop service status"
+
+        Text {
+          id: statusText
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          anchors.margins: 10
+          text: host.statusMessage
+          textFormat: Text.PlainText
+          color: Color.popups.text
+          font.pixelSize: 13
+          font.family: Style.fontFamily
+          wrapMode: Text.WordWrap
+          horizontalAlignment: Text.AlignHCenter
+        }
+      }
+
       Repeater {
         model: panel.host.items
 
@@ -861,6 +1043,15 @@ Item {
           property real pressX: 0
           property real pressY: 0
           readonly property bool selected: panel.host.selectedId === iconRoot.modelData.id
+          readonly property bool photoPreview: panel.host.hasImagePreview(iconRoot.modelData)
+          Accessible.role: Accessible.ListItem
+          Accessible.name: panel.host.plainText(iconRoot.modelData.name)
+          Accessible.description: panel.host.accessibleDescription(iconRoot.modelData)
+          Accessible.selectable: true
+          Accessible.selected: iconRoot.selected
+          Accessible.focusable: true
+          Accessible.focused: iconRoot.selected && emptyMouse.activeFocus
+          Accessible.onPressAction: panel.host.openOrConfirm(iconRoot.modelData, panel.screenName)
           Binding on x {
             value: panel.posFor(iconRoot.modelData, iconRoot.index).x
             when: !iconMouse.drag.active
@@ -895,18 +1086,21 @@ Item {
               clip: true
 
               Rectangle {
+                id: objectEnclosure
                 anchors.fill: parent
                 radius: 0
-                color: iconRoot.selected && panel.host.usesCategoryIcon(iconRoot.modelData)
+                color: iconRoot.selected && (panel.host.usesCategoryIcon(iconRoot.modelData) || iconRoot.photoPreview)
                   ? Color.foreground
-                  : "transparent"
-                border.width: iconRoot.selected ? 2 : 0
+                  : iconRoot.photoPreview ? Color.menu.background : "transparent"
+                border.width: iconRoot.selected ? 2 : iconRoot.photoPreview ? 1 : 0
                 border.color: Color.foreground
               }
 
               Image {
                 id: desktopIcon
                 anchors.centerIn: parent
+                // A real picture never changes pixels to communicate selection.
+                // Its source and geometry stay constant while the enclosure inverts.
                 width: panel.host.iconSize
                 height: panel.host.iconSize
                 source: panel.host.objectIconSource(iconRoot.modelData, iconRoot.selected)
@@ -917,8 +1111,8 @@ Item {
                 cache: true
                 smooth: panel.host.hasImagePreview(iconRoot.modelData)
                   || !panel.host.usesCategoryIcon(iconRoot.modelData)
-                sourceSize.width: panel.host.iconSize * Screen.devicePixelRatio
-                sourceSize.height: panel.host.iconSize * Screen.devicePixelRatio
+                sourceSize.width: width * Screen.devicePixelRatio
+                sourceSize.height: height * Screen.devicePixelRatio
               }
 
               Rectangle {
@@ -945,6 +1139,7 @@ Item {
             }
 
             Rectangle {
+              id: nameRail
               width: parent.width
               height: Math.min(44, desktopLabel.implicitHeight + 6)
               radius: 0
@@ -1067,6 +1262,18 @@ Item {
         property var currentItem: menuItem
         property string currentScreen: panel.screenName
         property int closeTick: 0
+        property int cursorIndex: panel.menuCursorIndex
+        Accessible.role: Accessible.PopupMenu
+        Accessible.name: currentItem
+          ? "Commands for " + pluginHost.plainText(currentItem.name)
+          : "Desktop commands"
+        Accessible.description: "Use the arrow keys to choose a command. Enter or Space activates it. Escape closes the menu."
+        Accessible.focusable: true
+        Accessible.focused: visible && emptyMouse.activeFocus
+
+        function setCursorIndex(index) {
+          panel.menuCursorIndex = index
+        }
 
         function activateMenu(action) {
           var item = currentItem
@@ -1111,11 +1318,31 @@ Item {
             model: menuEntries
 
             Rectangle {
+              id: menuRow
+              required property var modelData
+              required property int index
               readonly property bool rowEnabled: modelData.enabled !== false
+              readonly property bool keyboardCurrent: index === menuBox.cursorIndex
               width: menuCol.width
-              height: 28
+              height: 44
+              enabled: rowEnabled
               radius: 0
-              color: rowEnabled && rowMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+              color: rowEnabled && (rowMouse.containsMouse || keyboardCurrent)
+                ? Color.menu.selectedBackground
+                : "transparent"
+              Accessible.role: Accessible.MenuItem
+              Accessible.name: String(modelData.label || "")
+              Accessible.description: rowEnabled ? "Activate command" : "Unavailable command"
+              Accessible.focusable: rowEnabled
+              Accessible.focused: keyboardCurrent
+              Accessible.selected: keyboardCurrent
+              Accessible.onPressAction: menuRow.activateRow()
+
+              function activateRow() {
+                if (!menuRow.rowEnabled)
+                  return
+                menuBox.activateMenu(String(menuRow.modelData.action || ""))
+              }
 
               Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -1123,7 +1350,9 @@ Item {
                 anchors.leftMargin: 10
                 text: String(modelData.label || "")
                 textFormat: Text.PlainText
-                color: parent.rowEnabled && rowMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
+                color: parent.rowEnabled && (rowMouse.containsMouse || parent.keyboardCurrent)
+                  ? Color.menu.selectedText
+                  : Color.popups.text
                 opacity: parent.rowEnabled ? 1 : 0.5
                 font.pixelSize: 13
                 font.family: Style.fontFamily
@@ -1134,16 +1363,9 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 enabled: parent.rowEnabled
+                onEntered: menuBox.setCursorIndex(menuRow.index)
                 onClicked: function(mouse) {
-                  var action = String(modelData.action || "")
-                  var node = rowMouse
-                  while (node) {
-                    if (typeof node.activateMenu === "function") {
-                      node.activateMenu(action)
-                      return
-                    }
-                    node = node.parent
-                  }
+                  menuRow.activateRow()
                 }
               }
             }
@@ -1154,8 +1376,7 @@ Item {
       Connections {
         target: menuBox
         function onCloseTickChanged() {
-          menuKind = ""
-          menuItem = null
+          panel.closeMenu()
         }
       }
 
@@ -1188,6 +1409,11 @@ Item {
         color: Color.popups.background
         border.width: 2
         border.color: Color.popups.border
+        Accessible.role: Accessible.Dialog
+        Accessible.name: "Untrusted launcher"
+        Accessible.description: trustMessage.text
+        Accessible.focusable: true
+        Accessible.focused: visible && emptyMouse.activeFocus
         x: {
           var p = panel.trustIconPos()
           if (!p)
@@ -1227,9 +1453,12 @@ Item {
             font.bold: true
             font.family: Style.fontFamily
             wrapMode: Text.WordWrap
+            Accessible.role: Accessible.Heading
+            Accessible.name: text
           }
 
           Text {
+            id: trustMessage
             width: parent.width
             text: {
               var item = host.pendingTrust
@@ -1241,6 +1470,8 @@ Item {
             font.pixelSize: 13
             font.family: Style.fontFamily
             wrapMode: Text.WordWrap
+            Accessible.role: Accessible.AlertMessage
+            Accessible.name: text
           }
 
           Row {
@@ -1248,13 +1479,21 @@ Item {
             spacing: 8
 
             Rectangle {
+              id: cancelButton
               readonly property bool keyboardFocus: host.pendingTrust && panel.trustFocusIndex === 0
-              width: cancelLabel.implicitWidth + 20
-              height: 32
+              width: Math.max(44, cancelLabel.implicitWidth + 20)
+              height: 44
               radius: 0
               color: cancelMouse.containsMouse || keyboardFocus ? Color.menu.selectedBackground : "transparent"
               border.width: 2
               border.color: Color.popups.border
+              Accessible.role: Accessible.Button
+              Accessible.name: "Cancel"
+              Accessible.description: "Do not trust or open this launcher. Enter and Escape also choose Cancel."
+              Accessible.focusable: true
+              Accessible.focused: keyboardFocus
+              Accessible.defaultButton: true
+              Accessible.onPressAction: host.clearTrustPrompt()
 
               Rectangle {
                 anchors.fill: parent
@@ -1285,13 +1524,25 @@ Item {
             }
 
             Rectangle {
+              id: trustButton
               readonly property bool keyboardFocus: host.pendingTrust && panel.trustFocusIndex === 1
-              width: trustLabel.implicitWidth + 20
-              height: 32
+              width: Math.max(44, trustLabel.implicitWidth + 20)
+              height: 44
               radius: 0
               color: trustMouse.containsMouse || keyboardFocus ? Color.menu.selectedBackground : "transparent"
               border.width: 2
               border.color: Color.popups.border
+              Accessible.role: Accessible.Button
+              Accessible.name: "Trust and Open"
+              Accessible.description: "Mark this launcher as trusted and run it. Space activates this choice when focused."
+              Accessible.focusable: true
+              Accessible.focused: keyboardFocus
+              Accessible.defaultButton: false
+              enabled: !!host.pendingTrust
+              Accessible.onPressAction: {
+                if (host.pendingTrust)
+                  host.trustAndOpen(host.pendingTrust)
+              }
 
               Text {
                 id: trustLabel

@@ -103,7 +103,7 @@ def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     icons = [render_icon(magick, identify, role) for role in ROLES]
     contact_sheet(magick, icons)
-    print(f"Rendered {len(icons)} Paper Jam icons and {CONTACT_SHEET}")
+    print(f"Rendered {len(icons)} One-Bit Bureau icons and {CONTACT_SHEET}")
 
 
 if __name__ == "__main__":

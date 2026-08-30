@@ -6,8 +6,8 @@ import qs.Commons
 import qs.Ui
 import "IconResolver.js" as IconResolver
 
-// Paper Jam icon picker. Two views share one paper surface:
-//  - picker: choose an offline Paper Jam role or the native app icon
+// One-Bit Bureau icon picker. Two views share one paper surface:
+//  - picker: choose an offline One-Bit Bureau role or the native app icon
 //  - manage: browse every installed app and open the picker for any of them,
 //    docked or not. Custom icons are keyed by app id, so an app that is not
 //    on the dock shows its assigned icon the moment it appears.
@@ -68,7 +68,8 @@ PanelWindow {
         filtered.push(icon)
     }
     root.results = filtered
-    root.statusText = filtered.length ? "Paper Jam pack — works offline" : "No Paper Jam icon matches"
+    resultGrid.currentIndex = filtered.length ? 0 : -1
+    root.statusText = filtered.length ? "One-Bit Bureau pack — works offline" : "No One-Bit Bureau icon matches"
   }
 
   function previewSource(id) {
@@ -120,7 +121,7 @@ PanelWindow {
 
   function applyResult(item) {
     if (item && item.pack) {
-      root.applyWith(["python3", root.stateHelperPath, "write", root.iconMapPath, root.currentAppId, "pack", item.pack], "Paper Jam icon applied")
+      root.applyWith(["python3", root.stateHelperPath, "write", root.iconMapPath, root.currentAppId, "pack", item.pack], "One-Bit Bureau icon applied")
       return
     }
   }
@@ -153,6 +154,7 @@ PanelWindow {
   function reloadApps() {
     if (!root.shell || !root.shell.appLibrary) {
       root.appRows = []
+      appList.currentIndex = -1
       return
     }
     try {
@@ -165,8 +167,10 @@ PanelWindow {
         list.push({ id: id, name: entry.name || entry.displayName || id })
       }
       root.appRows = list
+      appList.currentIndex = list.length ? 0 : -1
     } catch (error) {
       root.appRows = []
+      appList.currentIndex = -1
     }
   }
 
@@ -175,11 +179,78 @@ PanelWindow {
     root.openForApp(row.id, row.name, true)
   }
 
+  function clampedIndex(index, count) {
+    if (count <= 0) return -1
+    return Math.max(0, Math.min(index, count - 1))
+  }
+
+  function focusGridIndex(index) {
+    var next = root.clampedIndex(index, root.results.length)
+    if (next < 0) {
+      searchField.forceActiveFocus()
+      return
+    }
+    resultGrid.currentIndex = next
+    resultGrid.positionViewAtIndex(next, GridView.Contain)
+    Qt.callLater(function() {
+      var tile = resultGrid.itemAtIndex(next)
+      if (tile) tile.forceActiveFocus()
+      else resultGrid.forceActiveFocus()
+    })
+  }
+
+  function moveGridCursor(index, key) {
+    var columns = Math.max(1, Math.floor(resultGrid.width / root.gridCell))
+    var next = index
+    if (key === Qt.Key_Left) next--
+    else if (key === Qt.Key_Right) next++
+    else if (key === Qt.Key_Up) {
+      if (index < columns) {
+        searchField.forceActiveFocus()
+        return true
+      }
+      next -= columns
+    } else if (key === Qt.Key_Down) {
+      if (index + columns >= root.results.length) {
+        automaticAction.forceActiveFocus()
+        return true
+      }
+      next += columns
+    }
+    else if (key === Qt.Key_Home) next = 0
+    else if (key === Qt.Key_End) next = root.results.length - 1
+    else return false
+    root.focusGridIndex(next)
+    return true
+  }
+
+  function focusAppIndex(index, action) {
+    var next = root.clampedIndex(index, root.appRows.length)
+    if (next < 0) {
+      appsField.forceActiveFocus()
+      return
+    }
+    appList.currentIndex = next
+    appList.positionViewAtIndex(next, ListView.Contain)
+    Qt.callLater(function() {
+      var row = appList.itemAtIndex(next)
+      if (row) row.focusAction(action || "row")
+      else appList.forceActiveFocus()
+    })
+  }
+
+  function returnToManager() {
+    root.mode = "manage"
+    root.statusText = ""
+    root.reloadApps()
+    Qt.callLater(function() { appsField.forceActiveFocus() })
+  }
+
   visible: root.open
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.namespace: "paper-jam-84-dock-icon-picker"
+  WlrLayershell.namespace: "regionallyfamous.one-bit-bureau.dock-icon-picker"
   WlrLayershell.keyboardFocus: root.open ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
   anchors { top: true; bottom: true; left: true; right: true }
   mask: Region { item: dismissSurface }
@@ -257,11 +328,14 @@ PanelWindow {
     id: card
     anchors.centerIn: parent
     width: 760
-    height: 540
-    radius: 18
-    color: Util.alpha(Color.background, 0.97)
-    border.color: Util.alpha(Color.foreground, 0.18)
-    border.width: 1
+    height: 560
+    radius: 0
+    color: Color.background
+    border.color: Color.foreground
+    border.width: 2
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: root.mode === "picker" ? "Choose an icon for " + root.currentAppName : "One-Bit Bureau icon manager"
 
     Item {
       id: keyCatcher
@@ -271,114 +345,113 @@ PanelWindow {
 
       Column {
         anchors.fill: parent
-        anchors.margins: 18
-        spacing: 12
+        anchors.margins: 16
+        spacing: 8
 
         // Header -------------------------------------------------------------
-        Row {
+        Rectangle {
           id: headerRow
           width: parent.width
-          height: 50
-          spacing: 12
+          height: 56
+          radius: 0
+          color: Color.foreground
 
-          Rectangle {
-            id: previewTile
-            width: 48
-            height: 48
-            radius: 12
-            color: Util.alpha(Color.foreground, 0.07)
-            visible: root.mode === "picker"
+          Row {
+            id: headerContent
+            anchors.fill: parent
+            anchors.margins: 6
+            spacing: 8
 
-            PackAwareImage {
-              id: previewImage
-              anchors.centerIn: parent
-              width: 40
-              height: 40
-              source: root.mode === "picker" ? root.previewSource(root.currentAppId) : ""
-              sourceSize: Qt.size(80, 80)
-              fillMode: Image.PreserveAspectFit
-              cache: true
+            Rectangle {
+              id: previewTile
+              width: 44
+              height: 44
+              radius: 0
+              color: Color.background
+              visible: root.mode === "picker"
 
-              Text {
+              PackAwareImage {
+                id: previewImage
                 anchors.centerIn: parent
-                visible: parent.status !== Image.Ready
-                text: "◆"
-                color: Color.foreground
-                font.pixelSize: 18
+                width: 38
+                height: 38
+                source: root.mode === "picker" ? root.previewSource(root.currentAppId) : ""
+                sourceSize: Qt.size(76, 76)
+                fillMode: Image.PreserveAspectFit
+                cache: true
+
+                Text {
+                  anchors.centerIn: parent
+                  visible: parent.status !== Image.Ready
+                  text: "?"
+                  color: Color.foreground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
               }
             }
-          }
 
-          Column {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - (root.mode === "picker" ? previewTile.width + 12 : 0) - (root.mode === "picker" && root.fromManage ? backButton.width + 12 : 0) - closeButton.width - 12
-            spacing: 2
+            Column {
+              anchors.verticalCenter: parent.verticalCenter
+              width: headerContent.width
+                - closeButton.width
+                - (previewTile.visible ? previewTile.width : 0)
+                - (backButton.visible ? backButton.width : 0)
+                - headerContent.spacing * (1 + (previewTile.visible ? 1 : 0) + (backButton.visible ? 1 : 0))
+              spacing: 1
 
-            Text {
-              width: parent.width
-              text: root.mode === "picker" ? root.currentAppName : "Icon Manager"
-              elide: Text.ElideRight
-              color: Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: Style.font.title
-              font.bold: true
+              Text {
+                width: parent.width
+                text: root.mode === "picker" ? root.currentAppName : "Icon Manager"
+                elide: Text.ElideRight
+                color: Color.background
+                font.family: Style.font.family
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+              Text {
+                width: parent.width
+                text: root.mode === "picker"
+                  ? "Choose a One-Bit Bureau mark or keep the app original"
+                  : "Assign icons to installed applications"
+                elide: Text.ElideRight
+                color: Color.background
+                font.family: Style.font.family
+                font.pixelSize: Style.font.bodySmall
+              }
             }
-            Text {
-              width: parent.width
-              text: root.mode === "picker"
-                ? "Change the icon shown for this app"
-                : "Change icons for any installed app"
-              elide: Text.ElideRight
-              color: Qt.darker(Color.foreground, 1.5)
-              font.family: Style.font.family
-              font.pixelSize: Style.font.bodySmall
-            }
-          }
 
-          Rectangle {
-            id: backButton
-            anchors.verticalCenter: parent.verticalCenter
-            width: 74
-            height: 30
-            radius: 8
-            color: backMouse.containsMouse ? Util.alpha(Color.foreground, 0.10) : "transparent"
-            visible: root.mode === "picker" && root.fromManage
-
-            Text {
-              anchors.centerIn: parent
-              text: "‹ All apps"
-              color: Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: Style.font.bodySmall
+            ActionButton {
+              id: backButton
+              text: "All apps"
+              accessibleDescription: "Return to the installed application list"
+              width: 82
+              height: 44
+              inverse: true
+              visible: root.mode === "picker" && root.fromManage
+              onClicked: root.returnToManager()
+              onNavigate: function(key) {
+                if (key === Qt.Key_Right) closeButton.forceActiveFocus()
+                else if (key === Qt.Key_Left) closeButton.forceActiveFocus()
+                else if (key === Qt.Key_Down) searchField.forceActiveFocus()
+              }
             }
-            MouseArea {
-              id: backMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              onClicked: { root.mode = "manage"; root.statusText = ""; Qt.callLater(function() { appsField.forceActiveFocus() }) }
-            }
-          }
 
-          Rectangle {
-            id: closeButton
-            anchors.verticalCenter: parent.verticalCenter
-            width: 36
-            height: 36
-            radius: 10
-            color: closeMouse.containsMouse ? Util.alpha(Color.foreground, 0.10) : "transparent"
-
-            Text {
-              anchors.centerIn: parent
-              text: "✕"
-              color: Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: 18
-            }
-            MouseArea {
-              id: closeMouse
-              anchors.fill: parent
-              hoverEnabled: true
+            ActionButton {
+              id: closeButton
+              text: "Close"
+              accessibleDescription: "Close the icon manager"
+              width: 68
+              height: 44
+              inverse: true
               onClicked: root.close()
+              onNavigate: function(key) {
+                if (key === Qt.Key_Left && backButton.visible) backButton.forceActiveFocus()
+                else if (key === Qt.Key_Right && backButton.visible) backButton.forceActiveFocus()
+                else if (key === Qt.Key_Down && root.mode === "picker") searchField.forceActiveFocus()
+                else if (key === Qt.Key_Down) appsField.forceActiveFocus()
+              }
             }
           }
         }
@@ -387,44 +460,51 @@ PanelWindow {
         Rectangle {
           id: searchRow
           width: parent.width
-          height: 38
-          radius: 10
-          color: Util.alpha(Color.foreground, 0.06)
-          border.color: Util.alpha(Color.foreground, 0.12)
-          border.width: 1
+          height: 44
+          radius: 0
+          color: Color.background
+          border.color: Color.foreground
+          border.width: searchField.activeFocus || appsField.activeFocus ? 2 : 1
 
           Text {
             anchors.left: parent.left
-            anchors.leftMargin: 12
+            anchors.leftMargin: 10
             anchors.verticalCenter: parent.verticalCenter
-            text: root.mode === "picker" ? "🔍" : "🔎"
-            color: Qt.darker(Color.foreground, 1.4)
-            font.pixelSize: 14
+            width: 42
+            text: "Find:"
+            color: Color.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+            font.bold: true
           }
 
           TextField {
             id: searchField
             visible: root.mode === "picker"
             anchors.left: parent.left
-            anchors.leftMargin: 34
+            anchors.leftMargin: 56
             anchors.right: parent.right
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            placeholderText: "Filter Paper Jam icons"
+            placeholderText: "Filter One-Bit Bureau icons"
             placeholderTextColor: Qt.darker(Color.foreground, 1.6)
             color: Color.foreground
             font.family: Style.font.family
             font.pixelSize: Style.font.body
             background: Item {}
+            Accessible.name: "Filter One-Bit Bureau icons"
+            Accessible.searchEdit: true
             onTextChanged: root.searching(text)
             Keys.onEscapePressed: function(event) { root.close(); event.accepted = true }
+            Keys.onUpPressed: function(event) { closeButton.forceActiveFocus(); event.accepted = true }
+            Keys.onDownPressed: function(event) { root.focusGridIndex(resultGrid.currentIndex < 0 ? 0 : resultGrid.currentIndex); event.accepted = true }
           }
 
           TextField {
             id: appsField
             visible: root.mode === "manage"
             anchors.left: parent.left
-            anchors.leftMargin: 34
+            anchors.leftMargin: 56
             anchors.right: parent.right
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
@@ -434,52 +514,113 @@ PanelWindow {
             font.family: Style.font.family
             font.pixelSize: Style.font.body
             background: Item {}
+            Accessible.name: "Search installed applications"
+            Accessible.searchEdit: true
             onTextChanged: { root.statusText = ""; appsTimer.restart() }
             Keys.onEscapePressed: function(event) { root.close(); event.accepted = true }
+            Keys.onUpPressed: function(event) { closeButton.forceActiveFocus(); event.accepted = true }
+            Keys.onDownPressed: function(event) { root.focusAppIndex(appList.currentIndex < 0 ? 0 : appList.currentIndex, "row"); event.accepted = true }
           }
         }
 
         // Content ------------------------------------------------------------
         Rectangle {
+          id: contentFrame
           width: parent.width
-          height: 314
-          radius: 12
+          height: 324
+          radius: 0
           clip: true
-          color: "transparent"
+          color: Color.background
+          border.color: Color.foreground
+          border.width: 1
 
           GridView {
             id: resultGrid
             visible: root.mode === "picker"
             anchors.fill: parent
+            anchors.margins: 2
             model: root.results
             cellWidth: root.gridCell
             cellHeight: root.gridCell
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+            activeFocusOnTab: false
+            currentIndex: root.results.length > 0 ? 0 : -1
+
+            Keys.onPressed: function(event) {
+              var index = resultGrid.currentIndex < 0 ? 0 : resultGrid.currentIndex
+              if (root.moveGridCursor(index, event.key)) {
+                event.accepted = true
+                return
+              }
+              if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)
+                  && index < root.results.length) {
+                root.applyResult(root.results[index])
+                event.accepted = true
+                return
+              }
+              event.accepted = false
+            }
+
+            Accessible.role: Accessible.List
+            Accessible.name: "One-Bit Bureau icon choices"
+            Accessible.description: resultGrid.currentIndex >= 0 && resultGrid.currentIndex < root.results.length
+              ? String(root.results[resultGrid.currentIndex].label || "icon")
+              : "No matching icons"
 
             delegate: Rectangle {
               required property var modelData
+              required property int index
               width: root.gridCell
               height: root.gridCell
-              radius: 12
-              color: gridMouse.containsMouse ? Util.alpha(Color.foreground, 0.10) : "transparent"
+              radius: 0
+              enabled: !root.busy
+              activeFocusOnTab: enabled
+              property bool keyboardCursor: resultGrid.currentIndex === index && activeFocus
+              color: keyboardCursor ? Color.foreground : Color.background
+              border.color: Color.foreground
+              border.width: keyboardCursor ? 2 : (gridMouse.containsMouse ? 1 : 0)
+
+              Accessible.role: Accessible.Button
+              Accessible.name: "Use " + String(modelData.label || "icon") + " icon for " + root.currentAppName
+              Accessible.description: "Applies this icon immediately"
+              Accessible.focusable: enabled && visible
+              Accessible.focused: activeFocus
+              Accessible.selectable: true
+              Accessible.selected: resultGrid.currentIndex === index
+              Accessible.onPressAction: root.applyResult(modelData)
+
+              Keys.onPressed: function(event) {
+                if (root.moveGridCursor(index, event.key)) {
+                  event.accepted = true
+                  return
+                }
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                  root.applyResult(modelData)
+                  event.accepted = true
+                  return
+                }
+                event.accepted = false
+              }
 
               Column {
                 anchors.fill: parent
-                anchors.margins: 6
+                anchors.margins: 8
                 spacing: 4
 
                 Rectangle {
                   anchors.horizontalCenter: parent.horizontalCenter
-                  width: 76
-                  height: 76
-                  radius: 16
-                  color: Util.alpha(Color.foreground, 0.06)
+                  width: 74
+                  height: 74
+                  radius: 0
+                  color: Color.background
+                  border.color: Color.foreground
+                  border.width: 1
 
                   PackAwareImage {
                     anchors.centerIn: parent
-                    width: 68
-                    height: 68
+                    width: 66
+                    height: 66
                     source: root.packSource(modelData.pack)
                     sourceSize: Qt.size(136, 136)
                     fillMode: Image.PreserveAspectFit
@@ -494,9 +635,10 @@ PanelWindow {
                   text: modelData.label || "icon"
                   horizontalAlignment: Text.AlignHCenter
                   elide: Text.ElideRight
-                  color: Color.foreground
+                  color: parent.parent.keyboardCursor ? Color.background : Color.foreground
                   font.family: Style.font.family
                   font.pixelSize: Style.font.bodySmall
+                  font.bold: parent.parent.keyboardCursor
                 }
               }
 
@@ -505,6 +647,10 @@ PanelWindow {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
+                onPressed: {
+                  resultGrid.currentIndex = index
+                  parent.forceActiveFocus()
+                }
                 onClicked: root.applyResult(modelData)
               }
             }
@@ -512,8 +658,8 @@ PanelWindow {
             Text {
               anchors.centerIn: parent
               visible: root.results.length === 0 && root.statusText === ""
-              text: "Paper Jam icon pack unavailable"
-              color: Qt.darker(Color.foreground, 1.5)
+              text: "One-Bit Bureau icon pack unavailable"
+              color: Color.foreground
               font.family: Style.font.family
               font.pixelSize: Style.font.body
             }
@@ -523,18 +669,95 @@ PanelWindow {
             id: appList
             visible: root.mode === "manage"
             anchors.fill: parent
+            anchors.margins: 2
             model: root.appRows
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            spacing: 4
+            spacing: 0
+            activeFocusOnTab: false
+            currentIndex: root.appRows.length > 0 ? 0 : -1
+
+            Keys.onPressed: function(event) {
+              var index = appList.currentIndex < 0 ? 0 : appList.currentIndex
+              if (event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
+                root.focusAppIndex(index + (event.key === Qt.Key_Up ? -1 : 1), "row")
+                event.accepted = true
+                return
+              }
+              if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)
+                  && index < root.appRows.length) {
+                root.openAppPicker(root.appRows[index])
+                event.accepted = true
+                return
+              }
+              event.accepted = false
+            }
+
+            Accessible.role: Accessible.List
+            Accessible.name: "Installed applications"
 
             delegate: Rectangle {
               required property var modelData
               required property int index
               width: ListView.view.width
-              height: 52
-              radius: 10
-              color: rowMouse.containsMouse ? Util.alpha(Color.foreground, 0.08) : (index % 2 === 1 ? Util.alpha(Color.foreground, 0.03) : "transparent")
+              height: 56
+              radius: 0
+              activeFocusOnTab: true
+              property bool keyboardCursor: activeFocus || changeAction.activeFocus || clearAction.activeFocus
+              color: index % 2 === 1 ? Qt.darker(Color.background, 1.04) : Color.background
+              border.color: Color.foreground
+              border.width: keyboardCursor ? 2 : (rowMouse.containsMouse ? 1 : 0)
+
+              function focusAction(action) {
+                if (action === "change") changeAction.forceActiveFocus()
+                else if (action === "clear" && clearAction.visible) clearAction.forceActiveFocus()
+                else forceActiveFocus()
+              }
+
+              function moveRow(delta, action) {
+                if (index + delta < 0) {
+                  appsField.forceActiveFocus()
+                  return
+                }
+                if (index + delta >= root.appRows.length) {
+                  doneAction.forceActiveFocus()
+                  return
+                }
+                root.focusAppIndex(index + delta, action)
+              }
+
+              Accessible.role: Accessible.ListItem
+              Accessible.name: String(modelData.name)
+              Accessible.description: root.appHasCustomIcon(modelData.id) ? "Custom icon assigned" : "Automatic icon association"
+              Accessible.focusable: enabled && visible
+              Accessible.focused: activeFocus
+              Accessible.selectable: true
+              Accessible.selected: appList.currentIndex === index
+              Accessible.onPressAction: root.openAppPicker(modelData)
+
+              Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
+                  moveRow(event.key === Qt.Key_Up ? -1 : 1, "row")
+                  event.accepted = true
+                  return
+                }
+                if (event.key === Qt.Key_Right) {
+                  changeAction.forceActiveFocus()
+                  event.accepted = true
+                  return
+                }
+                if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
+                  root.focusAppIndex(event.key === Qt.Key_Home ? 0 : root.appRows.length - 1, "row")
+                  event.accepted = true
+                  return
+                }
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                  root.openAppPicker(modelData)
+                  event.accepted = true
+                  return
+                }
+                event.accepted = false
+              }
 
               PackAwareImage {
                 id: rowIcon
@@ -553,6 +776,8 @@ PanelWindow {
               Text {
                 anchors.left: rowIcon.right
                 anchors.leftMargin: 12
+                anchors.right: actions.left
+                anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.name
                 elide: Text.ElideRight
@@ -562,60 +787,58 @@ PanelWindow {
               }
 
               Row {
+                id: actions
                 anchors.right: parent.right
-                anchors.rightMargin: 10
+                anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 8
+                spacing: 4
 
-                Rectangle {
-                  width: 70
-                  height: 28
-                  radius: 8
-                  color: changeMouse.containsMouse ? Util.alpha(Color.foreground, 0.16) : Util.alpha(Color.foreground, 0.08)
-                  Text {
-                    anchors.centerIn: parent
-                    text: "Change"
-                    color: Color.foreground
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.bodySmall
-                  }
-                  MouseArea {
-                    id: changeMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.openAppPicker(modelData)
+                ActionButton {
+                  id: changeAction
+                  text: "Change"
+                  accessibleName: "Change icon for " + String(modelData.name)
+                  accessibleDescription: "Open the One-Bit Bureau icon choices"
+                  width: 76
+                  height: 44
+                  onClicked: root.openAppPicker(modelData)
+                  onNavigate: function(key) {
+                    if (key === Qt.Key_Left) parent.parent.forceActiveFocus()
+                    else if (key === Qt.Key_Right && clearAction.visible) clearAction.forceActiveFocus()
+                    else if (key === Qt.Key_Right) parent.parent.forceActiveFocus()
+                    else if (key === Qt.Key_Up || key === Qt.Key_Down) parent.parent.moveRow(key === Qt.Key_Up ? -1 : 1, "change")
                   }
                 }
 
-                Rectangle {
-                  width: 56
-                  height: 28
-                  radius: 8
-                  color: clearMouse.containsMouse ? Util.alpha(Color.foreground, 0.16) : Util.alpha(Color.foreground, 0.08)
+                ActionButton {
+                  id: clearAction
+                  text: "Clear"
+                  accessibleName: "Clear custom icon for " + String(modelData.name)
+                  accessibleDescription: "Restore automatic icon association"
+                  width: 64
+                  height: 44
                   visible: root.appHasCustomIcon(modelData.id)
-                  Text {
-                    anchors.centerIn: parent
-                    text: "Clear"
-                    color: Color.foreground
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.bodySmall
-                  }
-                  MouseArea {
-                    id: clearMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.clearIcon(modelData.id)
+                  enabled: !root.busy
+                  onClicked: root.clearIcon(modelData.id)
+                  onNavigate: function(key) {
+                    if (key === Qt.Key_Left) changeAction.forceActiveFocus()
+                    else if (key === Qt.Key_Right) parent.parent.forceActiveFocus()
+                    else if (key === Qt.Key_Up || key === Qt.Key_Down) parent.parent.moveRow(key === Qt.Key_Up ? -1 : 1, "clear")
                   }
                 }
               }
 
               MouseArea {
                 id: rowMouse
-                anchors.fill: parent
+                anchors.left: parent.left
+                anchors.right: actions.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
+                onPressed: {
+                  appList.currentIndex = index
+                  parent.forceActiveFocus()
+                }
                 onClicked: root.openAppPicker(modelData)
               }
             }
@@ -624,7 +847,7 @@ PanelWindow {
               anchors.centerIn: parent
               visible: root.appRows.length === 0
               text: root.shell && root.shell.appLibrary ? "No apps match" : "App library unavailable"
-              color: Qt.darker(Color.foreground, 1.5)
+              color: Color.foreground
               font.family: Style.font.family
               font.pixelSize: Style.font.body
             }
@@ -632,31 +855,60 @@ PanelWindow {
         }
 
         // Bottom actions ------------------------------------------------------
-        Row {
+        Item {
           id: bottomRow
           width: parent.width
-          height: 38
-          spacing: 8
-          visible: root.mode === "picker"
+          height: 44
 
           ActionButton {
+            id: automaticAction
             text: "Automatic"
-            width: 92
+            accessibleDescription: "Use One-Bit Bureau's automatic app association"
+            anchors.left: parent.left
+            width: 100
+            height: 44
+            visible: root.mode === "picker"
+            enabled: !root.busy
             onClicked: root.useAutomaticIcon()
+            onNavigate: function(key) {
+              if (key === Qt.Key_Right) nativeAction.forceActiveFocus()
+              else if (key === Qt.Key_Left) doneAction.forceActiveFocus()
+              else if (key === Qt.Key_Up) root.focusGridIndex(resultGrid.currentIndex < 0 ? root.results.length - 1 : resultGrid.currentIndex)
+            }
           }
           ActionButton {
+            id: nativeAction
             text: "Native"
-            width: 76
+            accessibleDescription: "Use the application's original icon"
+            anchors.left: automaticAction.right
+            anchors.leftMargin: 8
+            width: 84
+            height: 44
+            visible: root.mode === "picker"
+            enabled: !root.busy
             onClicked: root.useNativeIcon()
+            onNavigate: function(key) {
+              if (key === Qt.Key_Left) automaticAction.forceActiveFocus()
+              else if (key === Qt.Key_Right) doneAction.forceActiveFocus()
+              else if (key === Qt.Key_Up) root.focusGridIndex(resultGrid.currentIndex < 0 ? root.results.length - 1 : resultGrid.currentIndex)
+            }
           }
 
-          Item { width: 1; height: 1 }
-
           ActionButton {
+            id: doneAction
             text: "Done"
-            width: 72
+            accessibleDescription: "Close the icon manager"
+            anchors.right: parent.right
+            width: 80
+            height: 44
             accent: true
             onClicked: root.close()
+            onNavigate: function(key) {
+              if (key === Qt.Key_Up && root.mode === "picker") root.focusGridIndex(resultGrid.currentIndex < 0 ? root.results.length - 1 : resultGrid.currentIndex)
+              else if (key === Qt.Key_Up) root.focusAppIndex(appList.currentIndex < 0 ? root.appRows.length - 1 : appList.currentIndex, "row")
+              else if (key === Qt.Key_Left && root.mode === "picker") nativeAction.forceActiveFocus()
+              else if (key === Qt.Key_Right && root.mode === "picker") automaticAction.forceActiveFocus()
+            }
           }
         }
 
@@ -670,43 +922,99 @@ PanelWindow {
             width: parent.width
             text: root.statusText
             elide: Text.ElideRight
-            color: Qt.darker(Color.foreground, 1.5)
+            color: Color.foreground
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
+            Accessible.role: Accessible.StaticText
+            Accessible.name: root.statusText
           }
         }
       }
     }
   }
 
-  component ActionButton: Rectangle {
+  component ActionButton: Item {
     id: buttonSelf
     property string text: ""
+    property string accessibleName: text
+    property string accessibleDescription: ""
     property bool accent: false
-    property bool enabled: true
     property bool dimmed: false
-    height: 34
-    radius: 10
-    color: {
-      if (!buttonSelf.enabled || buttonSelf.dimmed) return Util.alpha(Color.foreground, 0.05)
-      if (buttonSelf.accent) return buttonMouse.containsMouse ? Util.alpha(Color.accent, 0.85) : Util.alpha(Color.accent, 0.7)
-      return buttonMouse.containsMouse ? Util.alpha(Color.foreground, 0.16) : Util.alpha(Color.foreground, 0.08)
-    }
+    property bool inverse: false
+    property int visualHeight: 30
+    implicitHeight: 44
+    activeFocusOnTab: enabled && visible
     signal clicked()
+    signal navigate(int key)
 
-    Text {
+    Accessible.role: Accessible.Button
+    Accessible.name: buttonSelf.accessibleName
+    Accessible.description: buttonSelf.accessibleDescription
+    Accessible.focusable: buttonSelf.enabled && buttonSelf.visible
+    Accessible.focused: buttonSelf.activeFocus
+    Accessible.defaultButton: buttonSelf.accent
+    Accessible.onPressAction: if (buttonSelf.enabled) buttonSelf.clicked()
+
+    Keys.onPressed: function(event) {
+      if (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
+        buttonSelf.navigate(event.key)
+        event.accepted = true
+        return
+      }
+      if (!buttonSelf.enabled || (event.key !== Qt.Key_Space && event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)) {
+        event.accepted = false
+        return
+      }
+      buttonSelf.clicked()
+      event.accepted = true
+    }
+
+    Rectangle {
+      id: buttonFace
       anchors.centerIn: parent
-      text: buttonSelf.text
-      color: buttonSelf.accent ? Color.background : Color.foreground
-      font.family: Style.font.family
-      font.pixelSize: Style.font.bodySmall
+      width: parent.width
+      height: Math.min(parent.height, buttonSelf.visualHeight)
+      radius: 0
+      color: {
+        if (!buttonSelf.enabled || buttonSelf.dimmed) return Color.background
+        if (buttonSelf.activeFocus || buttonMouse.containsMouse || buttonMouse.pressed)
+          return buttonSelf.inverse ? Color.background : Color.foreground
+        return buttonSelf.inverse ? Color.foreground : Color.background
+      }
+      border.color: buttonSelf.inverse ? Color.background : Color.foreground
+      border.width: buttonSelf.activeFocus || buttonSelf.accent ? 2 : 1
+
+      Rectangle {
+        anchors.fill: parent
+        anchors.margins: 3
+        visible: buttonSelf.accent && !buttonSelf.activeFocus
+        radius: 0
+        color: "transparent"
+        border.color: buttonSelf.inverse ? Color.background : Color.foreground
+        border.width: 1
+      }
+
+      Text {
+        anchors.centerIn: parent
+        text: buttonSelf.text
+        color: {
+          if (buttonSelf.activeFocus || buttonMouse.containsMouse || buttonMouse.pressed)
+            return buttonSelf.inverse ? Color.foreground : Color.background
+          return buttonSelf.inverse ? Color.background : Color.foreground
+        }
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+        font.bold: buttonSelf.accent || buttonSelf.activeFocus
+      }
     }
 
     MouseArea {
       id: buttonMouse
       anchors.fill: parent
+      enabled: buttonSelf.enabled
       hoverEnabled: true
       cursorShape: buttonSelf.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+      onPressed: buttonSelf.forceActiveFocus()
       onClicked: if (buttonSelf.enabled) buttonSelf.clicked()
     }
   }

@@ -7,22 +7,22 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 BIN="$WORK/bin"
 TEST_HOME="$WORK/home"
-PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"
-SOURCE_ID="paper-jam-84-abcdef123456"
-REPO_URL="https://github.com/RegionallyFamous/paper-jam-84.git"
+PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
+SOURCE_ID="one-bit-bureau-abcdef123456"
+REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
 STATE="$TEST_HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
 PLUGIN="$TEST_HOME/.config/omarchy/plugins/$PLUGIN_ID"
 SOURCE="$TEST_HOME/.local/share/omarchy/theme-sources/$SOURCE_ID"
-THEME="$TEST_HOME/.config/omarchy/themes/paper-jam-84"
+THEME="$TEST_HOME/.config/omarchy/themes/one-bit-bureau"
 LOG="$WORK/omarchy.log"
 
-mkdir -p "$BIN" "$PLUGIN/.git" "$(dirname "$STATE")" "$SOURCE/.git" "$SOURCE/themes/paper-jam-84" "$(dirname "$THEME")"
-ln -s "$SOURCE/themes/paper-jam-84" "$THEME"
+mkdir -p "$BIN" "$PLUGIN/.git" "$(dirname "$STATE")" "$SOURCE/.git" "$SOURCE/themes/one-bit-bureau" "$(dirname "$THEME")"
+ln -s "$SOURCE/themes/one-bit-bureau" "$THEME"
 
 printf '%s\n' '#!/bin/bash' 'printf "%s\n" "$*" >>"$TEST_LOG"' 'exit 0' >"$BIN/omarchy"
 chmod +x "$BIN/omarchy"
 printf '%s\n' '#!/bin/bash' 'set -euo pipefail' \
-  'if [[ $* == *"config --get remote.origin.url"* ]]; then printf "%s\n" "https://github.com/RegionallyFamous/paper-jam-84.git"' \
+  'if [[ $* == *"config --get remote.origin.url"* ]]; then printf "%s\n" "https://github.com/RegionallyFamous/one-bit-bureau.git"' \
   'elif [[ $* == *"status --porcelain"* ]]; then exit 0' \
   'elif [[ $* == *"rev-parse HEAD"* ]]; then printf "%040d\n" 1' \
   'else exit 1; fi' >"$BIN/git"
@@ -32,8 +32,8 @@ write_good_state() {
   jq -n --arg id "$PLUGIN_ID" --arg source "$SOURCE_ID" --arg repo "$REPO_URL" '{
     schemaVersion: 2,
     pluginId: $id,
-    product: "Paper Jam ’84",
-    theme: "paper-jam-84",
+    product: "One-Bit Bureau",
+    theme: "one-bit-bureau",
     pluginOwned: true,
     themeOwned: true,
     installed: {

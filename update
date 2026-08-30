@@ -2,20 +2,20 @@
 
 set -euo pipefail
 
-PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"
-PRODUCT_NAME="Paper Jam ’84"
-THEME_NAME="paper-jam-84"
-EXPECTED_REPO_URL="https://github.com/RegionallyFamous/paper-jam-84.git"
+PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
+PRODUCT_NAME="One-Bit Bureau"
+THEME_NAME="one-bit-bureau"
+EXPECTED_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 STATE_FILE="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
 THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
 THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
 ASSUME_YES=0
 RECONCILE=0
-COMMAND_TARGET="$HOME/.local/bin/paper-jam"
+COMMAND_TARGET="$HOME/.local/bin/one-bit-bureau"
 
 fail() {
-  echo "paper-jam update: $*" >&2
+  echo "one-bit-bureau update: $*" >&2
   exit 1
 }
 
@@ -32,7 +32,7 @@ while (( $# > 0 )); do
     --yes | -y) ASSUME_YES=1 ;;
     --reconcile) RECONCILE=1 ;;
     -h | --help)
-      echo "Usage: paper-jam update [--yes]"
+      echo "Usage: one-bit-bureau update [--yes]"
       exit 0
       ;;
     *) fail "unknown option: $1" ;;
@@ -67,10 +67,10 @@ source_path="$THEME_SOURCES_DIR/$source_id"
 [[ -d $source_path/.git && ! -L $source_path ]] || fail "recorded theme source checkout is missing or unsafe"
 actual_source_url=$(git -C "$source_path" config --get remote.origin.url 2>/dev/null || true)
 [[ $actual_source_url == "$source_url" && $source_url == "$EXPECTED_REPO_URL" ]] || fail "recorded theme source does not own the installed repository"
-[[ -L $THEME_TARGET ]] || fail "Paper Jam theme is not linked from its recorded source"
+[[ -L $THEME_TARGET ]] || fail "One-Bit Bureau theme is not linked from its recorded source"
 expected_theme_path=$(realpath "$source_path/themes/$THEME_NAME" 2>/dev/null || true)
 actual_theme_path=$(realpath "$THEME_TARGET" 2>/dev/null || true)
-[[ -n $expected_theme_path && $actual_theme_path == "$expected_theme_path" ]] || fail "Paper Jam theme link is not owned by its recorded source"
+[[ -n $expected_theme_path && $actual_theme_path == "$expected_theme_path" ]] || fail "One-Bit Bureau theme link is not owned by its recorded source"
 
 if (( ! RECONCILE )); then
   [[ -z $(git -C "$PLUGIN_DIR" status --porcelain) ]] || fail "plugin checkout has local changes; commit or remove them before updating"
@@ -97,7 +97,7 @@ old_command_hash=$(jq -r '.installed.commandHash' "$STATE_FILE")
 new_command_hash="$old_command_hash"
 if [[ -f $COMMAND_TARGET && $(hash_file "$COMMAND_TARGET") == "$old_command_hash" ]]; then
   command_temporary="$COMMAND_TARGET.tmp"
-  cp -- "$PLUGIN_DIR/paper-jam" "$command_temporary"
+  cp -- "$PLUGIN_DIR/one-bit-bureau" "$command_temporary"
   chmod 755 "$command_temporary"
   mv "$command_temporary" "$COMMAND_TARGET"
   new_command_hash=$(hash_file "$COMMAND_TARGET")
@@ -111,4 +111,4 @@ jq --arg pluginCommit "$plugin_commit" --arg themeCommit "$theme_commit" --arg c
 ' "$STATE_FILE" >"$temporary"
 mv "$temporary" "$STATE_FILE"
 
-echo "Paper Jam ’84 is up to date at $plugin_commit."
+echo "One-Bit Bureau is up to date at $plugin_commit."

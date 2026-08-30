@@ -11,6 +11,7 @@ PanelWindow {
   id: root
 
   property bool previewVisible: false
+  property bool reducedMotion: false
   property var windowList: []
   property real centerX: 0
   property real bottomY: 0
@@ -40,10 +41,11 @@ PanelWindow {
         windowData: w,
         iconSource: root.iconSourceFor(w),
         thumbnail: root.thumbnailFor(w),
-        active: !!w.active
+        active: !!w.active,
+        animationEnabled: !root.reducedMotion
       })
       if (!card) {
-        console.warn("paper-jam-84 preview card failed:", root.cardComponent.errorString())
+        console.warn("one-bit-bureau preview card failed:", root.cardComponent.errorString())
         continue
       }
       card.activated.connect(function(data) { root.activated(data) })
@@ -52,12 +54,16 @@ PanelWindow {
   }
 
   onWindowListChanged: Qt.callLater(root.rebuild)
+  onReducedMotionChanged: {
+    for (var i = 0; i < root.cards.length; i++)
+      if (root.cards[i]) root.cards[i].animationEnabled = !root.reducedMotion
+  }
 
   visible: root.panelActive
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.namespace: "paper-jam-84-dock-preview"
+  WlrLayershell.namespace: "one-bit-bureau-dock-preview"
   anchors { top: true; bottom: true; left: true; right: true }
   mask: Region { item: previewRow }
 
@@ -71,7 +77,10 @@ PanelWindow {
     opacity: root.panelActive ? 1 : 0
     scale: 1
 
-    Behavior on opacity { NumberAnimation { duration: 80; easing.type: Easing.Linear } }
+    Behavior on opacity {
+      enabled: !root.reducedMotion
+      NumberAnimation { duration: 80; easing.type: Easing.Linear }
+    }
 
     Row {
       id: row

@@ -7,7 +7,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WALLPAPER = ROOT / "themes" / "paper-jam-84" / "backgrounds" / "paper-jam-84.png"
+WALLPAPER = ROOT / "themes" / "one-bit-bureau" / "backgrounds" / "one-bit-bureau.png"
 OUTPUT = ROOT / "docs" / "wallpaper-crop-proof.png"
 
 

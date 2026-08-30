@@ -56,7 +56,10 @@ Item {
     border.color: Color.menu.border
     border.width: root.active ? 3 : 2
 
-    Behavior on border.width { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
+    Behavior on border.width {
+      enabled: root.animationEnabled
+      NumberAnimation { duration: 60; easing.type: Easing.Linear }
+    }
 
     // Direct compositor capture is the primary source. ScreencopyView keeps
     // the source at the window's native resolution, then the scene renders it

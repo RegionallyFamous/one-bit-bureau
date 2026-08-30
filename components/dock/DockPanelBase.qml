@@ -14,14 +14,14 @@ Item {
   property var pluginRegistry: null
   property var manifest: null
   property string home: Quickshell.env("HOME")
-  property string iconDir: home + "/.config/omarchy/paper-jam-84/icons"
-  property string iconMapPath: home + "/.config/omarchy/paper-jam-84/dock-icons.json"
+  property string iconDir: home + "/.config/omarchy/one-bit-bureau/icons"
+  property string iconMapPath: home + "/.config/omarchy/one-bit-bureau/dock-icons.json"
   property string packDir: manifest && manifest.__sourceDir
     ? String(manifest.__sourceDir) + "/components/dock/assets/app-icons"
-    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/dock/assets/app-icons"
-  property string pinPath: home + "/.config/omarchy/paper-jam-84/dock-pinned.json"
+    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/dock/assets/app-icons"
+  property string pinPath: home + "/.config/omarchy/one-bit-bureau/dock-pinned.json"
   property string tempPinPath: pinPath + ".tmp"
-  property string settingsPath: home + "/.config/omarchy/paper-jam-84/dock-settings.json"
+  property string settingsPath: home + "/.config/omarchy/one-bit-bureau/dock-settings.json"
   property string tempSettingsPath: settingsPath + ".tmp"
   property var pinnedIds: []
   property var dockOrder: []
@@ -44,6 +44,7 @@ Item {
   property bool pickerOpen: false
   property bool enabled: true
   property bool dockReady: false
+  readonly property bool reducedMotion: root.inlinePluginSetting("reducedMotion", false) === true
   // Shelf auto-hide. Enabled by default; persisted in dock-settings.json.
   property bool autoHide: true
   property string preferredScreenName: ""
@@ -88,13 +89,13 @@ Item {
   property int customIconRevision: 0
   property string focusHelperPath: manifest && manifest.__sourceDir
     ? String(manifest.__sourceDir) + "/components/dock/scripts/focus-window"
-    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/dock/scripts/focus-window"
+    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/dock/scripts/focus-window"
   property string stateHelperPath: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) + "/components/dock/scripts/paper-jam-state"
-    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/dock/scripts/paper-jam-state"
+    ? String(manifest.__sourceDir) + "/components/dock/scripts/one-bit-bureau-state"
+    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/dock/scripts/one-bit-bureau-state"
   property string runHelperPath: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) + "/components/dock/scripts/paper-jam-run"
-    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.paper-jam-84/components/dock/scripts/paper-jam-run"
+    ? String(manifest.__sourceDir) + "/components/dock/scripts/one-bit-bureau-run"
+    : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/dock/scripts/one-bit-bureau-run"
 
   // Layout & drag state. The Repeater model (dockItems) is the stable identity
   // list of ids, replaced only when the id set changes; reorders go through
@@ -123,8 +124,38 @@ Item {
   // check is a plain AABB against the surface the input mask hit-tests.
   property bool dragInsideDock: true
 
+  function inlinePluginSetting(name, fallback) {
+    var config = root.shell && root.shell.shellConfig ? root.shell.shellConfig : null
+    var pluginId = root.manifest && root.manifest.id
+      ? String(root.manifest.id)
+      : "io.github.regionallyfamous.one-bit-bureau"
+    if (!config) return fallback
+    var plugins = Array.isArray(config.plugins) ? config.plugins : []
+    for (var i = 0; i < plugins.length; i++) {
+      var entry = plugins[i]
+      if (entry && String(entry.id || "") === pluginId
+          && entry[name] !== undefined && entry[name] !== null)
+        return entry[name]
+    }
+    // One-Bit Bureau also provides the active-application bar widget. Its settings
+    // UI writes inline values to bar.layout, so the coordinated dock reads the
+    // same key there when the top-level plugin entry does not override it.
+    var layout = config.bar && config.bar.layout ? config.bar.layout : ({})
+    var sections = ["left", "center", "right"]
+    for (var s = 0; s < sections.length; s++) {
+      var rows = Array.isArray(layout[sections[s]]) ? layout[sections[s]] : []
+      for (var j = 0; j < rows.length; j++) {
+        var widget = rows[j]
+        if (widget && String(widget.id || "") === pluginId
+            && widget[name] !== undefined && widget[name] !== null)
+          return widget[name]
+      }
+    }
+    return fallback
+  }
+
   IpcHandler {
-    target: "regionallyfamous.paper-jam-84.dock"
+    target: "regionallyfamous.one-bit-bureau.dock"
     function toggle() { root.enabled = !root.enabled }
     function show() { root.enabled = true }
     function hide() { root.enabled = false }
@@ -143,6 +174,20 @@ Item {
     function getNormalizedPackIconCount(): int { return root.normalizedPackIconCount() }
     function getIconSize(): int { return root.iconSize }
     function getMaxIconCenterOffset(): int { return Math.round(root.maxIconCenterOffset()) }
+    function getReducedMotion(): bool { return root.reducedMotion }
+    function openManageIcons(): bool { return root.openIconManager() }
+    function closeManageIcons(): bool { return root.closeIconManager() }
+    function getIconPickerOpen(): bool { return iconPicker.open }
+    function getIconPickerMode(): string { return String(iconPicker.mode || "") }
+    function getMenuOpen(): bool { return dockMenu.opened }
+    function getMenuCurrentIndex(): int { return dockMenu.currentIndex }
+    function getMenuCurrentAction(): string { return dockMenu.currentAction() }
+    function getAutoHidden(): bool { return root.autoHidden }
+    function getAltTabActive(): bool { return altTab.active }
+    function openMenuForApp(appId: string): bool { return root.openMenuForApp(appId) }
+    function openMenuFirst(): bool {
+      return root.dockItems.length > 0 ? root.openMenuForApp(String(root.dockItems[0])) : false
+    }
     function setScreen(name: string): bool {
       var requested = String(name || "").slice(0, 160)
       for (var i = 0; i < Quickshell.screens.length; i++) {
@@ -353,7 +398,7 @@ Item {
       root.appEntries = rows.map(function(row) { return row && row.entry ? row.entry : row })
       root.appLibraryReady = true
     } catch (error) {
-      console.warn("paper-jam-84: app library refresh failed", error)
+      console.warn("one-bit-bureau: app library refresh failed", error)
     }
     refreshItems()
   }
@@ -503,7 +548,7 @@ Item {
   function notifyConflict() {
     if (conflictNotice.running) return
     conflictNotice.running = true
-    Quickshell.execDetached(["omarchy-shell", "notify", "Paper Jam Dock is disabled because rosakodu.dock is enabled"])
+    Quickshell.execDetached(["omarchy-shell", "notify", "One-Bit Bureau Dock is disabled because rosakodu.dock is enabled"])
   }
 
   function handleClick(item) {
@@ -514,7 +559,7 @@ Item {
         // Existing windows must be focused through Hyprland's IPC path.
         var hyprWindow = root.hyprlandWindowForItem(item)
         if (!root.focusExistingWindow(hyprWindow))
-          console.warn("regionallyfamous.paper-jam-84.dock: could not resolve running window for " + item.id)
+          console.warn("regionallyfamous.one-bit-bureau.dock: could not resolve running window for " + item.id)
         return
       } catch (error) {}
     }
@@ -643,13 +688,29 @@ Item {
     Qt.callLater(function() { renameProcess.running = true })
   }
 
-  function openMenu(item, position) {
+  function openMenu(item, position, returnFocusItem) {
     root.tooltipItem = null
     root.hidePreview()
     root.menuOpen = true
     dockMenu.itemData = item
+    dockMenu.returnFocusItem = returnFocusItem || null
     dockMenu.requestedPosition = Qt.point(position.x, position.y - dockMenu.height - 12)
     dockMenu.opened = true
+  }
+
+  function openMenuForApp(appId) {
+    var id = String(appId || "").replace(/\.desktop$/, "").slice(0, 256)
+    var delegate = root.delegateById[id]
+    if (!delegate || !delegate.focusTarget) return false
+    root.enabled = true
+    root.autoHidden = false
+    delegate.focusTarget.forceActiveFocus()
+    root.openMenu(
+      delegate.liveData,
+      delegate.focusTarget.mapToItem(null, delegate.focusTarget.width / 2, 0),
+      delegate.focusTarget
+    )
+    return true
   }
 
   function menuAction(action, item) {
@@ -669,6 +730,7 @@ Item {
 
   function openIconPicker(appId, appName, fromManage) {
     root.menuOpen = false
+    dockMenu.opened = false
     root.pickerOpen = true
     root.hidePreview()
     iconPicker.openForApp(appId, appName, fromManage)
@@ -676,9 +738,17 @@ Item {
 
   function openIconManager() {
     root.menuOpen = false
+    dockMenu.opened = false
     root.pickerOpen = true
     root.hidePreview()
     iconPicker.openManage()
+    return true
+  }
+
+  function closeIconManager() {
+    iconPicker.close()
+    root.pickerOpen = false
+    return true
   }
 
   function closeWindow(id) {
@@ -722,7 +792,7 @@ Item {
     // exactly what received the drag instead of a coordinate mapping
     // re-derived at release time.
     var inside = root.dragInsideDock
-    console.log("paper-jam-84 finishDrag", JSON.stringify({ id: id, inside: inside, localX: surfacePosition.x, localY: surfacePosition.y, surfaceW: dockSurface.width, surfaceH: dockSurface.height, cursorX: root.cursorXInRow() }))
+    console.log("one-bit-bureau finishDrag", JSON.stringify({ id: id, inside: inside, localX: surfacePosition.x, localY: surfacePosition.y, surfaceW: dockSurface.width, surfaceH: dockSurface.height, cursorX: root.cursorXInRow() }))
     var wasPinned = root.pinnedIds.indexOf(id) !== -1
     var persist = false
 
@@ -734,7 +804,7 @@ Item {
       // Reorder the session dock — never the pinned list. Dragging never
       // promotes a running app into a persistent pin.
       var newOrder = DockModel.moveInOrder(root.dockOrder, id, idx)
-      console.log("paper-jam-84 reorder", JSON.stringify({ id: id, idx: idx, wasPinned: wasPinned, dockOrderBefore: root.dockOrder, newOrder: newOrder, pinnedBefore: root.pinnedIds, runningIds: root.runningIds }))
+      console.log("one-bit-bureau reorder", JSON.stringify({ id: id, idx: idx, wasPinned: wasPinned, dockOrderBefore: root.dockOrder, newOrder: newOrder, pinnedBefore: root.pinnedIds, runningIds: root.runningIds }))
       if (newOrder.join("|") !== root.dockOrder.join("|")) {
         root.dockOrder = newOrder
         // Snap the dropped delegate straight to its new slot. Without this the
@@ -791,7 +861,7 @@ Item {
     root.ghostScale = 1.18
     root.ghostSource = ""
     } catch (error) {
-      console.warn("paper-jam-84 finishDrag error", error)
+      console.warn("one-bit-bureau finishDrag error", error)
       root.floatingId = ""
       root.tempDrag = { id: "", index: -1 }
       root.refreshItems()
@@ -937,7 +1007,7 @@ Item {
       var value = JSON.parse(String(content || "{}"))
       if (value && typeof value === "object" && !Array.isArray(value)) parsed = value
     } catch (error) {
-      console.warn("paper-jam-84: invalid dock-icons.json")
+      console.warn("one-bit-bureau: invalid dock-icons.json")
     }
     root.customIcons = parsed
     root.customIconRevision++
@@ -1176,7 +1246,7 @@ Item {
 
   Process {
     id: layerRuleProcess
-    command: ["hyprctl", "eval", "hl.layer_rule({ match = { namespace = \"paper-jam-84-dock-alt-tab\" }, no_anim = true, animation = \"none\" })"]
+    command: ["hyprctl", "eval", "hl.layer_rule({ match = { namespace = \"one-bit-bureau-dock-alt-tab\" }, no_anim = true, animation = \"none\" })"]
   }
 
   PanelWindow {
@@ -1186,7 +1256,8 @@ Item {
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.namespace: "paper-jam-84-dock"
+    WlrLayershell.namespace: "one-bit-bureau-dock"
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
     anchors { top: true; bottom: true; left: true; right: true }
     mask: Region { item: dockSurface }
 
@@ -1204,12 +1275,17 @@ Item {
       opacity: root.enabled ? 1 : 0
 
       Behavior on width {
+        enabled: !root.reducedMotion
         NumberAnimation { duration: 90; easing.type: Easing.Linear }
       }
       Behavior on anchors.bottomMargin {
+        enabled: !root.reducedMotion
         NumberAnimation { duration: root.autoHidden ? root.hideDuration : root.showDuration; easing.type: Easing.Linear }
       }
-      Behavior on opacity { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
+      Behavior on opacity {
+        enabled: !root.reducedMotion
+        NumberAnimation { duration: 60; easing.type: Easing.Linear }
+      }
 
       Item {
         id: dockRow
@@ -1219,6 +1295,7 @@ Item {
         height: root.iconSize + 16
 
         Behavior on width {
+          enabled: !root.reducedMotion
           NumberAnimation { duration: 90; easing.type: Easing.Linear }
         }
 
@@ -1250,9 +1327,10 @@ Item {
             readonly property bool iconReady: dockItem.iconReady
             readonly property bool packNormalized: dockItem.packNormalized
             readonly property real iconCenterOffset: dockItem.iconCenterOffset
+            readonly property Item focusTarget: dockItem
 
             Behavior on x {
-              enabled: wrapper.animating
+              enabled: wrapper.animating && !root.reducedMotion
               NumberAnimation { duration: 70; easing.type: Easing.Linear }
             }
 
@@ -1275,10 +1353,10 @@ Item {
               anchors.centerIn: parent
               itemData: wrapper.liveData
               iconSize: root.iconSize
-              animationEnabled: wrapper.animating
+              animationEnabled: wrapper.animating && !root.reducedMotion
               iconSourceOverride: root.iconSourceFor(modelData)
               onItemLeftClicked: function(clickedItem) { root.handleClick(clickedItem) }
-              onItemRightClicked: function(clickedItem, position) { root.openMenu(clickedItem, position) }
+              onItemRightClicked: function(clickedItem, position) { root.openMenu(clickedItem, position, dockItem) }
               onDragMoved: function(draggedItem, position) {
                 root.onDragMoved(draggedItem,
                   dockItem.mapToItem(null, position.x, position.y),
@@ -1305,6 +1383,9 @@ Item {
                   root.hoveredItemId = ""
                 }
                 root.applyLayout()
+              }
+              onKeyboardFocusChanged: function(focusedItem, focused) {
+                if (focused) root.hoveredItemId = focusedItem.id
               }
             }
           }
@@ -1462,6 +1543,7 @@ Item {
     windowList: root.previewWindows
     centerX: root.previewCenterX
     bottomY: root.previewBottomY
+    reducedMotion: root.reducedMotion
     iconSourceFor: function(data) { return root.iconSourceFor({ id: root.previewAppId }) }
     thumbnailFor: function(data) { return root.thumbnailFor(data) }
     onActivated: function(data) { root.activatePreviewWindow(data) }
@@ -1491,7 +1573,7 @@ Item {
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Background
-    WlrLayershell.namespace: "paper-jam-84-dock-spacer"
+    WlrLayershell.namespace: "one-bit-bureau-dock-spacer"
     WlrLayershell.exclusiveZone: root.autoHide ? 0 : (root.enabled ? root.dockHeight + root.bottomMargin : 0)
     anchors { bottom: true; left: true; right: true }
     implicitHeight: root.dockHeight + root.bottomMargin
@@ -1511,7 +1593,7 @@ Item {
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.namespace: "paper-jam-84-dock-edge"
+    WlrLayershell.namespace: "one-bit-bureau-dock-edge"
     anchors { bottom: true; left: true; right: true }
     implicitHeight: root.edgeHeight
     mask: Region { item: edgeMouse }
@@ -1549,7 +1631,7 @@ Item {
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.namespace: "paper-jam-84-dock-drag"
+    WlrLayershell.namespace: "one-bit-bureau-dock-drag"
     anchors { top: true; bottom: true; left: true; right: true }
     mask: Region { item: ghostAnchor }
 
@@ -1560,9 +1642,18 @@ Item {
       width: root.iconSize * root.ghostScale + 16
       height: root.iconSize * root.ghostScale + 16
       opacity: root.ghostOpacity
-      Behavior on x { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
-      Behavior on y { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
-      Behavior on opacity { NumberAnimation { duration: 60; easing.type: Easing.Linear } }
+      Behavior on x {
+        enabled: !root.reducedMotion
+        NumberAnimation { duration: 60; easing.type: Easing.Linear }
+      }
+      Behavior on y {
+        enabled: !root.reducedMotion
+        NumberAnimation { duration: 60; easing.type: Easing.Linear }
+      }
+      Behavior on opacity {
+        enabled: !root.reducedMotion
+        NumberAnimation { duration: 60; easing.type: Easing.Linear }
+      }
 
       Rectangle {
         anchors.centerIn: parent

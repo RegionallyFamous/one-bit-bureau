@@ -154,7 +154,7 @@ def write_icons(path: str, icons: dict[str, object]) -> None:
     if hasattr(os, "O_NOFOLLOW"):
         directory_flags |= os.O_NOFOLLOW
     parent_fd = os.open(parent, directory_flags)
-    temporary = f".{name}.paper-jam-{os.getpid()}"
+    temporary = f".{name}.one-bit-bureau-{os.getpid()}"
     output_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
     if hasattr(os, "O_NOFOLLOW"):
         output_flags |= os.O_NOFOLLOW
@@ -190,7 +190,7 @@ def update_icon_mapping(path: str, app_id: str, operation: str, value: str = "")
     icons = shape_icons(read_json(path, 1024 * 1024, {}))
     if operation == "pack":
         if value not in PACK_ROLES:
-            raise SystemExit("unknown Paper Jam icon role")
+            raise SystemExit("unknown One-Bit Bureau icon role")
         if canonical not in icons and len(icons) >= MAX_ICONS:
             raise SystemExit("icon mapping already contains 256 entries")
         icons[canonical] = {"pack": value}
@@ -213,7 +213,7 @@ def list_icons(map_path: str, pins_path: str) -> None:
         if isinstance(entry, str):
             choice = entry
         elif isinstance(entry, dict) and entry.get("pack"):
-            choice = f"Paper Jam {entry['pack']}"
+            choice = f"One-Bit Bureau {entry['pack']}"
         elif isinstance(entry, dict) and entry.get("mode") == "native":
             choice = "native icon"
         else:
@@ -241,7 +241,7 @@ def main() -> None:
     elif command == "list" and len(sys.argv) == 4:
         list_icons(sys.argv[2], sys.argv[3])
     else:
-        raise SystemExit("usage: paper-jam-state read|write|list ...")
+        raise SystemExit("usage: one-bit-bureau-state read|write|list ...")
 
 
 if __name__ == "__main__":

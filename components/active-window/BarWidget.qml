@@ -10,7 +10,7 @@ import "AppIconModel.js" as AppIconModel
 
 BarWidget {
   id: root
-  moduleName: "io.github.regionallyfamous.paper-jam-84"
+  moduleName: "io.github.regionallyfamous.one-bit-bureau"
 
   readonly property var waylandToplevel: ToplevelManager.activeToplevel
   readonly property var hyprlandToplevel: Hyprland.activeToplevel
@@ -52,6 +52,7 @@ BarWidget {
   readonly property string iconSource: resolveIconSource(iconName)
 
   readonly property bool showTitle: setting("showTitle", true) === true
+  readonly property bool reducedMotion: setting("reducedMotion", false) === true
   readonly property int maxLabelWidth: Math.max(80, Number(setting("maxWidth", 280)))
   readonly property int configuredIconSize: Math.max(12, Number(setting("iconSize", 16)))
   readonly property int iconSize: Math.min(configuredIconSize, Math.max(12, barSize - Style.space(6)))
@@ -67,8 +68,17 @@ BarWidget {
       : iconSize + Style.space(6) + Math.min(maxLabelWidth, ownerLabel.implicitWidth) + Style.space(16))
     : 0
   implicitHeight: barSize
+  Accessible.role: Accessible.Button
+  Accessible.name: displayLabel ? "Activate " + displayLabel : "Active application"
+  Accessible.description: "Opens the active window; use the context menu for One-Bit Bureau appearance settings."
+  Accessible.focusable: visible
+  Accessible.onPressAction: {
+    root.settingsOpen = false
+    if (root.waylandToplevel) root.waylandToplevel.activate()
+  }
 
   Behavior on implicitWidth {
+    enabled: !root.reducedMotion
     NumberAnimation { duration: 90; easing.type: Easing.Linear }
   }
 
@@ -296,6 +306,17 @@ BarWidget {
         accent: Color.accent
         fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
         onClicked: root.saveSetting("showTitle", !root.showTitle)
+      }
+
+      Toggle {
+        width: parent.width
+        label: "Reduce One-Bit Bureau motion"
+        description: "Snap overview, previews, settings, and active-app width changes into place."
+        checked: root.reducedMotion
+        foreground: root.bar ? root.bar.foreground : Color.foreground
+        accent: Color.accent
+        fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+        onClicked: root.saveSetting("reducedMotion", !root.reducedMotion)
       }
     }
   }

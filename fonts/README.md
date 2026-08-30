@@ -1,6 +1,6 @@
 # Bundled fonts
 
-Paper Jam ’84 includes two deliberately different monospace choices. Setup installs them into the current user’s font directory and refreshes fontconfig, but it does not rewrite terminal configs or change the user’s selected system font.
+One-Bit Bureau includes two deliberately different monospace choices. Setup installs them into the current user’s font directory and refreshes fontconfig, but it does not rewrite terminal configs or change the user’s selected system font.
 
 | File | Family reported by fontconfig | Version | License | Upstream | SHA-256 |
 |---|---|---:|---|---|---|

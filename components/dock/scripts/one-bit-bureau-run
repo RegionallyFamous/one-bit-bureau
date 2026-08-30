@@ -13,7 +13,7 @@ import time
 
 
 def usage() -> None:
-    raise SystemExit("usage: paper-jam-run TIMEOUT_MS GRACE_MS -- COMMAND [ARG ...]")
+    raise SystemExit("usage: one-bit-bureau-run TIMEOUT_MS GRACE_MS -- COMMAND [ARG ...]")
 
 
 def bounded_milliseconds(raw: str, minimum: int, maximum: int, label: str) -> int:
@@ -76,7 +76,7 @@ def main() -> int:
         # check closes the fork-to-prctl race if the controller dies first.
         owner_pid = os.getpid()
         libc = ctypes.CDLL(None, use_errno=True)
-        gate_delay = min(max(int(os.environ.get("PAPER_JAM_RUN_TEST_GATE_DELAY_MS", "0")), 0), 1000) / 1000
+        gate_delay = min(max(int(os.environ.get("ONE_BIT_BUREAU_RUN_TEST_GATE_DELAY_MS", "0")), 0), 1000) / 1000
 
         def prepare_contained_child() -> None:
             if gate_delay:
@@ -97,7 +97,7 @@ def main() -> int:
             start_new_session=start_new_session,
         )
     except OSError as error:
-        print(f"paper-jam-run: could not start helper: {error}", file=sys.stderr)
+        print(f"one-bit-bureau-run: could not start helper: {error}", file=sys.stderr)
         return 126
 
     deadline = time.monotonic() + timeout_seconds
@@ -110,7 +110,7 @@ def main() -> int:
             return 128 + requested_signal
         if time.monotonic() >= deadline:
             stop_and_reap(process, grace_seconds)
-            print("paper-jam-run: helper exceeded its deadline", file=sys.stderr)
+            print("one-bit-bureau-run: helper exceeded its deadline", file=sys.stderr)
             return 124
         time.sleep(0.02)
 

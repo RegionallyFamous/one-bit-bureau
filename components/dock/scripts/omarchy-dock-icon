@@ -3,11 +3,11 @@
 set -euo pipefail
 
 user_home="${HOME:?HOME is not set}"
-config_dir="$user_home/.config/omarchy/paper-jam-84"
+config_dir="$user_home/.config/omarchy/one-bit-bureau"
 map_file="$config_dir/dock-icons.json"
 pins_file="$config_dir/dock-pinned.json"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-state_helper="$script_dir/paper-jam-state"
+state_helper="$script_dir/one-bit-bureau-state"
 pack_dir="$script_dir/../assets/app-icons"
 command_name="${0##*/}"
 
@@ -54,8 +54,8 @@ list_pack() {
 
 write_mapping() {
   local app_id="$1" operation="$2" value="${3:-}"
-  [[ ! -L $config_dir ]] || die "Paper Jam config directory may not be a symlink"
-  [[ ! -e $config_dir || -d $config_dir ]] || die "Paper Jam config path is not a directory"
+  [[ ! -L $config_dir ]] || die "One-Bit Bureau config directory may not be a symlink"
+  [[ ! -e $config_dir || -d $config_dir ]] || die "One-Bit Bureau config path is not a directory"
   mkdir -p "$config_dir"
   if [[ -n $value ]]; then
     python3 "$state_helper" write "$map_file" "$app_id" "$operation" "$value"
@@ -65,7 +65,7 @@ write_mapping() {
 }
 
 command -v python3 >/dev/null || die "python3 is required"
-[[ -f $state_helper && ! -L $state_helper ]] || die "Paper Jam state helper is missing"
+[[ -f $state_helper && ! -L $state_helper ]] || die "One-Bit Bureau state helper is missing"
 
 case "${1:-}" in
   pack)
@@ -78,9 +78,9 @@ case "${1:-}" in
         (( $# == 4 )) || { usage; exit 2; }
         app_id=$(canonical_id "$3")
         role="$4"
-        [[ $role =~ ^[a-z0-9-]+$ && -f $pack_dir/$role.png && ! -L $pack_dir/$role.png ]] || die "unknown Paper Jam icon role: $role"
+        [[ $role =~ ^[a-z0-9-]+$ && -f $pack_dir/$role.png && ! -L $pack_dir/$role.png ]] || die "unknown One-Bit Bureau icon role: $role"
         write_mapping "$app_id" pack "$role"
-        printf 'Set Paper Jam %s icon for %s\n' "$role" "$app_id"
+        printf 'Set One-Bit Bureau %s icon for %s\n' "$role" "$app_id"
         ;;
       *) usage; exit 2 ;;
     esac
@@ -105,12 +105,12 @@ case "${1:-}" in
     ;;
   list)
     (( $# == 1 )) || { usage; exit 2; }
-    [[ ! -L $config_dir ]] || die "Paper Jam config directory may not be a symlink"
+    [[ ! -L $config_dir ]] || die "One-Bit Bureau config directory may not be a symlink"
     python3 "$state_helper" list "$map_file" "$pins_file"
     ;;
   folder)
     (( $# == 1 )) || { usage; exit 2; }
-    [[ ! -L $config_dir ]] || die "Paper Jam config directory may not be a symlink"
+    [[ ! -L $config_dir ]] || die "One-Bit Bureau config directory may not be a symlink"
     mkdir -p "$config_dir"
     xdg-open "$config_dir" >/dev/null 2>&1
     ;;

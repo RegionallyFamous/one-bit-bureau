@@ -2,9 +2,9 @@
 
 set -euo pipefail
 
-PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"
-PRODUCT_NAME="Paper Jam ’84"
-THEME_NAME="paper-jam-84"
+PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
+PRODUCT_NAME="One-Bit Bureau"
+THEME_NAME="one-bit-bureau"
 STATE_DIR="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID"
 STATE_FILE="$STATE_DIR/install-state.json"
 SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
@@ -12,14 +12,14 @@ THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
 PLUGIN_TARGET="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
 THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
-FONT_TARGET="$HOME/.local/share/fonts/paper-jam-84"
+FONT_TARGET="$HOME/.local/share/fonts/one-bit-bureau"
 BRANDING_TARGET="$HOME/.config/omarchy/branding"
 BRANDING_BACKUP_DIR="$STATE_DIR/backups/branding"
-COMMAND_TARGET="$HOME/.local/bin/paper-jam"
+COMMAND_TARGET="$HOME/.local/bin/one-bit-bureau"
 BRANDING_MAX_BYTES=$((1024 * 1024))
 
-if [[ -n ${PAPER_JAM_UNINSTALL_TEMP:-} && $PAPER_JAM_UNINSTALL_TEMP == "${BASH_SOURCE[0]}" ]]; then
-  trap 'rm -f -- "$PAPER_JAM_UNINSTALL_TEMP"' EXIT
+if [[ -n ${ONE_BIT_BUREAU_UNINSTALL_TEMP:-} && $ONE_BIT_BUREAU_UNINSTALL_TEMP == "${BASH_SOURCE[0]}" ]]; then
+  trap 'rm -f -- "$ONE_BIT_BUREAU_UNINSTALL_TEMP"' EXIT
 fi
 
 command -v omarchy >/dev/null || {
@@ -65,7 +65,7 @@ jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NA
     else
       .themeOwned == true and
       (.installed.themeSourceId | test("^[a-z0-9]+(-[a-z0-9]+)*-[a-f0-9]{12}$")) and
-      .installed.themeSourceUrl == "https://github.com/RegionallyFamous/paper-jam-84.git" and
+      .installed.themeSourceUrl == "https://github.com/RegionallyFamous/one-bit-bureau.git" and
       (.installed.themeSourceCommit | length > 0)
     end
   ) and
@@ -150,7 +150,7 @@ directory_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
 if hasattr(os, "O_NOFOLLOW"):
     directory_flags |= os.O_NOFOLLOW
 parent_fd = os.open(parent, directory_flags)
-temporary = f".{name}.paper-jam-{os.getpid()}"
+temporary = f".{name}.one-bit-bureau-{os.getpid()}"
 output_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
 if hasattr(os, "O_NOFOLLOW"):
     output_flags |= os.O_NOFOLLOW
@@ -353,11 +353,11 @@ echo
 echo "$PRODUCT_NAME was removed and the settings it still owned were restored."
 echo "User data was retained:"
 echo "  your configured Desktop directory"
-echo "  $HOME/.config/omarchy/paper-jam-84/dock-pinned.json"
-echo "  $HOME/.config/omarchy/paper-jam-84/dock-settings.json"
-echo "  $HOME/.config/omarchy/paper-jam-84/desktop-icon-positions.json"
-echo "  $HOME/.config/omarchy/paper-jam-84/dock-icons.json"
-echo "  $HOME/.config/omarchy/paper-jam-84/icons"
+echo "  $HOME/.config/omarchy/one-bit-bureau/dock-pinned.json"
+echo "  $HOME/.config/omarchy/one-bit-bureau/dock-settings.json"
+echo "  $HOME/.config/omarchy/one-bit-bureau/desktop-icon-positions.json"
+echo "  $HOME/.config/omarchy/one-bit-bureau/dock-icons.json"
+echo "  $HOME/.config/omarchy/one-bit-bureau/icons"
 if [[ $BRANDING_BACKUP_RETAINED == true ]]; then
   echo "  previous branding backup retained at $BRANDING_BACKUP_DIR"
 fi

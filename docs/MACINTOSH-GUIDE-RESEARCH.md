@@ -1,6 +1,6 @@
 # Original Macintosh interface research
 
-Paper Jam ’84’s Object-First revision is based on primary Apple documentation and a reviewed oral history. The implementation uses the documents' interaction and communication methods while excluding Apple-owned artwork and exact trade dress.
+One-Bit Bureau's Object-First system is based on primary Apple documentation and a reviewed oral history. The implementation uses the documents' interaction and communication methods while excluding Apple-owned artwork and exact trade dress.
 
 ## Primary evidence
 
@@ -9,11 +9,11 @@ Paper Jam ’84’s Object-First revision is based on primary Apple documentatio
 - Apple, [*Inside Macintosh, Volume I* (1984)](https://www.bitsavers.org/pdf/apple/mac/Inside_Macintosh_Vol_1_1984.pdf): responsiveness, permissiveness, and consistency on pages I-27–I-28; visibly constrained modes on page I-28; target-size icon-grid construction in the preliminary interface guidelines; stable menu inventories on pages I-51–I-53; and visible cause and effect plus safe dialog defaults on pages I-65–I-69.
 - Stanford University Libraries, [Susan Kare oral history](https://www-leland.stanford.edu/dept/SUL/sites/mac/primary/interviews/kare/mac.html): the reusable method is to explore alternatives, judge icons at target size, iterate from feedback, and distinguish object categories through legible concepts. Kare's exact icons, silhouettes, humor, and pixel decisions remain personal signatures and are not reproduced.
 
-## What changed in Paper Jam ’84
+## What changed in One-Bit Bureau
 
 - Desktop input now follows select-before-action: single click selects, double-click opens, Return opens, and empty click clears.
-- Original ImageGen-authored raster mini-illustrations replace arbitrary modern fallbacks for generic objects, including picture files. Meaningful application icons remain recognizable.
-- Selection reverses the object glyph and name rail; picture files use a dedicated one-bit picture-frame icon rather than a literal thumbnail.
+- Original ImageGen-authored raster mini-illustrations replace arbitrary modern fallbacks for generic objects. Safe local raster image files remain recognizable as real, unmodified photographs; unsupported or unsafe images use an authored one-bit picture fallback.
+- Selection reverses a generic object's glyph and name rail. A photograph keeps its pixels unchanged while the enclosing rule and name rail provide the selection feedback.
 - Overview preview bodies remain stable paper while keyboard ownership moves through title rails. The active window receives a separate double rule.
 - The active-app widget leads with the application owner and treats a distinct window title as secondary context.
 - Risky launcher confirmation makes Cancel the visibly safe default and routes Enter and Escape to cancellation.
@@ -22,6 +22,6 @@ Paper Jam ’84’s Object-First revision is based on primary Apple documentatio
 
 ## Deliberate limits
 
-The 1984 Macintosh had no dock, while Omarchy's client-side decorations and tiling model cannot expose one universal historical window frame. Paper Jam therefore keeps the dock as an explicitly modern launch shelf and concentrates historical method in the desktop object model, stable command inventory, ownership feedback, top rail, overview, theme geometry, and wallpaper ground.
+The 1984 Macintosh had no dock, while Omarchy's client-side decorations and tiling model cannot expose one universal historical window frame. One-Bit Bureau therefore keeps the dock as an explicitly modern launch shelf and concentrates historical method in the desktop object model, stable command inventory, ownership feedback, top rail, overview, theme geometry, and wallpaper ground.
 
-No Apple logo, Happy Mac, Finder face, Command-key symbol, Susan Kare icon, Chicago or Geneva font, original desktop tile, title-bar stripe copy, system sound, device silhouette, or manual screenshot is included.
+No Apple logo, Happy Mac, Finder face, Command-key symbol, Susan Kare icon, Chicago or Geneva font, original desktop tile, title-bar stripe copy, system sound, device silhouette, or manual screenshot is included. The two bundled fonts are independently licensed modern families, remain optional, and are not presented as period replicas.

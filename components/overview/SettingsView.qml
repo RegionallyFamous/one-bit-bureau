@@ -21,11 +21,26 @@ Item {
         property real value: 0
         property real stepSize: 1
         property string suffix: ""
+        property string accessibleName: "Setting"
         signal edited(real nextValue)
         signal committed(real nextValue)
         implicitWidth: Style.space(280)
         implicitHeight: Style.space(32)
-        activeFocusOnTab: true
+        activeFocusOnTab: enabled
+        opacity: enabled ? 1 : 0.38
+        Accessible.role: Accessible.Slider
+        Accessible.name: settingSlider.accessibleName
+        Accessible.description: Math.round(settingSlider.value) + settingSlider.suffix
+        Accessible.focusable: enabled
+        Accessible.focused: activeFocus
+        Accessible.onIncreaseAction: {
+            if (settingSlider.enabled)
+                settingSlider.commitKeyboardValue(settingSlider.value + settingSlider.stepSize);
+        }
+        Accessible.onDecreaseAction: {
+            if (settingSlider.enabled)
+                settingSlider.commitKeyboardValue(settingSlider.value - settingSlider.stepSize);
+        }
         readonly property real span: Math.max(0.000001, to - from)
         readonly property real normalizedValue: Math.max(0, Math.min(1, (value - from) / span))
 
@@ -134,9 +149,20 @@ Item {
         id: settingChoices
         property var options: []
         property string value: ""
+        property string accessibleName: "Choices"
         signal chosen(string nextValue)
         spacing: Style.spacing.lg
-        activeFocusOnTab: true
+        activeFocusOnTab: enabled
+        opacity: enabled ? 1 : 0.38
+        Accessible.role: Accessible.ComboBox
+        Accessible.name: settingChoices.accessibleName
+        Accessible.description: "Selected " + settingChoices.value
+        Accessible.focusable: enabled
+        Accessible.focused: activeFocus
+        Accessible.onPressAction: {
+            if (settingChoices.enabled)
+                settingChoices.chooseOffset(1, true);
+        }
 
         // Arrows stop at either end; Space/Enter cycle through every option.
         function chooseOffset(offset, wrap) {
@@ -216,6 +242,7 @@ Item {
     component DisplayModeChoices: RowLayout {
         id: displayModeChoices
         property string value: "mirrored"
+        property string accessibleName: "Display mode"
         signal chosen(string nextValue)
         readonly property var options: [
             {
@@ -230,7 +257,16 @@ Item {
             }
         ]
         spacing: 0
-        activeFocusOnTab: true
+        activeFocusOnTab: enabled
+        Accessible.role: Accessible.ComboBox
+        Accessible.name: displayModeChoices.accessibleName
+        Accessible.description: "Selected " + displayModeChoices.value
+        Accessible.focusable: enabled
+        Accessible.focused: activeFocus
+        Accessible.onPressAction: {
+            if (displayModeChoices.enabled)
+                displayModeChoices.choose(displayModeChoices.value === "per-monitor" ? 0 : 1);
+        }
 
         function choose(index) {
             var next = Math.max(0, Math.min(displayModeChoices.options.length - 1, index));
@@ -330,6 +366,13 @@ Item {
         implicitWidth: Style.space(horizontal ? 140 : 200)
         implicitHeight: Style.space(horizontal ? 52 : 48)
         activeFocusOnTab: selected
+        Accessible.role: Accessible.Button
+        Accessible.name: categoryButton.label + " settings"
+        Accessible.focusable: enabled
+        Accessible.focused: activeFocus
+        Accessible.selectable: true
+        Accessible.selected: categoryButton.selected
+        Accessible.onPressAction: categoryButton.choose(categoryButton.categoryIndex)
 
         signal entered()
 
@@ -440,10 +483,26 @@ Item {
     component SettingToggle: Item {
         id: settingToggle
         property bool checked: false
+        property string accessibleName: "Setting"
         signal toggled(bool checked)
         implicitWidth: Style.space(72)
         implicitHeight: Style.space(28)
-        activeFocusOnTab: true
+        activeFocusOnTab: enabled
+        opacity: enabled ? 1 : 0.38
+        Accessible.role: Accessible.CheckBox
+        Accessible.name: settingToggle.accessibleName
+        Accessible.focusable: enabled
+        Accessible.focused: activeFocus
+        Accessible.checkable: true
+        Accessible.checked: settingToggle.checked
+        Accessible.onPressAction: {
+            if (settingToggle.enabled)
+                settingToggle.toggled(!settingToggle.checked);
+        }
+        Accessible.onToggleAction: {
+            if (settingToggle.enabled)
+                settingToggle.toggled(!settingToggle.checked);
+        }
 
         Keys.onPressed: function (event) {
             if (settingsView.controller.handleSettingsNavigation(event))
@@ -483,7 +542,7 @@ Item {
                 x: settingToggle.checked ? parent.width - width - Style.space(2) : Style.space(2)
                 color: settingToggle.checked ? Color.accent : Color.menu.text
                 opacity: settingToggle.checked ? 1 : 0.45
-                Behavior on x { NumberAnimation { duration: 100 } }
+                Behavior on x { NumberAnimation { duration: settingsView.controller.reducedMotion ? 0 : 100 } }
             }
         }
 
@@ -517,6 +576,14 @@ Item {
         border.color: enabled && (activeFocus || hovered || destructive) ? Color.accent : Color.menu.border
         border.width: activeFocus ? Math.max(2, Style.focusBorderWidth) : Math.max(1, Style.normalBorderWidth)
         opacity: enabled ? 1 : 0.38
+        Accessible.role: Accessible.Button
+        Accessible.name: dialogButton.label
+        Accessible.focusable: enabled
+        Accessible.focused: activeFocus
+        Accessible.onPressAction: {
+            if (dialogButton.enabled)
+                dialogButton.clicked();
+        }
 
         Keys.onPressed: function (event) {
             if (settingsView.controller.handleSettingsNavigation(event))
@@ -589,6 +656,7 @@ Item {
             ]);
         return settingsView.availableFocusItems([
             categoryButton,
+            reducedMotionToggle,
             motionAnimateButton,
             animationStyleChoices,
             slideDirectionChoices,
@@ -667,6 +735,8 @@ Item {
         border.color: Color.menu.border
         border.width: Math.max(1, Style.normalBorderWidth)
         enabled: !settingsView.controller.footerHideConfirmationOpen
+        Accessible.role: Accessible.Dialog
+        Accessible.name: "Exposé settings"
 
         MouseArea {
             anchors.fill: parent
@@ -827,6 +897,7 @@ Item {
                                 }
                                 SettingSlider {
                                     id: backgroundBlurSlider
+                                    accessibleName: "Overview background blur"
                                     Layout.fillWidth: true
                                     from: 0
                                     to: 20
@@ -855,6 +926,7 @@ Item {
                                 }
                                 SettingSlider {
                                     id: backgroundDimSlider
+                                    accessibleName: "Overview background dimming"
                                     Layout.fillWidth: true
                                     from: 0
                                     to: 90
@@ -948,6 +1020,7 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingToggle {
                                     id: hotCornerToggle
+                                    accessibleName: "Enable overview hot corner"
                                     checked: settingsView.controller.hotCornerEnabled
                                     onToggled: function (checked) { settingsView.controller.setHotCornerEnabled(checked); }
                                 }
@@ -969,6 +1042,7 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingChoices {
                                     id: hotCornerPositionChoices
+                                    accessibleName: "Hot corner position"
                                     value: settingsView.controller.hotCornerPosition
                                     options: [
                                         { label: "TL", value: "top-left" },
@@ -1036,6 +1110,7 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingChoices {
                                     id: previewPlacementChoices
+                                    accessibleName: "Window preview placement"
                                     value: settingsView.controller.previewPlacement
                                     options: [
                                         { label: "In place", value: "in-place" },
@@ -1061,6 +1136,7 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingChoices {
                                     id: windowFooterChoices
+                                    accessibleName: "Window label style"
                                     value: settingsView.controller.windowFooterStyle
                                     spacing: Style.spacing.md
                                     options: [
@@ -1085,6 +1161,7 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingToggle {
                                     id: movePointerToggle
+                                    accessibleName: "Move pointer to selected window"
                                     checked: settingsView.controller.moveCursorToWindow
                                     onToggled: function (checked) { settingsView.controller.setMoveCursorToWindow(checked); }
                                 }
@@ -1105,6 +1182,7 @@ Item {
                                 }
                                 DisplayModeChoices {
                                     id: displayModeChoicesControl
+                                    accessibleName: "Overview display mode"
                                     Layout.fillWidth: true
                                     value: settingsView.controller.multiMonitorMode
                                     onChosen: function (value) { settingsView.controller.setMultiMonitorMode(value); }
@@ -1157,11 +1235,48 @@ Item {
                                 DialogButton {
                                     id: motionAnimateButton
                                     label: "Animate"
+                                    enabled: !settingsView.controller.reducedMotion
                                     onClicked: settingsView.controller.previewAnimation()
                                 }
                             }
 
                             Item { Layout.preferredHeight: Style.spacing.sm }
+                            SettingsDivider { Layout.fillWidth: true }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Style.space(48)
+
+                                Text {
+                                    text: "Reduce One-Bit Bureau motion"
+                                    textFormat: Text.PlainText
+                                    color: Color.menu.text
+                                    font.family: Style.font.menuFamily
+                                    font.pixelSize: Style.font.body
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                SettingToggle {
+                                    id: reducedMotionToggle
+                                    accessibleName: "Reduce One-Bit Bureau motion"
+                                    checked: settingsView.controller.reducedMotion
+                                    onToggled: function (checked) { settingsView.controller.setReducedMotion(checked); }
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                visible: settingsView.controller.reducedMotion
+                                text: "Transitions and animated previews snap directly to their final state."
+                                textFormat: Text.PlainText
+                                wrapMode: Text.WordWrap
+                                color: Color.menu.text
+                                opacity: 0.62
+                                font.family: Style.font.menuFamily
+                                font.pixelSize: Style.font.caption
+                            }
+
                             SettingsDivider { Layout.fillWidth: true }
 
                             RowLayout {
@@ -1178,6 +1293,8 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingChoices {
                                     id: animationStyleChoices
+                                    accessibleName: "Overview transition style"
+                                    enabled: !settingsView.controller.reducedMotion
                                     value: settingsView.controller.animationStyle
                                     options: [
                                         { label: "Original", value: "original" },
@@ -1209,6 +1326,8 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingChoices {
                                     id: slideDirectionChoices
+                                    accessibleName: "Overview slide direction"
+                                    enabled: !settingsView.controller.reducedMotion
                                     value: String(settingsView.controller.slideDirection["in"])
                                     options: settingsView.slideDirectionOptions
                                     onChosen: function (value) { settingsView.controller.setSlideDirection(value); }
@@ -1230,6 +1349,8 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingChoices {
                                     id: slideDirectionInChoices
+                                    accessibleName: "Overview entrance direction"
+                                    enabled: !settingsView.controller.reducedMotion
                                     value: String(settingsView.controller.slideDirection["in"])
                                     options: settingsView.slideDirectionOptions
                                     onChosen: function (value) { settingsView.controller.setSlideDirectionIn(value); }
@@ -1256,6 +1377,8 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingChoices {
                                     id: slideDirectionOutChoices
+                                    accessibleName: "Overview exit direction"
+                                    enabled: !settingsView.controller.reducedMotion
                                     value: String(settingsView.controller.slideDirection["out"])
                                     options: settingsView.slideDirectionOptions
                                     onChosen: function (value) { settingsView.controller.setSlideDirectionOut(value); }
@@ -1281,6 +1404,8 @@ Item {
                                 }
                                 SettingSlider {
                                     id: animationSpeedSlider
+                                    accessibleName: "Overview transition duration"
+                                    enabled: !settingsView.controller.reducedMotion
                                     Layout.fillWidth: true
                                     from: 100
                                     to: 800
@@ -1315,6 +1440,8 @@ Item {
                                 }
                                 SettingSlider {
                                     id: animationInSlider
+                                    accessibleName: "Overview entrance duration"
+                                    enabled: !settingsView.controller.reducedMotion
                                     Layout.fillWidth: true
                                     from: 100
                                     to: 800
@@ -1352,6 +1479,8 @@ Item {
                                 }
                                 SettingSlider {
                                     id: animationOutSlider
+                                    accessibleName: "Overview exit duration"
+                                    enabled: !settingsView.controller.reducedMotion
                                     Layout.fillWidth: true
                                     from: 100
                                     to: 800
@@ -1385,6 +1514,8 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 SettingToggle {
                                     id: animationSameSpeedToggle
+                                    accessibleName: "Use the same entrance and exit duration"
+                                    enabled: !settingsView.controller.reducedMotion
                                     checked: !settingsView.controller.animationTimingFor(settingsView.controller.animationStyle).separate
                                     onToggled: function (checked) {
                                         settingsView.controller.clearAnimationTimingPreview();
@@ -1522,7 +1653,7 @@ Item {
                         id: recoveryText
                         anchors.fill: parent
                         anchors.margins: Style.space(12)
-                        text: "After closing Settings, restore it in ~/.config/omarchy/shell.json by setting showFooter to true in the io.github.regionallyfamous.paper-jam-84 entry."
+                        text: "After closing Settings, restore it in ~/.config/omarchy/shell.json by setting showFooter to true in the io.github.regionallyfamous.one-bit-bureau entry."
                         textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
                         color: Color.menu.text
@@ -1537,6 +1668,14 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.max(Style.space(40), acknowledgementText.implicitHeight)
                     activeFocusOnTab: true
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: "Acknowledge footer recovery instructions"
+                    Accessible.focusable: true
+                    Accessible.focused: activeFocus
+                    Accessible.checkable: true
+                    Accessible.checked: settingsView.controller.footerHideAcknowledged
+                    Accessible.onPressAction: settingsView.controller.footerHideAcknowledged = !settingsView.controller.footerHideAcknowledged
+                    Accessible.onToggleAction: settingsView.controller.footerHideAcknowledged = !settingsView.controller.footerHideAcknowledged
 
                     Keys.onPressed: function (event) {
                         if (settingsView.controller.handleSettingsNavigation(event))

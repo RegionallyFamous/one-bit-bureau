@@ -4,12 +4,12 @@ set -euo pipefail
 
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 helper="$root/scripts/omarchy-dock-icon"
-state_helper="$root/scripts/paper-jam-state"
-run_helper="$root/scripts/paper-jam-run"
+state_helper="$root/scripts/one-bit-bureau-state"
+run_helper="$root/scripts/one-bit-bureau-run"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 test_home="$work/home"
-config="$test_home/.config/omarchy/paper-jam-84"
+config="$test_home/.config/omarchy/one-bit-bureau"
 mkdir -p "$config"
 
 echo "== missing pin state remains distinguishable from an explicitly empty dock"
@@ -96,7 +96,7 @@ PY
 echo "== list emits only the shaped pinned set"
 printf '%s\n' '{"code":{"pack":"terminal"}}' >"$config/dock-icons.json"
 printf '%s\n' '{"pinned":["code"],"order":["code"]}' >"$config/dock-pinned.json"
-HOME="$test_home" bash "$helper" list | grep -q '^code: Paper Jam terminal$'
+HOME="$test_home" bash "$helper" list | grep -q '^code: One-Bit Bureau terminal$'
 
 echo "== helper controller escalates deadline and unload cancellation to SIGKILL"
 deadline_pid="$work/deadline-child.pid"
@@ -157,7 +157,7 @@ if [[ $(uname -s) == "Linux" ]]; then
   }
 
   pre_ready_pid="$work/pre-ready-task.pid"
-  PAPER_JAM_RUN_TEST_GATE_DELAY_MS=600 python3 "$run_helper" 10000 100 -- python3 -c 'import os, pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)' "$pre_ready_pid" &
+  ONE_BIT_BUREAU_RUN_TEST_GATE_DELAY_MS=600 python3 "$run_helper" 10000 100 -- python3 -c 'import os, pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)' "$pre_ready_pid" &
   pre_ready_controller=$!
   pre_ready_child=""
   for _ in {1..100}; do

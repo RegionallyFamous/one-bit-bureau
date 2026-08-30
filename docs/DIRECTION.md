@@ -1,8 +1,8 @@
-# Paper Jam ’84 direction contract
+# One-Bit Bureau direction contract
 
 ## Product sentence
 
-Paper Jam ’84 turns Omarchy into a Bitmap Workbench: select the noun, act second, and move expressive one-bit objects across an illustrated electronic worktable while modern applications remain recognizable and usable.
+One-Bit Bureau turns Omarchy into a Bitmap Workbench: select the noun, act second, and move expressive one-bit objects across an illustrated electronic worktable while modern applications remain recognizable and usable.
 
 ## Thesis
 
@@ -11,7 +11,7 @@ This edition applies the original Macintosh interface method rather than reprodu
 ## Research-derived laws
 
 1. **Object before action.** A single click selects a desktop object, a double-click opens it, Return opens the selected object, and an empty desktop click clears selection.
-2. **Visible ownership.** Selection inverts a compact name or control rail. Object artwork, including picture-file icons, reverses with its rail.
+2. **Visible ownership.** Selection inverts a compact name or control rail. Authored generic object artwork reverses with its rail; a real photograph keeps its pixels unchanged while its enclosure and name rail carry the selection state.
 3. **Perceived stability.** Objects keep their positions, menu inventories do not jump when an action becomes unavailable, and overview preview bodies do not change value when focus moves.
 4. **Immediate feedback.** Hover, drag targets, selection, focus, disabled state, and risky actions have distinct visible treatments without depending on hue.
 5. **Forgiveness.** Risky launcher confirmation makes Cancel the double-outlined safe default. Enter and Escape cancel; neither key trusts nor executes a launcher.
@@ -22,17 +22,21 @@ This edition applies the original Macintosh interface method rather than reprodu
 
 - The desktop ground is an original ImageGen-authored one-bit machine workbench: paper stacks, organizing trays, cables, toothed leaves, and abstract mechanisms frame a calm central work field. The leftmost object lane and bottom-center shelf zone remain deliberately quiet.
 - Paper windows, dialogs, menus, notifications, and the top rail sit clearly above the desktop ground. All shell surfaces are opaque, square, and integer-aligned.
-- Generic folder, document, picture-file, archive, link, launcher-fallback, and Trash objects use expressive raster mini-illustrations reduced from original ImageGen sources. Recognizable application icons remain preserved rather than thresholded.
+- Generic folder, document, archive, link, launcher-fallback, and Trash objects use expressive raster mini-illustrations reduced from original ImageGen sources. Safe local raster image files use real, unmodified thumbnails inside the same object enclosure; unsupported or unsafe image inputs use the authored one-bit picture fallback. Recognizable application icons remain preserved rather than thresholded.
 - The overview is a contact sheet of stable paper preview bodies. Keyboard selection inverts only the title rail; the actually active window receives a double outer rule.
 - The top rail names the active application first. A distinct window or document title is secondary context, never a fake global menu.
-- The dock remains a modern Paper Jam launch shelf translated into this bitmap workbench system. It is not presented as historical Macintosh behavior.
+- The dock remains a modern One-Bit Bureau launch shelf translated into this bitmap workbench system. It is not presented as historical Macintosh behavior.
 - Hyprland windows use square two-pixel borders with no blur, shadow, rounding, or opacity effects.
 
 ## Palette and typography
 
 Application and dialog paper is `#f4f4f0`, carbon is `#171716`, the desktop ground averages around `#b9b9b4`, and muted inactive text is `#50504c`. Paper-on-carbon ownership rails exceed 16:1 contrast; carbon against the desktop ground exceeds 9:1.
 
-The shell uses Omarchy's existing legible type system. Weight, title case, grouping, and inversion create hierarchy. Paper Jam does not imitate Chicago, Geneva, or other proprietary period typography.
+The shell uses Omarchy's selected legible type system. Weight, title case, grouping, and inversion create hierarchy. One-Bit Bureau bundles the redistributable Monaspace Krypton NF and Departure Mono families as optional choices, but setup does not select either family or rewrite terminal configuration. One-Bit Bureau does not imitate Chicago, Geneva, or other proprietary period typography.
+
+## Branding and ownership
+
+One-Bit Bureau supplies original About, screensaver, and unlock artwork. Setup backs up and replaces only the user-level About and screensaver files, records their installed hashes, and restores the exact prior bytes on removal only while One-Bit Bureau still owns the active files; later user edits are preserved. Unlock branding ships as theme data and remains user-selected through Omarchy's native unlock picker rather than invoking privileged Plymouth or initramfs changes.
 
 ## Wallpaper law
 
@@ -46,7 +50,7 @@ The artwork contains no Apple marks, copied desktop tiles, historical devices, t
 - Dock reveal may translate vertically once; it does not magnify, bounce, or spring.
 - Overview entry uses a short linear opacity or position change without blur or overshoot.
 - Active-application rail changes use a short linear width transition.
-- Paper Jam keeps motion brief and linear. Omarchy does not currently expose a host-level reduced-motion signal to plugins, so honoring one remains an explicit integration follow-up rather than a claimed feature.
+- One-Bit Bureau keeps default motion brief and linear. Its native inline `reducedMotion` bar setting removes nonessential One-Bit Bureau transitions across surfaces and is controlled by `one-bit-bureau motion reduce|full|status`; it does not claim to be a desktop-wide accessibility preference.
 
 ## Provenance guardrails
 
@@ -60,7 +64,8 @@ The artwork contains no Apple marks, copied desktop tiles, historical devices, t
 
 - Single click never opens a desktop object; double-click and Return do.
 - A selected generic object changes both its glyph state and its name rail.
-- A selected picture file reverses the dedicated bitmap picture icon and its name rail.
+- A selected safe local photograph retains its original pixels while its enclosure and name rail change state.
+- An unsupported or unsafe image uses the authored picture fallback, whose glyph and name rail reverse together when selected.
 - Overview selection never changes the preview body's value.
 - The active overview window is distinguishable from the keyboard-selected window when they differ.
 - The top rail's primary identity is the application, not only the document title.
@@ -69,10 +74,12 @@ The artwork contains no Apple marks, copied desktop tiles, historical devices, t
 - Desktop labels remain legible over every supported wallpaper crop.
 - The wallpaper's icon lane, central field, and dock zone remain usable under 16:9, 16:10, 21:9, and 4:3 cover crops, with no moire or edge shimmer at 100%, 125%, or 200% scaling.
 - Disabling the plugin restores the stock shell without deleting desktop files or compatibility state.
+- Setup leaves the selected system font unchanged, and removal restores owned branding without overwriting a later user edit.
+- `one-bit-bureau motion reduce` removes nonessential transitions from every One-Bit Bureau surface, `one-bit-bureau motion status` reports `reduced`, and `one-bit-bureau motion full` restores the brief default transitions.
 
 ## Non-goals
 
 - Pixel-perfect reproduction of System 1, Finder, or any Apple operating system.
 - Universal client title-bar styling or a global application menu.
 - Replacing Omarchy's tiling model, launcher, Quick Look, controls, or update path.
-- A font package, sound set, replacement shell root, or parallel configuration system.
+- Automatically replacing the selected system font, adding a sound set, replacing the shell root, or creating a parallel configuration system.

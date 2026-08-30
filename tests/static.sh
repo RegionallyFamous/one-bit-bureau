@@ -20,11 +20,12 @@ sha256() {
 }
 
 "$OMARCHY_ROOT/bin/omarchy-plugin-validate" "$ROOT"
-bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/update" "$ROOT/paper-jam" "$ROOT/test/omarchy-acceptance.sh"
+bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/update" "$ROOT/one-bit-bureau" "$ROOT/test/omarchy-acceptance.sh"
 bash "$ROOT/tests/install-roundtrip.sh"
 bash "$ROOT/tests/update-ownership.sh"
+bash "$ROOT/tests/coordinator-motion.sh"
 bash -n "$ROOT/components/overview/activate-window" "$ROOT/components/dock/scripts/omarchy-dock-icon" "$ROOT/components/dock/scripts/focus-window"
-for dock_helper in "$ROOT/components/dock/scripts/paper-jam-state" "$ROOT/components/dock/scripts/paper-jam-run" "$ROOT/test/stubborn-state-helper.py"; do
+for dock_helper in "$ROOT/components/dock/scripts/one-bit-bureau-state" "$ROOT/components/dock/scripts/one-bit-bureau-run" "$ROOT/test/stubborn-state-helper.py"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$dock_helper"
 done
 for helper in "$ROOT/components/desktop/bin/common.py" "$ROOT/components/desktop/bin/desktop_policy.py" "$ROOT/components/desktop/bin/desktop-index" "$ROOT/components/desktop/bin/add-to-desktop"; do
@@ -37,13 +38,13 @@ for artwork_helper in "$ROOT/artwork/render-bitmap-workbench.py" "$ROOT/artwork/
 done
 
 [[ $(find "$ROOT/components/dock/assets/app-icons" -maxdepth 1 -type f -name '*.png' | wc -l | tr -d ' ') == 12 ]] || {
-  echo "Paper Jam app icon pack must contain exactly 12 rendered PNGs" >&2
+  echo "One-Bit Bureau app icon pack must contain exactly 12 rendered PNGs" >&2
   exit 1
 }
-jq -e '.schemaVersion == 1 and .id == "paper-jam-84" and (.roles | length) == 12' "$ROOT/components/dock/assets/app-icons/pack.json" >/dev/null
+jq -e '.schemaVersion == 1 and .id == "one-bit-bureau" and (.roles | length) == 12' "$ROOT/components/dock/assets/app-icons/pack.json" >/dev/null
 [[ $(identify -ping -format '%wx%h' "$ROOT/docs/assets/proof-photo.png") == "256x192" ]]
-[[ $(identify -ping -format '%wx%h' "$ROOT/themes/paper-jam-84/preview-unlock.png") == "1920x1080" ]]
-[[ $(identify -ping -format '%[channels]' "$ROOT/themes/paper-jam-84/unlock.png") == *a* ]]
+[[ $(identify -ping -format '%wx%h' "$ROOT/themes/one-bit-bureau/preview-unlock.png") == "1920x1080" ]]
+[[ $(identify -ping -format '%[channels]' "$ROOT/themes/one-bit-bureau/unlock.png") == *a* ]]
 [[ $(fc-scan --format '%{family[0]}' "$ROOT/fonts/DepartureMono-1.500.otf") == "Departure Mono" ]]
 [[ $(fc-scan --format '%{family[0]}' "$ROOT/fonts/MonaspaceKryptonNF-Regular-1.400.otf") == "Monaspace Krypton NF" ]]
 [[ $(sha256 "$ROOT/fonts/DepartureMono-1.500.otf") == "4d53f663155cf8bf7ffc8e688776e719625f7bbb80a8d90073438b249261a2e0" ]]
@@ -61,9 +62,26 @@ if rg -n 'henri\.desktop-icons|crmne\.active-window|expose\.window-overview|omar
   exit 1
 fi
 
-if rg -n 'io\.github\.regionallyfamous\.alumina|regionallyfamous\.alumina|alumina-dock|alumina-window-overview' \
-  "$ROOT/components" "$ROOT/manifest.json" "$ROOT/README.md" "$ROOT/paper-jam" "$ROOT/update" "$ROOT/uninstall"; then
-  echo "Found an unpublished Alumina identity outside the explicit setup migration" >&2
+former_first="$(printf '%s' 'pap' 'er')[-_ ]?$(printf '%s' 'j' 'am')"
+former_second=$(printf '%s' 'alu' 'mina')
+former_pattern="${former_first}|${former_second}"
+if rg -n -i "$former_pattern" "$ROOT" --hidden --glob '!.git' --glob '!.git/**'; then
+  echo "Found a former product identity in repository content" >&2
+  exit 1
+fi
+
+former_path=$(
+  while IFS= read -r candidate; do
+    relative=${candidate#"$ROOT/"}
+    lowercase=${relative,,}
+    if [[ $lowercase =~ $former_pattern ]]; then
+      printf '%s\n' "$relative"
+      break
+    fi
+  done < <(find "$ROOT" -mindepth 1 -path "$ROOT/.git" -prune -o -print)
+)
+if [[ -n $former_path ]]; then
+  echo "Found a former product identity in repository path: $former_path" >&2
   exit 1
 fi
 
@@ -81,4 +99,4 @@ for theme in "$ROOT"/themes/*; do
   python3 "$THEME_TOOL" render "$theme" --omarchy-root "$OMARCHY_ROOT" --out "$render_path"
 done
 
-echo "Paper Jam ’84 static validation passed."
+echo "One-Bit Bureau static validation passed."

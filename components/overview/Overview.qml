@@ -14,7 +14,7 @@ Item {
 
     property var shell: null
     property var manifest: null
-    readonly property string pluginId: String((root.manifest && root.manifest.id) || "io.github.regionallyfamous.paper-jam-84")
+    readonly property string pluginId: String((root.manifest && root.manifest.id) || "io.github.regionallyfamous.one-bit-bureau")
     readonly property string pluginDir: String((root.manifest && root.manifest.__sourceDir)
         ? root.manifest.__sourceDir + "/components/overview"
         : (Quickshell.env("HOME") + "/.config/omarchy/plugins/" + root.pluginId + "/components/overview"))
@@ -45,6 +45,7 @@ Item {
         var style = String((root.pluginEntry && root.pluginEntry.animationStyle) || "fade");
         return root.animationStyles.indexOf(style) !== -1 ? style : "fade";
     }
+    readonly property bool reducedMotion: root.pluginEntry && root.pluginEntry.reducedMotion === true
     readonly property var defaultAnimationDurations: ({ original: 90, fade: 90, zoom: 90, slide: 90 })
     readonly property var animationTimings: {
         var configuredTimings = root.pluginEntry && root.pluginEntry.animationTimings
@@ -154,8 +155,8 @@ Item {
     property real backgroundDimPreview: -1
     readonly property real effectiveBackgroundBlur: 0
     readonly property real effectiveBackgroundDim: 0
-    readonly property int previewAnimationDuration: root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 90
-    readonly property int previewFadeDuration: root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 70
+    readonly property int previewAnimationDuration: root.reducedMotion ? 0 : (root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 90)
+    readonly property int previewFadeDuration: root.reducedMotion ? 0 : (root.previewSlowMotion || root.previewNavigationSlowMotion ? 4000 : 70)
     readonly property int previewAnimationEasing: Easing.Linear
     property bool dismissNotifyShell: false
     property real motionProgress: 0
@@ -221,6 +222,17 @@ Item {
         root.clearPreview();
         root.modelRevision++;
         root.selectedIndex = Math.max(0, root.filteredToplevels.indexOf(Hyprland.activeToplevel));
+    }
+
+    onReducedMotionChanged: {
+        if (!root.reducedMotion)
+            return;
+        root.clearPreview();
+        if (overviewMotionAnimation.running) {
+            overviewMotionAnimation.stop();
+            root.motionProgress = root.motionTarget;
+            root.completeMotion();
+        }
     }
 
     function open(payload) {
@@ -301,6 +313,11 @@ Item {
         var next = target >= 0.5 ? 1 : 0;
         overviewMotionAnimation.stop();
         root.motionTarget = next;
+        if (root.reducedMotion) {
+            root.motionProgress = next;
+            root.completeMotion();
+            return;
+        }
         var distance = Math.abs(next - root.motionProgress);
         if (distance < 0.001) {
             root.motionProgress = next;
@@ -324,6 +341,11 @@ Item {
             return;
         overviewMotionAnimation.stop();
         root.motionTarget = 1;
+        if (root.reducedMotion) {
+            root.motionProgress = 1;
+            root.completeMotion();
+            return;
+        }
         root.motionProgress = 0;
         root.animateMotionTo(1);
     }
@@ -395,12 +417,16 @@ Item {
     }
 
     function animationInDurationFor(style) {
+        if (root.reducedMotion)
+            return 0;
         if (root.animationInDurationPreview >= 0 && root.animationDurationPreviewStyle === style)
             return root.animationInDurationPreview;
         return Number(root.animationTimingFor(style)["in"]);
     }
 
     function animationOutDurationFor(style) {
+        if (root.reducedMotion)
+            return 0;
         if (root.animationOutDurationPreview >= 0 && root.animationDurationPreviewStyle === style)
             return root.animationOutDurationPreview;
         return Number(root.animationTimingFor(style)["out"]);
@@ -578,6 +604,13 @@ Item {
             root.updatePluginSetting("moveCursorToWindow", next);
     }
 
+    function setReducedMotion(enabled) {
+        var next = enabled === true;
+        if (next !== root.reducedMotion)
+            root.updatePluginSetting("reducedMotion", next);
+        return next;
+    }
+
     function setMultiMonitorMode(value) {
         var mode = value === "per-monitor" ? "per-monitor" : "mirrored";
         if (mode !== root.multiMonitorMode)
@@ -679,6 +712,10 @@ Item {
     function handleSettingsNavigation(event) {
         if (!root.settingsOpen)
             return false;
+        if (event.modifiers & Qt.MetaModifier) {
+            event.accepted = false;
+            return true;
+        }
         var isTab = event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab;
         var isStep = event.key === Qt.Key_Up || event.key === Qt.Key_Down
             || (root.footerHideConfirmationOpen && (event.key === Qt.Key_Left || event.key === Qt.Key_Right));
@@ -1381,13 +1418,17 @@ Item {
                 root.selectedIndex = index;
         }
         function onRawEvent(event) {
-            if (event && event.name === "custom" && event.data === "regionallyfamous.paper-jam-84.overview:toggle")
+            if (event && event.name === "custom" && event.data === "regionallyfamous.one-bit-bureau.overview:toggle")
                 root.toggle();
         }
     }
 
     IpcHandler {
-        target: "regionallyfamous.paper-jam-84.overview"
+        target: "regionallyfamous.one-bit-bureau.overview"
+
+        function getReducedMotion(): string {
+            return String(root.reducedMotion);
+        }
         function open(): string {
             // Must not be root.toggle(): that makes "open" a duplicate of
             // "toggle", so calling open on an already-open overview closes it.
@@ -1561,7 +1602,7 @@ Item {
                 }
             }
             exclusionMode: ExclusionMode.Ignore
-            WlrLayershell.namespace: "paper-jam-84-overview-hot-corner"
+            WlrLayershell.namespace: "one-bit-bureau-overview-hot-corner"
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.exclusiveZone: -1
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -1595,7 +1636,7 @@ Item {
             }
             color: Color.background
             exclusionMode: ExclusionMode.Ignore
-            WlrLayershell.namespace: "paper-jam-84-window-overview"
+            WlrLayershell.namespace: "one-bit-bureau-window-overview"
             WlrLayershell.layer: WlrLayer.Overlay
             HyprlandWindow.opacity: root.motionProgress
             BackgroundEffect.blurRegion: null
@@ -1880,6 +1921,10 @@ Item {
                             font.family: Style.font.menuFamily
                             font.pixelSize: Style.font.bodySmall
                             font.bold: true
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Open Exposé settings"
+                            Accessible.focusable: true
+                            Accessible.onPressAction: root.openSettings()
 
                             MouseArea {
                                 anchors.fill: parent

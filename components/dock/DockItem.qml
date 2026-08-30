@@ -22,6 +22,9 @@ Item {
   readonly property bool iconReady: icon.status === Image.Ready
   readonly property bool packNormalized: icon.packCrop !== null
   readonly property real iconCenterOffset: (icon.y + icon.height / 2) - (root.height / 2)
+  readonly property string accessibleState: root.itemData.running
+    ? (root.itemData.pinned ? "Pinned application, running" : "Application, running")
+    : (root.itemData.pinned ? "Pinned application" : "Application")
 
   signal dragMoved(var itemData, point position)
   signal dragFinished(var itemData, point position)
@@ -29,9 +32,37 @@ Item {
   signal itemRightClicked(var itemData, point position)
   signal tooltipRequested(var itemData, bool visible, real centerX)
   signal hoverPointerChanged(var itemData, bool inside, real pointerX)
+  signal keyboardFocusChanged(var itemData, bool focused)
 
   width: iconSize + 8
   height: iconSize + 18
+  activeFocusOnTab: true
+
+  Accessible.role: Accessible.Button
+  Accessible.name: root.itemData.name || root.itemData.id
+  Accessible.description: root.accessibleState
+  Accessible.focusable: true
+  Accessible.selected: !!root.itemData.running
+  Accessible.onPressAction: root.itemLeftClicked(root.itemData)
+
+  onActiveFocusChanged: root.keyboardFocusChanged(root.itemData, root.activeFocus)
+
+  Keys.priority: Keys.BeforeItem
+  Keys.onPressed: function(event) {
+    if (event.modifiers & Qt.MetaModifier) {
+      event.accepted = false
+      return
+    }
+    if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+      root.itemRightClicked(root.itemData, root.mapToItem(null, root.width / 2, 0))
+      event.accepted = true
+      return
+    }
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+      root.itemLeftClicked(root.itemData)
+      event.accepted = true
+    }
+  }
 
   function iconSource() {
     if (root.iconSourceOverride) return root.iconSourceOverride
@@ -64,7 +95,7 @@ Item {
     anchors.margins: 2
     color: "transparent"
     border.color: Color.foreground
-    border.width: mouse.containsMouse ? 2 : 0
+    border.width: mouse.containsMouse || root.activeFocus ? 2 : 0
   }
 
   PackAwareImage {
@@ -116,6 +147,7 @@ Item {
       root.hoverPointerChanged(root.itemData, false, root.mapToItem(null, mouseX, mouseY).x)
     }
     onPressed: function(mouse) {
+      root.forceActiveFocus()
       root.leftPressed = mouse.button === Qt.LeftButton
       root.pressPosition = Qt.point(mouseX, mouseY)
     }

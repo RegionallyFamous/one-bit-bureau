@@ -28,7 +28,7 @@ def load_desktop_index():
     sys.modules["gi.repository"] = fake_repository
     sys.path.insert(0, str(BIN_DIR))
     try:
-        loader = SourceFileLoader("paper_jam_desktop_index_test", str(INDEX_PATH))
+        loader = SourceFileLoader("one_bit_bureau_desktop_index_test", str(INDEX_PATH))
         spec = importlib.util.spec_from_loader(loader.name, loader)
         module = importlib.util.module_from_spec(spec)
         assert spec and spec.loader

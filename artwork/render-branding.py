@@ -11,10 +11,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "artwork" / "imagegen" / "paper-jam-brand-source.png"
-TEXT_SOURCE = ROOT / "artwork" / "imagegen" / "paper-jam-brand-text-source.png"
+SOURCE = ROOT / "artwork" / "imagegen" / "one-bit-bureau-brand-source.png"
+TEXT_SOURCE = ROOT / "artwork" / "imagegen" / "one-bit-bureau-brand-text-source.png"
 BRANDING_DIR = ROOT / "branding"
-THEME_DIR = ROOT / "themes" / "paper-jam-84"
+THEME_DIR = ROOT / "themes" / "one-bit-bureau"
 PLUGIN_ICON = ROOT / "components" / "overview" / "assets" / "icon.png"
 
 
@@ -63,7 +63,7 @@ def main() -> None:
         "-extent",
         "512x512",
         "-strip",
-        str(BRANDING_DIR / "paper-jam-mark.png"),
+        str(BRANDING_DIR / "one-bit-bureau-mark.png"),
     )
     run(
         magick,
@@ -93,8 +93,8 @@ def main() -> None:
     )
 
     transcode = omarchy_root / "bin" / "omarchy-transcode-ascii"
-    with tempfile.TemporaryDirectory(prefix="paper-jam-84-ascii-") as temporary:
-        flattened = Path(temporary) / "paper-jam-mark-flat.png"
+    with tempfile.TemporaryDirectory(prefix="one-bit-bureau-ascii-") as temporary:
+        flattened = Path(temporary) / "one-bit-bureau-mark-flat.png"
         run(
             magick,
             str(TEXT_SOURCE),
@@ -139,7 +139,7 @@ def main() -> None:
             "block",
         )
 
-    with tempfile.TemporaryDirectory(prefix="paper-jam-84-branding-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="one-bit-bureau-branding-") as temporary:
         fake_imv = Path(temporary) / "imv"
         fake_imv.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
         fake_imv.chmod(0o755)
@@ -168,7 +168,7 @@ def main() -> None:
             env=environment,
         )
 
-    print("Rendered Paper Jam plugin, theme unlock, about, and screensaver branding")
+    print("Rendered One-Bit Bureau plugin, theme unlock, about, and screensaver branding")
 
 
 if __name__ == "__main__":

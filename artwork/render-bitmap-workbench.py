@@ -11,8 +11,8 @@ SOURCE_DIR = ROOT / "artwork" / "imagegen"
 WALLPAPER_SOURCE = SOURCE_DIR / "bitmap-workbench-wallpaper-source.png"
 ATLAS_SOURCE = SOURCE_DIR / "bitmap-desktop-object-atlas-source.png"
 IMAGE_FALLBACK_SOURCE = SOURCE_DIR / "bitmap-image-fallback-source.png"
-THEME_DIR = ROOT / "themes" / "paper-jam-84"
-BACKGROUND = THEME_DIR / "backgrounds" / "paper-jam-84.png"
+THEME_DIR = ROOT / "themes" / "one-bit-bureau"
+BACKGROUND = THEME_DIR / "backgrounds" / "one-bit-bureau.png"
 PREVIEW = THEME_DIR / "preview.png"
 ASSET_DIR = ROOT / "components" / "desktop" / "assets"
 
@@ -95,7 +95,7 @@ def render_object(source: Path, output: Path, selected: bool) -> None:
 
 
 def render_objects() -> None:
-    with tempfile.TemporaryDirectory(prefix="alumina-atlas-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="one-bit-bureau-atlas-") as temporary:
         temporary_dir = Path(temporary)
         run(
             str(ATLAS_SOURCE),

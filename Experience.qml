@@ -1,6 +1,6 @@
 import QtQuick
-import "components/dock" as PaperJamDock
-import "components/overview" as PaperJamOverview
+import "components/dock" as OneBitBureauDock
+import "components/overview" as OneBitBureauOverview
 
 Item {
   id: root
@@ -21,7 +21,7 @@ Item {
     overview.close()
   }
 
-  PaperJamDock.DockPanel {
+  OneBitBureauDock.DockPanel {
     shell: root.shell
     pluginRegistry: root.pluginRegistry
     manifest: root.manifest
@@ -29,7 +29,7 @@ Item {
     service: root.service
   }
 
-  PaperJamOverview.Overview {
+  OneBitBureauOverview.Overview {
     id: overview
     shell: root.shell
     manifest: root.manifest

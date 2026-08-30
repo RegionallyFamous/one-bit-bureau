@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -8,6 +9,33 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PluginSourceContractTest(unittest.TestCase):
+    def test_one_bit_bureau_is_the_only_canonical_identity(self) -> None:
+        manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["id"], "io.github.regionallyfamous.one-bit-bureau")
+        self.assertEqual(manifest["name"], "One-Bit Bureau")
+
+        setup = (ROOT / "setup").read_text(encoding="utf-8")
+        command = (ROOT / "one-bit-bureau").read_text(encoding="utf-8")
+        dock = (ROOT / "components/dock/DockPanelBase.qml").read_text(
+            encoding="utf-8"
+        )
+        desktop = (ROOT / "components/desktop/Service.qml").read_text(
+            encoding="utf-8"
+        )
+        overview = (ROOT / "components/overview/Overview.qml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            'ONE_BIT_BUREAU_CONFIG="$HOME/.config/omarchy/one-bit-bureau"', setup
+        )
+        self.assertIn("/.config/omarchy/one-bit-bureau/", dock)
+        self.assertIn("/.config/omarchy/one-bit-bureau/", desktop)
+        self.assertIn("regionallyfamous.one-bit-bureau.dock", command)
+        self.assertIn("regionallyfamous.one-bit-bureau.overview", command)
+        self.assertIn("regionallyfamous.one-bit-bureau.dock", dock)
+        self.assertIn("regionallyfamous.one-bit-bureau.overview", overview)
+
     def test_active_window_widget_disappears_without_a_window(self) -> None:
         source = (ROOT / "components/active-window/BarWidget.qml").read_text(
             encoding="utf-8"
@@ -17,6 +45,70 @@ class PluginSourceContractTest(unittest.TestCase):
             source,
         )
         self.assertIn("visible: hasActiveWindow && displayLabel", source)
+
+    def test_reduced_motion_is_an_inline_live_plugin_setting(self) -> None:
+        manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+        self.assertIs(manifest["barWidget"]["defaults"]["reducedMotion"], False)
+        setting = next(
+            item
+            for item in manifest["barWidget"]["schema"]
+            if item["key"] == "reducedMotion"
+        )
+        self.assertEqual(setting["type"], "boolean")
+        self.assertEqual(setting["label"], "Reduce One-Bit Bureau motion")
+        self.assertIs(setting["defaultValue"], False)
+
+        overview = (ROOT / "components/overview/Overview.qml").read_text(
+            encoding="utf-8"
+        )
+        active_window = (
+            ROOT / "components/active-window/BarWidget.qml"
+        ).read_text(encoding="utf-8")
+        settings = (ROOT / "components/overview/SettingsView.qml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "root.pluginEntry && root.pluginEntry.reducedMotion === true", overview
+        )
+        self.assertIn("if (root.reducedMotion) {", overview)
+        self.assertIn("root.motionProgress = next;", overview)
+        self.assertIn("function getReducedMotion(): string", overview)
+        self.assertIn(
+            'readonly property bool reducedMotion: setting("reducedMotion", false) === true',
+            active_window,
+        )
+        self.assertIn("enabled: !root.reducedMotion", active_window)
+        self.assertIn(
+            "duration: settingsView.controller.reducedMotion ? 0 : 100", settings
+        )
+        self.assertIn("enabled: !settingsView.controller.reducedMotion", settings)
+
+    def test_overview_and_active_application_expose_accessible_actions(self) -> None:
+        overview = (ROOT / "components/overview/Overview.qml").read_text(
+            encoding="utf-8"
+        )
+        card = (ROOT / "components/overview/WindowCard.qml").read_text(
+            encoding="utf-8"
+        )
+        settings = (ROOT / "components/overview/SettingsView.qml").read_text(
+            encoding="utf-8"
+        )
+        active_window = (
+            ROOT / "components/active-window/BarWidget.qml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('Accessible.name: "Open Exposé settings"', overview)
+        self.assertIn("Accessible.role: Accessible.Button", card)
+        self.assertIn("Accessible.selected: card.selected", card)
+        self.assertIn(
+            "Accessible.onPressAction: card.controller.activate(card.modelData)", card
+        )
+        self.assertIn("Accessible.role: Accessible.Slider", settings)
+        self.assertIn("Accessible.role: Accessible.CheckBox", settings)
+        self.assertIn("Accessible.onToggleAction", settings)
+        self.assertIn("Accessible.role: Accessible.Button", active_window)
+        self.assertIn("Accessible.onPressAction", active_window)
 
     def test_runtime_does_not_take_over_global_alt_tab(self) -> None:
         source = (ROOT / "components/dock/DockPanelBase.qml").read_text(
@@ -58,6 +150,16 @@ class PluginSourceContractTest(unittest.TestCase):
                 source.find("event.key === Qt.Key_Left", guard_index), -1, relative
             )
 
+        overview = (ROOT / "components/overview/Overview.qml").read_text(
+            encoding="utf-8"
+        )
+        settings_handler = overview.index("function handleSettingsNavigation(event)")
+        settings_guard = overview.index(
+            "event.modifiers & Qt.MetaModifier", settings_handler
+        )
+        settings_arrows = overview.index("var isStep =", settings_handler)
+        self.assertLess(settings_guard, settings_arrows)
+
     def test_runtime_does_not_claim_omarchy_navigation_bindings(self) -> None:
         runtime = "\n".join(
             path.read_text(encoding="utf-8")
@@ -73,9 +175,9 @@ class PluginSourceContractTest(unittest.TestCase):
         setup = (ROOT / "setup").read_text(encoding="utf-8")
         update = (ROOT / "update").read_text(encoding="utf-8")
         uninstall = (ROOT / "uninstall").read_text(encoding="utf-8")
-        command = (ROOT / "paper-jam").read_text(encoding="utf-8")
+        command = (ROOT / "one-bit-bureau").read_text(encoding="utf-8")
 
-        self.assertIn('EXPECTED_REPO_URL="https://github.com/RegionallyFamous/paper-jam-84.git"', setup)
+        self.assertIn('EXPECTED_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"', setup)
         self.assertIn('omarchy theme source inspect "$repo_url" --json', setup)
         self.assertIn('omarchy theme source install "$THEME_SOURCE_ID" "$THEME_NAME" --json', setup)
         self.assertIn('omarchy "${arguments[@]}"', update)
@@ -83,7 +185,7 @@ class PluginSourceContractTest(unittest.TestCase):
         self.assertIn('omarchy theme source update "$source_id" --json', update)
         self.assertIn('[[ $theme_commit == "$plugin_commit" ]]', update)
         self.assertIn('omarchy theme source detach "$THEME_SOURCE_ID" "$THEME_NAME" --json', uninstall)
-        self.assertIn('PLUGIN_ID="io.github.regionallyfamous.paper-jam-84"', command)
+        self.assertIn('PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"', command)
 
 
 if __name__ == "__main__":
