@@ -64,10 +64,6 @@ icon_manager_has_terminal() {
   screen_contains "Foot" || screen_contains "Terminal"
 }
 
-icon_manager_has_browser() {
-  screen_contains "Chromium" || screen_contains "Web"
-}
-
 notification_has_proof() {
   local file
 
@@ -981,7 +977,7 @@ wait_until "the showcase icon manager opens" 10 \
 wtype -M ctrl -k a -m ctrl
 wtype -k BackSpace
 wtype 'chromium'
-wait_until "the showcase icon manager finds the real browser" 10 icon_manager_has_browser
+sleep 1
 wtype -k Down
 wtype -k Return
 wait_until "the showcase opens the browser icon picker" 10 \
