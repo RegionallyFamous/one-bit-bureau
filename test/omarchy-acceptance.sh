@@ -255,8 +255,56 @@ close_showcase_apps() {
   close_windows '^([cC]hromium.*|libreoffice-writer|org.gnome.Nautilus)$' || true
 }
 
+stop_showcase_processes() {
+  local attempt
+  local -a showcase_pids=()
+
+  # Only processes carrying one of the two unique mktemp-backed profile paths
+  # belong to this gallery. Give them a short graceful exit, then guarantee
+  # they cannot hold Omarchy's later browser-theme refresh open.
+  mapfile -t showcase_pids < <(
+    pgrep -f -- "--user-data-dir=$SHOWCASE_BROWSER_PROFILE|UserInstallation=file://$SHOWCASE_LIBREOFFICE_PROFILE" || true
+  )
+  if (( ${#showcase_pids[@]} > 0 )); then
+    kill -TERM -- "${showcase_pids[@]}" 2>/dev/null || true
+  fi
+  for (( attempt = 0; attempt < 20; attempt++ )); do
+    mapfile -t showcase_pids < <(
+      pgrep -f -- "--user-data-dir=$SHOWCASE_BROWSER_PROFILE|UserInstallation=file://$SHOWCASE_LIBREOFFICE_PROFILE" || true
+    )
+    (( ${#showcase_pids[@]} == 0 )) && return 0
+    sleep 0.1
+  done
+  kill -KILL -- "${showcase_pids[@]}" 2>/dev/null || true
+}
+
+close_showcase_extras() {
+  local address attempt
+
+  # Fresh profiles can surface late first-run or start-center windows after
+  # the requested app windows are already mapped. Remove only those exact
+  # transients, then repeat so they cannot photobomb the public gallery.
+  for (( attempt = 0; attempt < 3; attempt++ )); do
+    while read -r address; do
+      hyprctl dispatch "hl.dsp.window.close({ window = \"address:$address\" })" >/dev/null 2>&1 ||
+        hyprctl dispatch closewindow "address:$address" >/dev/null 2>&1 || true
+    done < <(hyprctl -j clients | jq -r '.[]
+      | select(.class == "soffice" or .title == "Chromium Additional Terms of Service")
+      | .address')
+    sleep 1
+  done
+}
+
+showcase_has_no_extra_windows() {
+  hyprctl -j clients | jq -e '
+    all(.[]; .class != "soffice" and .title != "Chromium Additional Terms of Service")
+  ' >/dev/null
+}
+
 restore_showcase_state() {
+  close_showcase_extras
   close_showcase_apps
+  stop_showcase_processes
   omarchy-shell shell hide "$PLUGIN_ID" >/dev/null 2>&1 || true
   omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 
@@ -290,6 +338,11 @@ prepare_showcase_desktop() {
   command -v nautilus >/dev/null 2>&1 || fail "the showcase has Files from the Omarchy base install"
   command -v libreoffice >/dev/null 2>&1 || fail "the showcase has Writer from the Omarchy base install"
   pass "the showcase uses real applications from the Omarchy base install"
+
+  hyprctl dispatch 'hl.dsp.focus({ workspace = "1" })' >/dev/null 2>&1 ||
+    hyprctl dispatch workspace 1 >/dev/null
+  wait_until "the showcase begins on Desk 1" 10 \
+    bash -c "hyprctl -j activeworkspace | jq -e '.id == 1' >/dev/null"
 
   mkdir -p "$SHOWCASE_DESKTOP_STASH" "$SHOWCASE_DESKTOP_RETIRED" "$SHOWCASE_FILES"
   if [[ -f $BUREAU_CONFIG/dock-pinned.json ]]; then
@@ -363,6 +416,7 @@ launch_showcase_apps() {
   local -a chromium_flags
 
   mkdir -p "$SHOWCASE_BROWSER_PROFILE" "$SHOWCASE_LIBREOFFICE_PROFILE"
+  touch "$SHOWCASE_BROWSER_PROFILE/First Run"
   timeout 30 libreoffice \
     "-env:UserInstallation=file://$SHOWCASE_LIBREOFFICE_PROFILE" \
     --headless --convert-to odt --outdir "$SHOWCASE_ROOT" \
@@ -396,8 +450,10 @@ launch_showcase_apps() {
     bash -c "hyprctl -j clients | jq -e 'any(.[]; ((.title // \"\") | startswith(\"Bureau Release Desk\")))' >/dev/null"
   wait_until "the showcase opens the real Files application" 30 window_present '^org.gnome.Nautilus$'
   wait_until "the showcase opens the real Writer application" 30 window_present '^libreoffice-writer$'
-  close_windows '^soffice$' || true
-  wait_until "the showcase closes LibreOffice's extra start center" 15 window_absent '^soffice$'
+  sleep 5
+  close_showcase_extras
+  wait_until "the showcase removes delayed first-run and start-center windows" 15 \
+    showcase_has_no_extra_windows
   pass "the showcase opens Chromium, Files, and Writer with offline local content"
   omarchy-shell regionallyfamous.one-bit-bureau.dock getDockItemIds \
     >"$ARTIFACTS/one-bit-bureau-showcase-dock-ids.json"
@@ -472,7 +528,7 @@ cleanup_one_bit_bureau() {
     fi
   fi
   if [[ -n $ORIGINAL_THEME ]]; then
-    omarchy theme set "$ORIGINAL_THEME" >/dev/null 2>&1 || true
+    timeout 30 omarchy theme set "$ORIGINAL_THEME" >/dev/null 2>&1 || true
   fi
   if [[ -d $PLUGIN_DIR ]]; then
     rm -rf "$PLUGIN_DIR"
@@ -622,7 +678,7 @@ wait_until "One-Bit Bureau fail-closed gate reaps a pre-ready task after control
 [[ ! -e $pre_ready_pid_file ]] || fail "One-Bit Bureau never executes a task whose containment owner died before readiness"
 pass "One-Bit Bureau contains controller death before and after readiness"
 
-omarchy theme set one-bit-bureau >/dev/null
+timeout 30 omarchy theme set one-bit-bureau >/dev/null
 wait_until "One-Bit Bureau is active" 30 \
   bash -c "grep -Fxq 'one-bit-bureau' '$HOME/.local/state/omarchy/current/theme.name'"
 sleep 2
@@ -1105,7 +1161,7 @@ pass "One-Bit Bureau leaves global app-switcher bindings untouched"
 
 close_windows '^one-bit-bureau-qa-' || true
 if [[ -n $ORIGINAL_THEME ]]; then
-  omarchy theme set "$ORIGINAL_THEME" >/dev/null
+  timeout 30 omarchy theme set "$ORIGINAL_THEME" >/dev/null
 fi
 rm -rf "$PLUGIN_DIR"
 rm -rf "$THEME_TARGET"
