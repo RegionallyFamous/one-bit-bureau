@@ -539,12 +539,12 @@ move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the rejec
 ydotool click 0x40 >/dev/null
 sleep 0.1
 drag_pointer_to "$route_reject_x" "$route_reject_y" "the selected file reaches an application launcher"
-wait_until "the desktop reports an exact rejected route" 10 \
-  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteVisible) == 'true' && \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteValid) == 'false' && \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteReason) == 'Applications do not accept desktop files here' ]]"
 screenshot "success-one-bit-bureau-02h-desktop-route-rejected"
 ydotool click 0x80 >/dev/null
 wait_until "the rejected desktop route closes" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteVisible) == 'false' ]]"
+wait_until "the desktop records the exact rejected route" 10 \
+  bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getLastRouteValid) == 'false' && \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getLastRouteReason) == 'Applications do not accept desktop files here' ]]"
 [[ -f $HOME/Desktop/Route\ Alpha.txt && -f $HOME/Desktop/Route\ Beta.txt ]] ||
   fail "the rejected desktop route changed its sources"
 wait_until "the rejected desktop route paints a local refusal receipt" 10 screen_contains "cannot be routed"

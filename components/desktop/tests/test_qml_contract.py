@@ -135,6 +135,9 @@ class DesktopQmlContractTest(unittest.TestCase):
         self.assertIn("function getRouteVisible(): bool", SERVICE)
         self.assertIn("function getRouteValid(): bool", SERVICE)
         self.assertIn("function getRouteReason(): string", SERVICE)
+        self.assertIn("function getLastRouteValid(): bool", SERVICE)
+        self.assertIn("function getLastRouteReason(): string", SERVICE)
+        self.assertIn("root.lastRouteSummary = root.routeSummary", SERVICE)
         self.assertIn("host.publishRouteState(panel.screenName", SERVICE)
         self.assertIn("host.clearRouteState(panel.screenName)", SERVICE)
 

@@ -49,6 +49,9 @@ Item {
   property string routeReason: ""
   property string routeSummary: ""
   property string routeScreen: ""
+  property bool lastRouteValid: false
+  property string lastRouteReason: ""
+  property string lastRouteSummary: ""
   readonly property int maxItems: 256
   readonly property int maxOperationItems: 64
   readonly property int maxListChars: 262144
@@ -86,6 +89,9 @@ Item {
     function getRouteValid(): bool { return root.routeValid }
     function getRouteReason(): string { return root.routeReason }
     function getRouteSummary(): string { return root.routeSummary }
+    function getLastRouteValid(): bool { return root.lastRouteValid }
+    function getLastRouteReason(): string { return root.lastRouteReason }
+    function getLastRouteSummary(): string { return root.lastRouteSummary }
   }
 
   function publishRouteState(screenName, visible, valid, reason, summary) {
@@ -94,6 +100,9 @@ Item {
     root.routeValid = valid === true
     root.routeReason = root.plainText(reason, 160)
     root.routeSummary = root.plainText(summary, 280)
+    root.lastRouteValid = root.routeValid
+    root.lastRouteReason = root.routeReason
+    root.lastRouteSummary = root.routeSummary
   }
 
   function clearRouteState(screenName) {
