@@ -261,6 +261,8 @@ restore_showcase_state() {
   omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 
   if [[ $showcase_active == true ]]; then
+    omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
+    sleep 1
     mkdir -p "$SHOWCASE_DESKTOP_RETIRED"
     move_directory_contents "$HOME/Desktop" "$SHOWCASE_DESKTOP_RETIRED"
     move_directory_contents "$SHOWCASE_DESKTOP_STASH" "$HOME/Desktop"
@@ -276,6 +278,7 @@ restore_showcase_state() {
       rm -f -- "$BUREAU_CONFIG/desktop-icon-positions.json"
     fi
     showcase_active=false
+    omarchy plugin enable "$PLUGIN_ID" >/dev/null 2>&1 || true
     sleep 2
   fi
 }
@@ -297,6 +300,12 @@ prepare_showcase_desktop() {
   fi
   move_directory_contents "$HOME/Desktop" "$SHOWCASE_DESKTOP_STASH"
   showcase_active=true
+
+  # Stage the gallery while the plugin is unloaded so its live persistence
+  # timers cannot race the curated pin and position snapshot back to disk.
+  omarchy plugin disable "$PLUGIN_ID" >/dev/null
+  wait_until "the showcase unloads the functional dock" 20 layer_absent one-bit-bureau-dock
+  wait_until "the showcase unloads the functional desktop" 20 layer_absent one-bit-bureau-desktop
 
   mkdir -p "$HOME/Desktop/Current Work" "$HOME/Desktop/Reference"
   printf 'ONE-BIT BUREAU / FIELD GUIDE\n\nInspect a file. Open the dock. Move a window to another desk.\n' >"$HOME/Desktop/Field Guide.txt"
@@ -332,6 +341,10 @@ prepare_showcase_desktop() {
       "Field Guide.txt": {x: $rightX, y: $thirdY},
       "Desk Study.png": {x: $leftX, y: $topY}
     }}' >"$BUREAU_CONFIG/desktop-icon-positions.json"
+
+  omarchy plugin enable "$PLUGIN_ID" >/dev/null
+  wait_until "the showcase reloads the curated dock" 20 layer_on_screen one-bit-bureau-dock
+  wait_until "the showcase reloads the curated desktop" 20 layer_on_screen one-bit-bureau-desktop
 
   wait_until "the showcase desktop contains only its four curated objects" 20 \
     bash -c "python3 '$PLUGIN_DIR/components/desktop/bin/desktop-index' | jq -e '[.items[] | select(.kind != \"trash\") | .id] | sort == [\"Current Work\",\"Desk Study.png\",\"Field Guide.txt\",\"Reference\"]' >/dev/null"
