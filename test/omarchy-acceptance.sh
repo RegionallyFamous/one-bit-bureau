@@ -502,8 +502,8 @@ mkdir -p "$HOME/Desktop" "$THEMES_DIR" "$(dirname "$PLUGIN_DIR")" "$BUREAU_CONFI
 mkdir -p "$(dirname "$QA_DESKTOP_ENTRY")" "$(dirname "$QA_NATIVE_ICON")"
 mkdir -p "$HOME/Desktop/Projects"
 printf 'Welcome to One-Bit Bureau.\n' >"$HOME/Desktop/Welcome.txt"
-printf 'Launch plan\n' >"$HOME/Desktop/Launch Plan.txt"
-printf 'Icon notes\n' >"$HOME/Desktop/Icon Notes.txt"
+printf 'Desk brief\n' >"$HOME/Desktop/Desk Brief.txt"
+printf 'Desk notes\n' >"$HOME/Desktop/Desk Notes.txt"
 cp "$FIXTURE/docs/assets/proof-photo.png" "$HOME/Desktop/One-Bit Bureau Photo.png"
 cp "$FIXTURE/docs/assets/proof-photo.png" "$QA_NATIVE_ICON"
 printf '%s\n' \
@@ -653,11 +653,11 @@ screenshot "success-one-bit-bureau-02c-desktop-inspector"
 wtype -k Escape
 wait_until "Escape closes the desktop Inspector" 10 layer_absent regionallyfamous.one-bit-bureau.inspector
 
-for route_item in "Launch Plan.txt" "Icon Notes.txt" "Projects" "Bureau Terminal.desktop"; do
+for route_item in "Desk Brief.txt" "Desk Notes.txt" "Projects" "Bureau Terminal.desktop"; do
   wait_until "One-Bit Bureau saves a position for $route_item" 15 \
     bash -c "jq -e --arg id '$route_item' 'any(to_entries[]; .value[\$id] != null)' '$BUREAU_CONFIG/desktop-icon-positions.json'"
 done
-read -r route_alpha_x route_alpha_y < <(desktop_item_center "Launch Plan.txt")
+read -r route_alpha_x route_alpha_y < <(desktop_item_center "Desk Brief.txt")
 move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the first routing item"
 ydotool click 0xC0 >/dev/null
 # Use the desktop's native keyboard range selection. The Test Lab's virtual
@@ -678,12 +678,12 @@ drag_pointer_to "$route_target_x" "$route_target_y" "the selected group reaches 
 screenshot "success-one-bit-bureau-02e-desktop-route-slip"
 ydotool click 0x80 >/dev/null
 wait_until "the desktop route moves both selected files" 20 \
-  bash -c "[[ -f '$HOME/Desktop/Projects/Launch Plan.txt' && -f '$HOME/Desktop/Projects/Icon Notes.txt' && ! -e '$HOME/Desktop/Launch Plan.txt' && ! -e '$HOME/Desktop/Icon Notes.txt' ]]"
+  bash -c "[[ -f '$HOME/Desktop/Projects/Desk Brief.txt' && -f '$HOME/Desktop/Projects/Desk Notes.txt' && ! -e '$HOME/Desktop/Desk Brief.txt' && ! -e '$HOME/Desktop/Desk Notes.txt' ]]"
 wait_until "the desktop route receipt offers Undo" 15 screen_contains "Undo"
 screenshot "success-one-bit-bureau-02f-desktop-route-receipt"
 wtype -M ctrl -k z -m ctrl
 wait_until "Undo restores both routed files" 20 \
-  bash -c "[[ -f '$HOME/Desktop/Launch Plan.txt' && -f '$HOME/Desktop/Icon Notes.txt' && ! -e '$HOME/Desktop/Projects/Launch Plan.txt' && ! -e '$HOME/Desktop/Projects/Icon Notes.txt' ]]"
+  bash -c "[[ -f '$HOME/Desktop/Desk Brief.txt' && -f '$HOME/Desktop/Desk Notes.txt' && ! -e '$HOME/Desktop/Projects/Desk Brief.txt' && ! -e '$HOME/Desktop/Projects/Desk Notes.txt' ]]"
 # The restored filesystem state is the authoritative proof. Capture the
 # eight-second completion receipt immediately instead of depending on OCR for
 # one small word in a deliberately pixel-sized UI.
@@ -691,8 +691,8 @@ sleep 0.5
 screenshot "success-one-bit-bureau-02g-desktop-route-undone"
 pass "One-Bit Bureau routes a bounded multi-selection with a named verb, receipt, and proven Undo"
 
-select_desktop_item_by_id "Launch Plan.txt"
-read -r route_alpha_x route_alpha_y < <(desktop_item_center "Launch Plan.txt")
+select_desktop_item_by_id "Desk Brief.txt"
+read -r route_alpha_x route_alpha_y < <(desktop_item_center "Desk Brief.txt")
 read -r route_reject_x route_reject_y < <(desktop_item_center "Bureau Terminal.desktop")
 move_pointer_to "$route_alpha_x" "$route_alpha_y" "the pointer reaches the rejected-route source"
 ydotool click 0x40 >/dev/null
@@ -704,7 +704,7 @@ wait_until "the rejected desktop route closes" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getRouteVisible) == 'false' ]]"
 wait_until "the desktop records the exact rejected route" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getLastRouteValid) == 'false' && \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getLastRouteReason) == 'Applications do not accept desktop files here' ]]"
-[[ -f $HOME/Desktop/Launch\ Plan.txt && -f $HOME/Desktop/Icon\ Notes.txt ]] ||
+[[ -f $HOME/Desktop/Desk\ Brief.txt && -f $HOME/Desktop/Desk\ Notes.txt ]] ||
   fail "the rejected desktop route changed its sources"
 wait_until "the rejected desktop route paints a local refusal receipt" 10 screen_contains "cannot be routed"
 screenshot "success-one-bit-bureau-02i-desktop-route-rejection-receipt"
