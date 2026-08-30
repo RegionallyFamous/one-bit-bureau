@@ -79,6 +79,16 @@ test("unmapped compositor remnants cannot survive as ghost dock applications", (
   assert.match(panelBase, /function onLastIpcObjectChanged\(\) \{ root\.refreshItems\(\) \}/)
 })
 
+test("live Wayland windows map one-to-one onto Hyprland ledger records", () => {
+  assert.match(panelBase, /function hyprlandWindowFor\(window, excludedAddresses\)/)
+  assert.match(panelBase, /var titleFallback = null/)
+  assert.match(panelBase, /var idFallback = null/)
+  assert.match(panelBase, /excluded\.indexOf\(address\) !== -1/)
+  assert.match(panelBase, /if \(idMatches && titleMatches\) return candidate/)
+  assert.match(panelBase, /return titleFallback \|\| idFallback/)
+  assert.match(panelBase, /root\.hyprlandWindowFor\(values\[i\], seenAddresses\)/)
+})
+
 test("dock items expose an accessible press action and keyboard context menu", () => {
   assert.match(dockItem, /Accessible\.role:\s*Accessible\.Button/)
   assert.match(dockItem, /Accessible\.name:/)

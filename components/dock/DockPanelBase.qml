@@ -517,28 +517,38 @@ Item {
     ], root.appEntries, root.pinnedIds)
   }
 
-  function hyprlandWindowFor(window) {
+  function hyprlandWindowFor(window, excludedAddresses) {
     var targetId = String(window.appId || window.desktopId || window.className || window.initialClass || "").toLowerCase()
     var targetTitle = String(window.title || "")
-    var fallback = null
+    var titleFallback = null
+    var idFallback = null
+    var excluded = Array.isArray(excludedAddresses) ? excludedAddresses : []
     try {
       var values = Hyprland.toplevels.values
       for (var i = 0; i < values.length; i++) {
         var candidate = values[i]
-        if (candidate.wayland === window) return candidate
         if (!root.hyprlandWindowIsLive(candidate)) continue
+        var address = WindowLedger.normalizeAddress(candidate.address)
+        if (address && excluded.indexOf(address) !== -1) continue
+        if (candidate.wayland === window) return candidate
         var ids = []
         if (candidate.wayland && candidate.wayland.appId) ids.push(String(candidate.wayland.appId).toLowerCase())
         var ipc = candidate.lastIpcObject || {}
         if (ipc.appId) ids.push(String(ipc.appId).toLowerCase())
         if (ipc["class"]) ids.push(String(ipc["class"]).toLowerCase())
         if (ipc.initialClass) ids.push(String(ipc.initialClass).toLowerCase())
-        if (ids.indexOf(targetId) === -1) continue
-        if (targetTitle && candidate.title === targetTitle) return candidate
-        if (!fallback) fallback = candidate
+        var idMatches = targetId !== "" && ids.indexOf(targetId) !== -1
+        var titleMatches = targetTitle !== "" && String(candidate.title || "") === targetTitle
+        if (idMatches && titleMatches) return candidate
+        if (titleMatches && !titleFallback) titleFallback = candidate
+        if (idMatches && !idFallback) idFallback = candidate
       }
     } catch (error) {}
-    return fallback
+    // Foreign-toplevel identity fields vary between Quickshell builds, but
+    // the compositor title is shared with Hyprland. Prefer that stable bridge
+    // before a class-only fallback; liveHyprlandWindows excludes already
+    // claimed addresses so equal-title siblings still map one-to-one.
+    return titleFallback || idFallback
   }
 
   function liveHyprlandWindows() {
@@ -546,7 +556,7 @@ Item {
     var seenAddresses = []
     var values = root.foreignToplevelValues()
     for (var i = 0; i < values.length; i++) {
-      var candidate = root.hyprlandWindowFor(values[i])
+      var candidate = root.hyprlandWindowFor(values[i], seenAddresses)
       if (!candidate) continue
       var address = WindowLedger.normalizeAddress(candidate.address)
       if (address && seenAddresses.indexOf(address) !== -1) continue

@@ -856,6 +856,11 @@ hyprctl dispatch 'hl.dsp.focus({ workspace = "1" })' >/dev/null 2>&1 ||
   hyprctl dispatch workspace 1 >/dev/null
 wait_until "the Window Ledger tracks one proof window on Workspace 2" 15 \
   bash -c "hyprctl -j clients | jq -e --arg address '${ledger_addresses[1]}' 'any(.[]; .address == \$address and .workspace.id == 2)' >/dev/null"
+hyprctl -j clients >"$ARTIFACTS/one-bit-bureau-window-ledger-clients.json"
+omarchy-shell regionallyfamous.one-bit-bureau.dock getDockItemIds \
+  >"$ARTIFACTS/one-bit-bureau-window-ledger-dock-ids.json"
+omarchy-shell regionallyfamous.one-bit-bureau.dock getWindowCount one-bit-bureau-qa-ledger \
+  >"$ARTIFACTS/one-bit-bureau-window-ledger-count.txt"
 wait_until "the dock aggregates both proof windows under one app" 15 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getWindowCount one-bit-bureau-qa-ledger) == '2' ]]"
 [[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock openWindowListForApp one-bit-bureau-qa-ledger) == "true" ]] ||
