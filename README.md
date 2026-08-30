@@ -121,7 +121,7 @@ The bundled app-icon pack and automatic associations work entirely offline. Mana
 bash tests/static.sh
 ```
 
-The local gate covers manifest and source safety, helper syntax, desktop trust/path policy, dock lifecycle and app association, setup/uninstall rollback, branding/font ownership, namespace migration, strict theme validation, headless template rendering, and navigation pass-through contracts. The graphical gate is `bash test/omarchy-acceptance.sh` inside the disposable x86_64 Omarchy guest.
+The local gate covers manifest and source safety, helper syntax, desktop trust/path policy, dock lifecycle and app association, setup/uninstall rollback, branding/font ownership, canonical identity regression checks, strict theme validation, headless template rendering, and navigation pass-through contracts. The graphical gate is `bash test/omarchy-acceptance.sh` inside the disposable x86_64 Omarchy guest.
 
 ## Remove
 

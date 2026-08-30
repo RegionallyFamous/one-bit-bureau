@@ -52,13 +52,7 @@ Item {
             && typeof root.pluginEntry.animationTimings === "object"
             ? root.pluginEntry.animationTimings
             : null;
-        var configuredDurations = root.pluginEntry && root.pluginEntry.animationDurations
-            && typeof root.pluginEntry.animationDurations === "object"
-            ? root.pluginEntry.animationDurations
-            : null;
-        var configured = configuredTimings || configuredDurations || {};
-        var legacyRaw = root.pluginEntry ? root.pluginEntry.animationDuration : undefined;
-        var legacy = legacyRaw === null || legacyRaw === undefined ? NaN : Number(legacyRaw);
+        var configured = configuredTimings || {};
         function timingFor(style) {
             var raw = configured[style];
             var isObject = raw !== null && raw !== undefined && typeof raw === "object";
@@ -66,10 +60,6 @@ Item {
             var separate = isObject && raw.separate === true;
             var inValue = isObject ? Number(raw["in"]) : scalar;
             var outValue = isObject ? Number(raw["out"]) : scalar;
-            if (!isFinite(inValue) && isFinite(legacy))
-                inValue = legacy;
-            if (!isFinite(outValue) && isFinite(legacy))
-                outValue = legacy;
             if (!isFinite(inValue))
                 inValue = root.defaultAnimationDurations[style];
             if (!isFinite(outValue))
@@ -205,7 +195,7 @@ Item {
         return Quickshell.screens.length ? String(Quickshell.screens[0].name || "") : "";
     }
     // One overlay surface: the focused monitor, or the display whose hot
-    // corner opened Exposé. Instantiating on every enabled output duplicates
+    // corner opened the overview. Instantiating on every enabled output duplicates
     // screencopy captures and layer textures.
     readonly property var mountedScreens: {
         if (!root.surfaceMounted || !root.effectiveOverviewScreen)
@@ -1922,7 +1912,7 @@ Item {
                             font.pixelSize: Style.font.bodySmall
                             font.bold: true
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Open Exposé settings"
+                            Accessible.name: "Open window overview settings"
                             Accessible.focusable: true
                             Accessible.onPressAction: root.openSettings()
 

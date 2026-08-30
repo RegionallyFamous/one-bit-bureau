@@ -44,7 +44,7 @@ case "$command_name" in
     shift
     exec bash "$PLUGIN_DIR/update" "$@"
     ;;
-  remove | uninstall)
+  remove)
     require_install
     temporary=$(mktemp "${TMPDIR:-/tmp}/one-bit-bureau-uninstall.XXXXXX")
     cp -- "$PLUGIN_DIR/uninstall" "$temporary"
@@ -85,10 +85,10 @@ case "$command_name" in
       *) usage >&2; exit 2 ;;
     esac
     ;;
-  icon | icons)
+  icon)
     require_install
     shift
-    exec bash "$PLUGIN_DIR/components/dock/scripts/omarchy-dock-icon" "$@"
+    exec bash "$PLUGIN_DIR/components/dock/scripts/one-bit-bureau-icon" "$@"
     ;;
   font)
     require_install

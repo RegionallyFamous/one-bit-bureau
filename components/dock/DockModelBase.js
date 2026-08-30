@@ -22,8 +22,6 @@ function normalizeId(value) {
     return id.endsWith(".desktop") ? id.slice(0, -8) : id
 }
 
-function stripDesktop(value) { return normalizeId(value) }
-
 function toArray(value) {
     if (Array.isArray(value)) return value
     if (value && Array.isArray(value.pinned)) return value.pinned
@@ -62,13 +60,13 @@ function serializePinned(ids, order) {
 
 // Reads the persisted full dock order. The `order` field records the spatial
 // layout (pinned and running interleaved); `pinned` records membership only.
-// A legacy file without the field falls back to the caller's current order.
+// Missing, malformed, or incomplete state falls back to the live order.
 function parseOrder(text, fallback) {
     var source = String(text || "").trim()
     if (!source) return (fallback || []).slice()
     try {
         var parsed = JSON.parse(source)
-        if (!parsed || !Array.isArray(parsed.order)) return (fallback || []).slice()
+        if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.order)) return (fallback || []).slice()
         var result = []
         parsed.order.forEach(function(value) {
             var id = normalizeId(value)
@@ -380,9 +378,6 @@ function parseSettings(text, fallback) {
             ? parsed.screenName.slice(0, 160) : defaultScreen
         if (typeof parsed.autoHide === "boolean")
             return { autoHide: parsed.autoHide, screenName: screenName }
-        // Legacy: tolerate string "true"/"false"
-        if (typeof parsed.autoHide === "string")
-            return { autoHide: parsed.autoHide === "true", screenName: screenName }
         return { autoHide: !!defaults.autoHide, screenName: screenName }
     } catch (error) {
         return { autoHide: !!defaults.autoHide, screenName: defaultScreen }
@@ -429,7 +424,6 @@ if (typeof module !== "undefined" && module.exports) {
         DEFAULT_PINNED: DEFAULT_PINNED,
         LAYOUT_OPTS: LAYOUT_OPTS,
         normalizeId: normalizeId,
-        stripDesktop: stripDesktop,
         toArray: toArray,
         parsePinned: parsePinned,
         parseOrder: parseOrder,

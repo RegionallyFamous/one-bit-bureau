@@ -290,7 +290,7 @@ wait_until "One-Bit Bureau is discovered" 15 \
 omarchy plugin enable "$PLUGIN_ID" --section left --after omarchy.menu >/dev/null
 wait_until "One-Bit Bureau is enabled" 15 \
   bash -c "omarchy plugin list --json | jq -e --arg id '$PLUGIN_ID' 'any(.[]; .id == \$id and .enabled)'"
-wait_until "One-Bit Bureau desktop files are mounted" 20 layer_on_screen desktop-icons
+wait_until "One-Bit Bureau desktop files are mounted" 20 layer_on_screen one-bit-bureau-desktop
 wait_until "One-Bit Bureau dock is mounted" 20 layer_on_screen one-bit-bureau-dock
 wait_until "One-Bit Bureau overview hot corner is resident" 20 layer_on_screen one-bit-bureau-overview-hot-corner
 omarchy-shell regionallyfamous.one-bit-bureau.dock setAutoHide false >/dev/null
@@ -353,7 +353,7 @@ omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 # plugin harness has no supported output-reconfiguration helper.
 (( $(hyprctl -j monitors | jq 'length') == 1 )) || fail "the pointer lane exposes one deterministic guest output"
 monitor_name=$(hyprctl -j monitors | jq -er '.[0].name')
-desktop_layer_count=$(hyprctl -j layers | jq '[.. | objects | select(.namespace? == "desktop-icons")] | length')
+desktop_layer_count=$(hyprctl -j layers | jq '[.. | objects | select(.namespace? == "one-bit-bureau-desktop")] | length')
 (( desktop_layer_count == 1 )) || fail "One-Bit Bureau owns exactly one desktop layer on the guest output"
 [[ $(omarchy-shell regionallyfamous.one-bit-bureau.dock getScreen) == "$monitor_name" ]] ||
   fail "One-Bit Bureau assigns its dock to the guest output"
@@ -530,7 +530,7 @@ done
 stubborn_pid=$(<"$stubborn_pid_file")
 omarchy plugin disable "$PLUGIN_ID" >/dev/null
 wait_until "One-Bit Bureau dock unloads" 20 layer_absent one-bit-bureau-dock
-wait_until "One-Bit Bureau desktop service unloads" 20 layer_absent desktop-icons
+wait_until "One-Bit Bureau desktop service unloads" 20 layer_absent one-bit-bureau-desktop
 wait_until "One-Bit Bureau hot corner unloads" 20 layer_absent one-bit-bureau-overview-hot-corner
 wait_until "One-Bit Bureau reaps an active TERM-ignoring helper on unload" 10 \
   bash -c "! kill -0 '$stubborn_pid' 2>/dev/null"

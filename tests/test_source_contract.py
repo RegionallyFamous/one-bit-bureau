@@ -98,7 +98,7 @@ class PluginSourceContractTest(unittest.TestCase):
             ROOT / "components/active-window/BarWidget.qml"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('Accessible.name: "Open Exposé settings"', overview)
+        self.assertIn('Accessible.name: "Open window overview settings"', overview)
         self.assertIn("Accessible.role: Accessible.Button", card)
         self.assertIn("Accessible.selected: card.selected", card)
         self.assertIn(

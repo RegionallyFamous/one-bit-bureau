@@ -49,7 +49,8 @@ test("parseOrder reads the order field and falls back safely", () => {
   assert.deepEqual(Array.from(model.parseOrder('{"pinned":["a"]}', ["old"])), ["old"])
   assert.deepEqual(Array.from(model.parseOrder("not json", ["old"])), ["old"])
   assert.deepEqual(Array.from(model.parseOrder("", ["old"])), ["old"])
-  assert.deepEqual(Array.from(model.parseOrder('{"order":["a","a","b.desktop"]}', [])), ["a", "b"])
+  assert.deepEqual(Array.from(model.parseOrder('{"version":1,"order":["a","a","b.desktop"]}', [])), ["a", "b"])
+  assert.deepEqual(Array.from(model.parseOrder('{"order":["a"]}', ["current"])), ["current"])
 })
 
 test("restored order is a preference, not an authority", () => {
@@ -236,6 +237,7 @@ test("insertionIndexFor picks the nearest slot", () => {
 test("settings parse and serialize autoHide and dock output", () => {
   assert.equal(model.parseSettings('{"autoHide":true}', { autoHide: false }).autoHide, true)
   assert.equal(model.parseSettings('{"autoHide":false}', { autoHide: true }).autoHide, false)
+  assert.equal(model.parseSettings('{"autoHide":"false"}', { autoHide: true }).autoHide, true)
   assert.equal(model.parseSettings('', { autoHide: true }).autoHide, true)
   assert.equal(model.parseSettings('not json', { autoHide: false }).autoHide, false)
   assert.equal(model.parseSettings('{}', { autoHide: true }).autoHide, true)

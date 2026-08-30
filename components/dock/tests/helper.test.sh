@@ -3,7 +3,7 @@
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
-helper="$root/scripts/omarchy-dock-icon"
+helper="$root/scripts/one-bit-bureau-icon"
 state_helper="$root/scripts/one-bit-bureau-state"
 run_helper="$root/scripts/one-bit-bureau-run"
 work=$(mktemp -d)

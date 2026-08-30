@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""List, open, and place items on the Desktop for the Omarchy desktop-icons plugin."""
+"""List, open, and place items on the Desktop for One-Bit Bureau."""
 
 from __future__ import annotations
 

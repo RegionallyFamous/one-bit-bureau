@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Helpers shared by the desktop-icons plugin scripts (desktop-index, add-to-desktop)."""
+"""Helpers shared by the One-Bit Bureau desktop scripts."""
 
 from __future__ import annotations
 

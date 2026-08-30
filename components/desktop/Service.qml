@@ -391,7 +391,7 @@ Item {
       return
     }
     if (text.length > root.maxListChars) {
-      console.warn("desktop-icons: index output exceeded resource ceiling")
+      console.warn("one-bit-bureau desktop: index output exceeded resource ceiling")
       root.statusMessage = "Desktop objects could not be refreshed because the result was too large."
       root.statusIsError = true
       return
@@ -430,7 +430,7 @@ Item {
           root.clearTrustPrompt()
       }
     } catch (e) {
-      console.warn("desktop-icons: failed to parse index:", e)
+      console.warn("one-bit-bureau desktop: failed to parse index:", e)
       root.statusMessage = "Desktop objects could not be refreshed."
       root.statusIsError = true
     }
@@ -514,7 +514,7 @@ Item {
       visible: true
       color: "transparent"
       exclusionMode: ExclusionMode.Ignore
-      WlrLayershell.namespace: "desktop-icons"
+      WlrLayershell.namespace: "one-bit-bureau-desktop"
       WlrLayershell.layer: WlrLayer.Bottom
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
       anchors { top: true; bottom: true; left: true; right: true }

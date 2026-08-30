@@ -19,13 +19,13 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  omarchy-dock-icon pack list
-  omarchy-dock-icon pack set <app-id> <role>
-  omarchy-dock-icon native <app-id>
-  omarchy-dock-icon auto <app-id>
-  omarchy-dock-icon clear <app-id>
-  omarchy-dock-icon list
-  omarchy-dock-icon folder
+  one-bit-bureau-icon pack list
+  one-bit-bureau-icon pack set <app-id> <role>
+  one-bit-bureau-icon native <app-id>
+  one-bit-bureau-icon auto <app-id>
+  one-bit-bureau-icon clear <app-id>
+  one-bit-bureau-icon list
+  one-bit-bureau-icon folder
 EOF
 }
 

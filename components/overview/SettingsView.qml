@@ -736,7 +736,7 @@ Item {
         border.width: Math.max(1, Style.normalBorderWidth)
         enabled: !settingsView.controller.footerHideConfirmationOpen
         Accessible.role: Accessible.Dialog
-        Accessible.name: "Exposé settings"
+        Accessible.name: "Window overview settings"
 
         MouseArea {
             anchors.fill: parent
@@ -758,7 +758,7 @@ Item {
                     spacing: Style.spacing.lg
 
                     Text {
-                        text: "Exposé settings"
+                        text: "Window overview settings"
                         textFormat: Text.PlainText
                         color: Color.menu.text
                         font.family: Style.font.menuFamily
