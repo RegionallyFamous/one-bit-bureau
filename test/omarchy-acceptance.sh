@@ -960,6 +960,8 @@ wait_until "the showcase starts without synthetic proof windows" 15 \
   bash -c "hyprctl -j clients | jq -e 'all(.[]; (.class | startswith(\"one-bit-bureau-qa-\") | not))' >/dev/null"
 prepare_showcase_desktop
 focus_empty_desktop
+wtype -k Escape
+wait_until "the showcase dismisses the earlier functional receipt" 10 screen_lacks "cannot be routed"
 screen_lacks "QA" || fail "the showcase desktop contains no QA labels"
 screenshot "success-one-bit-bureau-21-showcase-desktop"
 
@@ -976,6 +978,8 @@ wait_until "the showcase Inspector closes" 10 layer_absent regionallyfamous.one-
   fail "the showcase opens Manage Icons"
 wait_until "the showcase icon manager opens" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconPickerMode) == 'manage' ]]"
+wtype -M ctrl -k a -m ctrl
+wtype -k BackSpace
 wtype 'chromium'
 wait_until "the showcase icon manager finds the real browser" 10 icon_manager_has_browser
 wtype -k Down
