@@ -992,6 +992,15 @@ wait_until "the showcase icon picker closes" 10 \
 launch_showcase_apps
 screenshot "success-one-bit-bureau-24-showcase-apps"
 
+hyprctl -j clients | jq '[.[] | {
+  address,
+  class,
+  initialClass,
+  title,
+  initialTitle,
+  workspace
+}]' >"$ARTIFACTS/one-bit-bureau-showcase-clients.json"
+
 guide_address=$(hyprctl -j clients | jq -er '.[] | select((.title // "") | startswith("Bureau Field Guide")) | .address' | head -n 1)
 release_address=$(hyprctl -j clients | jq -er '.[] | select((.title // "") | startswith("Bureau Release Desk")) | .address' | head -n 1)
 writer_address=$(hyprctl -j clients | jq -er '.[] | select(.class == "libreoffice-writer") | .address' | head -n 1)

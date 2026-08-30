@@ -346,11 +346,21 @@ Item {
   function normalizeRunning() {
     var output = []
     try {
-      var values = ToplevelManager.toplevels.values
+      // Hyprland supplies the live class and initial class alongside the
+      // Wayland app id, which lets the resolver skip generated identities.
+      var values = Hyprland.toplevels.values
       for (var i = 0; i < values.length; i++) {
         var item = values[i]
-        var id = root.desktopIdForWindow(item)
+        var id = root.dockIdForHyprlandWindow(item)
         if (id && output.indexOf(id) === -1) output.push(id)
+      }
+    } catch (error) {}
+    if (output.length) return output
+    try {
+      var fallbackValues = ToplevelManager.toplevels.values
+      for (var j = 0; j < fallbackValues.length; j++) {
+        var fallbackId = root.desktopIdForWindow(fallbackValues[j])
+        if (fallbackId && output.indexOf(fallbackId) === -1) output.push(fallbackId)
       }
     } catch (error) {}
     return output
@@ -478,8 +488,12 @@ Item {
   }
 
   function desktopIdForWindow(window) {
-    var raw = String(window.appId || window.desktopId || window.className || window.initialClass || "").replace(/\.desktop$/, "")
-    return DockModel.resolveDesktopId(raw, root.appEntries)
+    return DockModel.resolveDesktopIds([
+      window.appId,
+      window.desktopId,
+      window.className,
+      window.initialClass
+    ], root.appEntries)
   }
 
   function hyprlandWindowFor(window) {
@@ -790,15 +804,12 @@ Item {
   function dockIdForHyprlandWindow(window) {
     try {
       var ids = []
-      if (window.wayland && window.wayland.appId) ids.push(String(window.wayland.appId).toLowerCase())
+      if (window.wayland && window.wayland.appId) ids.push(String(window.wayland.appId))
       var ipc = window.lastIpcObject || {}
-      if (ipc.appId) ids.push(String(ipc.appId).toLowerCase())
-      if (ipc["class"]) ids.push(String(ipc["class"]).toLowerCase())
-      if (ipc.initialClass) ids.push(String(ipc.initialClass).toLowerCase())
-      for (var i = 0; i < ids.length; i++) {
-        var resolved = root.desktopIdForWindow({ appId: ids[i] })
-        if (resolved) return resolved
-      }
+      if (ipc.appId) ids.push(String(ipc.appId))
+      if (ipc["class"]) ids.push(String(ipc["class"]))
+      if (ipc.initialClass) ids.push(String(ipc.initialClass))
+      return DockModel.resolveDesktopIds(ids, root.appEntries)
     } catch (error) {}
     return ""
   }

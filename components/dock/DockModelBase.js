@@ -322,6 +322,36 @@ function resolveDesktopId(rawValue, entries) {
     return bestId || original
 }
 
+function knownDesktopId(rawValue, entries) {
+    var value = normalizeId(rawValue).toLowerCase()
+    if (!value) return ""
+    var list = entries || []
+    for (var i = 0; i < list.length; i++) {
+        var entry = list[i] && list[i].entry ? list[i].entry : (list[i] || {})
+        var id = normalizeId(entry.id || entry.desktopId)
+        if (id && id.toLowerCase() === value) return id
+    }
+    return ""
+}
+
+// Hyprland can expose several identities for the same window: a generated
+// Wayland app id, the live class, and the initial class. Prefer the first
+// candidate that resolves to a real desktop entry, rather than accepting an
+// unknown generated id before reaching a canonical later candidate.
+function resolveDesktopIds(rawValues, entries) {
+    var values = rawValues || []
+    var fallback = ""
+    for (var i = 0; i < values.length; i++) {
+        var raw = normalizeId(values[i])
+        if (!raw) continue
+        var resolved = resolveDesktopId(raw, entries)
+        if (!fallback && resolved) fallback = resolved
+        var known = knownDesktopId(resolved, entries)
+        if (known) return known
+    }
+    return fallback
+}
+
 function buildDockItems(pinned, entries, runningIds) {
     var result = []
     var running = runningIds || []
@@ -452,6 +482,8 @@ if (typeof module !== "undefined" && module.exports) {
         entryFor: entryFor,
         lookupWords: lookupWords,
         resolveDesktopId: resolveDesktopId,
+        knownDesktopId: knownDesktopId,
+        resolveDesktopIds: resolveDesktopIds,
         buildDockItems: buildDockItems,
         hashContent: hashContent,
         shouldReprocess: shouldReprocess,
