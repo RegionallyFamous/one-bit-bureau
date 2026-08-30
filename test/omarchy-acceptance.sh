@@ -558,6 +558,9 @@ wait_until "Automatic mode restores grayscale for the unmatched app" 10 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.dock getIconGrayscale '$QA_APP_ID') == 'true' ]]"
 pass "unmatched app icons default to grayscale and explicit Native restores color"
 
+read -r context_x context_y < <(desktop_item_center "Projects")
+move_pointer_to "$context_x" "$context_y" "the pointer reaches the desktop context target"
+ydotool click 0xC0 >/dev/null
 wtype -M shift -k F10 -m shift
 wait_until "the desktop keyboard context menu opens" 10 screen_contains "Show in Files"
 screenshot "success-one-bit-bureau-03-desktop-keyboard-context-menu"
