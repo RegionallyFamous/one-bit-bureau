@@ -41,6 +41,7 @@ done
   exit 1
 }
 jq -e '.schemaVersion == 1 and .id == "paper-jam-84" and (.roles | length) == 12' "$ROOT/components/dock/assets/app-icons/pack.json" >/dev/null
+[[ $(identify -ping -format '%wx%h' "$ROOT/docs/assets/proof-photo.png") == "256x192" ]]
 [[ $(identify -ping -format '%wx%h' "$ROOT/themes/paper-jam-84/preview-unlock.png") == "1920x1080" ]]
 [[ $(identify -ping -format '%[channels]' "$ROOT/themes/paper-jam-84/unlock.png") == *a* ]]
 [[ $(fc-scan --format '%{family[0]}' "$ROOT/fonts/DepartureMono-1.500.otf") == "Departure Mono" ]]
