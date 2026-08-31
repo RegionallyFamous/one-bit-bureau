@@ -12,6 +12,10 @@ Usage: one-bit-bureau <command> [arguments]
 
 Commands:
   status                       Show installed component state
+  doctor [--repair app-chrome-off]
+                               Diagnose installation state without writing by default
+  app-chrome <preview|on|off|status>
+                               Opt into or reverse the GTK3-only app-chrome preview
   update [--yes]               Update One-Bit Bureau's plugin and matching theme
   remove                       Remove owned components and restore prior settings
   overview                     Toggle the window overview
@@ -38,6 +42,22 @@ case "$command_name" in
   status)
     require_install
     jq '{product, pluginId, theme, installed, previous}' "$STATE_FILE"
+    ;;
+  doctor)
+    shift
+    exec bash "$PLUGIN_DIR/scripts/one-bit-bureau-doctor" "$@"
+    ;;
+  app-chrome)
+    require_install
+    shift
+    case "${1:-}" in
+      preview | on | off | status)
+        (( $# == 1 )) || { usage >&2; exit 2; }
+        command -v python3 >/dev/null || { echo "one-bit-bureau: Python 3 is required for app-chrome" >&2; exit 1; }
+        exec python3 "$PLUGIN_DIR/scripts/one-bit-bureau-app-chrome.py" --plugin-dir "$PLUGIN_DIR" "$1"
+        ;;
+      *) usage >&2; exit 2 ;;
+    esac
     ;;
   update)
     require_install

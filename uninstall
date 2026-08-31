@@ -340,6 +340,18 @@ preflight_owned_installation() {
 
 preflight_owned_installation || exit 1
 
+APP_CHROME_STATE="$STATE_DIR/app-chrome-state.json"
+APP_CHROME_HELPER="$PLUGIN_TARGET/scripts/one-bit-bureau-app-chrome.py"
+if [[ -f $APP_CHROME_HELPER && ! -L $APP_CHROME_HELPER ]]; then
+  python3 "$APP_CHROME_HELPER" --plugin-dir "$PLUGIN_TARGET" off || {
+    echo "$PRODUCT_NAME could not safely restore its GTK3 app-chrome preview; the plugin payload was retained." >&2
+    exit 1
+  }
+elif [[ -e $APP_CHROME_STATE || -L $APP_CHROME_STATE ]]; then
+  echo "$PRODUCT_NAME cannot remove an owned GTK3 app-chrome preview without its helper; the plugin payload was retained." >&2
+  exit 1
+fi
+
 BRANDING_BACKUP_RETAINED=false
 restore_branding_file() {
   local current="$1" backup="$2" previous_present="$3" installed_hash="$4"

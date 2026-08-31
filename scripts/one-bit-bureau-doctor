@@ -1,0 +1,210 @@
+#!/bin/bash
+
+set -euo pipefail
+
+PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
+THEME_NAME="one-bit-bureau"
+EXPECTED_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+STATE_FILE="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
+THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
+THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
+THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+repair=""
+if (( $# > 0 )); then
+  if [[ ${1:-} == "--repair" && ${2:-} == "app-chrome-off" && $# == 2 ]]; then
+    repair="app-chrome-off"
+  else
+    echo "Usage: one-bit-bureau doctor [--repair app-chrome-off]" >&2
+    exit 2
+  fi
+fi
+
+pass() { printf 'ok: %s\n' "$1"; }
+warn() { printf 'attention: %s\n' "$1"; }
+
+regular_file() {
+  [[ -f $1 && ! -L $1 ]]
+}
+
+if [[ -n $repair ]]; then
+  helper="$PLUGIN_DIR/scripts/one-bit-bureau-app-chrome.py"
+  if [[ -d $PLUGIN_DIR && -f $helper && ! -L $helper ]] && command -v python3 >/dev/null; then
+    exec python3 "$helper" --plugin-dir "$PLUGIN_DIR" off
+  fi
+  echo "one-bit-bureau doctor: app-chrome-off repair is unavailable because the owned helper is missing" >&2
+  exit 1
+fi
+
+printf 'One-Bit Bureau doctor (read-only)\n'
+
+if [[ -f $PLUGIN_DIR/manifest.json && ! -L $PLUGIN_DIR/manifest.json ]]; then
+  pass "plugin payload discovered at $PLUGIN_DIR"
+else
+  warn "plugin payload is missing or unsafe; repair: install/reinstall from the canonical One-Bit Bureau repository"
+fi
+
+if command -v omarchy >/dev/null; then
+  plugin_list=$(omarchy plugin list --json 2>/dev/null || true)
+  if jq -e 'type == "array"' <<<"$plugin_list" >/dev/null 2>&1; then
+    if jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id and .enabled == true)' <<<"$plugin_list" >/dev/null; then
+      pass "plugin is discovered and enabled by Omarchy"
+    elif jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)' <<<"$plugin_list" >/dev/null; then
+      warn "plugin is discovered but disabled; repair: enable $PLUGIN_ID in Omarchy after reviewing its setup state"
+    else
+      warn "plugin is not discovered by Omarchy; repair: add the canonical plugin repository, then run its setup"
+    fi
+  else
+    warn "Omarchy plugin discovery did not return valid JSON; repair: run omarchy plugin list --json directly"
+  fi
+else
+  warn "Omarchy command is unavailable; repair: start an Omarchy user session before using setup or update"
+fi
+
+state_valid=false
+theme_install_mode=""
+theme_source_id=""
+if regular_file "$STATE_FILE" && command -v jq >/dev/null; then
+  if jq -e --arg id "$PLUGIN_ID" --arg product "One-Bit Bureau" --arg theme "$THEME_NAME" --arg repo "$EXPECTED_REPO_URL" '
+    .schemaVersion == 3 and
+    .pluginId == $id and .product == $product and .theme == $theme and
+    (.pluginOwned | type == "boolean") and (.themeOwned | type == "boolean") and
+    (.fontOwned | type == "boolean") and (.brandingOwned | type == "boolean") and (.commandOwned | type == "boolean") and
+    (.installed | type == "object") and
+    (.installed.pluginOrigin | type == "string") and (.installed.pluginCommit | type == "string") and
+    (.installed.themeSourceId | type == "string") and (.installed.themeSourceUrl | type == "string") and
+    (.installed.themeSourceCommit | type == "string") and
+    (.installed.themeInstallMode == "source" or .installed.themeInstallMode == "plugin-link" or .installed.themeInstallMode == "copy") and
+    (.installed.fontTreeHash | type == "string") and (.installed.aboutHash | type == "string") and
+    (.installed.screensaverHash | type == "string") and (.installed.commandHash | type == "string") and
+    (.previous | type == "object") and (.previous.theme | type == "string") and
+    (.previous.barPosition | type == "string") and (.previous.barTransparent | type == "boolean") and
+    (.previous.aboutPresent | type == "boolean") and (.previous.screensaverPresent | type == "boolean") and
+    (
+      if .installed.themeInstallMode == "source" then
+        .pluginOwned == true and .themeOwned == true and .installed.pluginOrigin == $repo and
+        (.installed.pluginCommit | length > 0) and
+        (.installed.themeSourceId | test("^[a-z0-9]+(-[a-z0-9]+)*-[a-f0-9]{12}$")) and
+        .installed.themeSourceUrl == $repo and .installed.themeSourceCommit == .installed.pluginCommit
+      elif .installed.themeInstallMode == "plugin-link" then
+        .pluginOwned == true and .themeOwned == true and .installed.pluginOrigin == $repo and
+        (.installed.pluginCommit | length > 0) and .installed.themeSourceId == "" and
+        .installed.themeSourceUrl == $repo and .installed.themeSourceCommit == .installed.pluginCommit
+      else
+        .themeOwned == true and .installed.pluginOrigin == "" and .installed.pluginCommit == "" and
+        .installed.themeSourceId == "" and .installed.themeSourceUrl == "" and .installed.themeSourceCommit == ""
+      end
+    )
+  ' "$STATE_FILE" >/dev/null; then
+    state_valid=true
+    theme_install_mode=$(jq -r '.installed.themeInstallMode' "$STATE_FILE")
+    theme_source_id=$(jq -r '.installed.themeSourceId // ""' "$STATE_FILE")
+    pass "setup ownership record is structurally valid"
+  else
+    warn "setup ownership record is corrupt or does not belong to this plugin; repair: inspect it, then reinstall rather than deleting unowned files"
+  fi
+else
+  warn "setup ownership record is missing or unsafe; repair: run setup only for a reviewed canonical plugin checkout"
+fi
+
+active_theme=""
+if regular_file "$THEME_STATE"; then
+  active_theme=$(<"$THEME_STATE")
+fi
+if [[ $active_theme == "$THEME_NAME" ]]; then
+  pass "active Omarchy theme is $THEME_NAME"
+else
+  warn "active theme is ${active_theme:-unknown}, not $THEME_NAME; repair: select $THEME_NAME only if this is the intended desktop"
+fi
+
+if [[ $state_valid == false ]]; then
+  warn "owned-theme alignment is unknown until the complete setup ownership record is valid"
+elif [[ -L $THEME_TARGET ]]; then
+  target_path=$(realpath "$THEME_TARGET" 2>/dev/null || true)
+  expected_path=""
+  if [[ $theme_install_mode == "source" && -n $theme_source_id ]]; then
+    expected_path=$(realpath "$THEME_SOURCES_DIR/$theme_source_id/themes/$THEME_NAME" 2>/dev/null || true)
+  elif [[ $theme_install_mode == "plugin-link" ]]; then
+    expected_path=$(realpath "$PLUGIN_DIR/themes/$THEME_NAME" 2>/dev/null || true)
+  fi
+  if [[ -n $expected_path && $target_path == "$expected_path" ]]; then
+    pass "owned theme link aligns with the recorded $theme_install_mode installation"
+  else
+    warn "theme link does not align with its ownership record; repair: run one-bit-bureau update --yes only after inspecting the recorded source"
+  fi
+elif [[ $theme_install_mode == "copy" && -d $THEME_TARGET && ! -L $THEME_TARGET ]]; then
+  pass "owned copied theme directory is present"
+else
+  warn "owned theme target is missing or unsafe; repair: reinstall instead of replacing it manually"
+fi
+
+if command -v omarchy-shell >/dev/null; then
+  pass "omarchy-shell IPC is available"
+else
+  warn "omarchy-shell IPC is unavailable; repair: start the Omarchy shell session"
+fi
+if [[ $state_valid == false ]]; then
+  warn "Omarchy theme-source capability is unknown until the complete setup ownership record is valid"
+elif [[ $theme_install_mode == "source" ]]; then
+  missing_api=false
+  for command in inspect install update detach; do
+    if [[ -z ${OMARCHY_PATH:-} || ! -x $OMARCHY_PATH/bin/omarchy-theme-source-$command ]]; then
+      missing_api=true
+    fi
+  done
+  if [[ $missing_api == false ]]; then
+    pass "Omarchy theme-source API matches this source-mode installation"
+  else
+    warn "this source-mode install needs Omarchy's complete theme-source API; repair: update Omarchy before One-Bit Bureau"
+  fi
+else
+  pass "theme-source API is not required by the recorded $theme_install_mode installation"
+fi
+
+desktop_path=""
+if command -v xdg-user-dir >/dev/null; then
+  desktop_path=$(xdg-user-dir DESKTOP 2>/dev/null || true)
+fi
+if [[ -z $desktop_path || $desktop_path == "$HOME" ]]; then
+  warn "Desktop directory is disabled or unset; repair: configure an XDG Desktop directory, then reopen the desktop surface"
+elif [[ -d $desktop_path && ! -L $desktop_path ]]; then
+  pass "Desktop directory is configured at $desktop_path"
+else
+  warn "Desktop directory is configured as $desktop_path but is missing or unsafe; repair: create/select a regular local directory"
+fi
+
+for helper in one-bit-bureau setup uninstall update scripts/one-bit-bureau-doctor scripts/one-bit-bureau-app-chrome.py; do
+  if [[ -f $PLUGIN_DIR/$helper && ! -L $PLUGIN_DIR/$helper && -r $PLUGIN_DIR/$helper ]]; then
+    pass "helper is readable for Bash/Python dispatch: $helper"
+  else
+    warn "helper is missing or unsafe: $helper; repair: update or reinstall the owned plugin payload"
+  fi
+done
+
+pack="$PLUGIN_DIR/components/dock/assets/app-icons/pack.json"
+manifest="$PLUGIN_DIR/manifest.json"
+if regular_file "$pack" && regular_file "$manifest" && command -v jq >/dev/null; then
+  role_count=$(jq -r '.roles | length' "$pack" 2>/dev/null || echo 0)
+  missing_icon=false
+  while IFS= read -r role; do
+    [[ -f $PLUGIN_DIR/components/dock/assets/app-icons/$role.png && ! -L $PLUGIN_DIR/components/dock/assets/app-icons/$role.png ]] || missing_icon=true
+  done < <(jq -r '.roles[].id // empty' "$pack")
+  if [[ $role_count == "32" && $missing_icon == false ]] && jq -e --arg id "$PLUGIN_ID" '.id == $id and (.icon | type == "string")' "$manifest" >/dev/null; then
+    pass "icon catalog has 32 manifest-backed local roles"
+  else
+    warn "icon catalog or manifest is incomplete; repair: update/reinstall the plugin payload"
+  fi
+else
+  warn "icon catalog or manifest cannot be inspected safely; repair: update/reinstall the plugin payload"
+fi
+
+app_chrome="$PLUGIN_DIR/scripts/one-bit-bureau-app-chrome.py"
+if [[ -f $app_chrome && ! -L $app_chrome ]] && command -v python3 >/dev/null; then
+  python3 "$app_chrome" --plugin-dir "$PLUGIN_DIR" status || warn "GTK3 app-chrome ownership record needs manual review; repair: one-bit-bureau doctor --repair app-chrome-off if you want to stop the preview"
+else
+  warn "GTK3 app-chrome helper is unavailable; no GTK settings were changed by doctor"
+fi
+
+printf 'doctor made no changes. For the one ownership-safe repair, run: one-bit-bureau doctor --repair app-chrome-off\n'

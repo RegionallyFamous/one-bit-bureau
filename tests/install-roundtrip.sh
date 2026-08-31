@@ -132,14 +132,31 @@ FONTS="$HOME_ONE/.local/share/fonts/one-bit-bureau"
 jq -e '.schemaVersion == 3 and .installed.themeInstallMode == "copy" and .pluginOwned and .themeOwned and .fontOwned and .brandingOwned and .commandOwned and .previous.theme == "catppuccin" and .previous.barPosition == "bottom" and .previous.barTransparent and .previous.aboutPresent and .previous.screensaverPresent' "$STATE" >/dev/null
 printf '%s\n' 'keep' >"$TEST_DESKTOP/user-file.txt"
 
+HOME="$HOME_ONE" PATH="$BIN:$PATH" bash "$COMMAND" app-chrome on
+[[ -f $HOME_ONE/.config/gtk-3.0/settings.ini ]]
+[[ -f $HOME_ONE/.local/state/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/app-chrome-state.json ]]
+[[ -f $HOME_ONE/.local/share/themes/One-Bit-Bureau-GTK3/gtk-3.0/gtk.css ]]
+
 HOME="$HOME_ONE" PATH="$BIN:$PATH" bash "$ROOT/uninstall"
 [[ ! -e $PLUGIN && ! -e $THEME && ! -e $STATE ]]
 [[ ! -e $COMMAND && ! -e $FONTS ]]
+[[ ! -e $HOME_ONE/.config/gtk-3.0/settings.ini ]]
+[[ ! -e $HOME_ONE/.local/state/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/app-chrome-state.json ]]
+[[ ! -e $HOME_ONE/.local/share/themes/One-Bit-Bureau-GTK3 ]]
 [[ $(<"$HOME_ONE/.local/state/omarchy/current/theme.name") == "catppuccin" ]]
 jq -e '.bar.position == "bottom" and .bar.transparent == true' "$HOME_ONE/.config/omarchy/shell.json" >/dev/null
 [[ -f $TEST_DESKTOP/user-file.txt ]]
 [[ $(<"$HOME_ONE/.config/omarchy/branding/about.txt") == "previous about" ]]
 [[ $(<"$HOME_ONE/.config/omarchy/branding/screensaver.txt") == "previous screensaver" ]]
+
+echo "== setup preserves an explicitly disabled XDG Desktop"
+HOME_DISABLED="$WORK/home-disabled"
+seed_home "$HOME_DISABLED"
+export TEST_DESKTOP="$HOME_DISABLED"
+export TEST_LOG="$WORK/disabled-desktop.log"
+HOME="$HOME_DISABLED" PATH="$BIN:$PATH" bash "$ROOT/setup" --local >/dev/null
+[[ ! -e $HOME_DISABLED/Desktop ]]
+HOME="$HOME_DISABLED" PATH="$BIN:$PATH" bash "$ROOT/uninstall" >/dev/null
 
 echo "== setup refuses an unowned theme collision without touching it"
 HOME_TWO="$WORK/home-two"
@@ -300,6 +317,7 @@ seed_home "$HOME_ADOPT"
 ADOPT_TARGET="$HOME_ADOPT/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau"
 mkdir -p "$ADOPT_TARGET/.git" "$ADOPT_TARGET/themes" "$ADOPT_TARGET/fonts" "$ADOPT_TARGET/branding"
 cp "$ROOT/setup" "$ROOT/manifest.json" "$ADOPT_TARGET/"
+cp -R "$ROOT/scripts" "$ROOT/app-chrome" "$ADOPT_TARGET/"
 cp -R "$ROOT/themes/one-bit-bureau" "$ADOPT_TARGET/themes/"
 cp "$ROOT/fonts/DepartureMono-1.500.otf" "$ROOT/fonts/MonaspaceKryptonNF-Regular-1.400.otf" "$ADOPT_TARGET/fonts/"
 cp "$ROOT/branding/about.txt" "$ROOT/branding/screensaver.txt" "$ADOPT_TARGET/branding/"
@@ -321,6 +339,7 @@ seed_home "$HOME_ADOPT_YES"
 ADOPT_YES_TARGET="$HOME_ADOPT_YES/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau"
 mkdir -p "$ADOPT_YES_TARGET/.git" "$ADOPT_YES_TARGET/themes" "$ADOPT_YES_TARGET/fonts" "$ADOPT_YES_TARGET/branding"
 cp "$ROOT/setup" "$ROOT/manifest.json" "$ROOT/one-bit-bureau" "$ROOT/update" "$ROOT/uninstall" "$ADOPT_YES_TARGET/"
+cp -R "$ROOT/scripts" "$ROOT/app-chrome" "$ADOPT_YES_TARGET/"
 cp -R "$ROOT/themes/one-bit-bureau" "$ADOPT_YES_TARGET/themes/"
 cp "$ROOT/fonts/DepartureMono-1.500.otf" "$ROOT/fonts/MonaspaceKryptonNF-Regular-1.400.otf" "$ADOPT_YES_TARGET/fonts/"
 cp "$ROOT/branding/about.txt" "$ROOT/branding/screensaver.txt" "$ADOPT_YES_TARGET/branding/"
@@ -354,6 +373,7 @@ seed_home "$HOME_SOURCE"
 SOURCE_TARGET="$HOME_SOURCE/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau"
 mkdir -p "$SOURCE_TARGET/.git" "$SOURCE_TARGET/themes" "$SOURCE_TARGET/fonts" "$SOURCE_TARGET/branding"
 cp "$ROOT/setup" "$ROOT/manifest.json" "$ROOT/one-bit-bureau" "$ROOT/update" "$ROOT/uninstall" "$SOURCE_TARGET/"
+cp -R "$ROOT/scripts" "$ROOT/app-chrome" "$SOURCE_TARGET/"
 cp -R "$ROOT/themes/one-bit-bureau" "$SOURCE_TARGET/themes/"
 cp "$ROOT/fonts/DepartureMono-1.500.otf" "$ROOT/fonts/MonaspaceKryptonNF-Regular-1.400.otf" "$SOURCE_TARGET/fonts/"
 cp "$ROOT/branding/about.txt" "$ROOT/branding/screensaver.txt" "$SOURCE_TARGET/branding/"

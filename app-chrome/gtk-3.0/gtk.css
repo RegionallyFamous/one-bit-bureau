@@ -1,0 +1,55 @@
+/*
+ * One-Bit Bureau GTK3 preview.
+ *
+ * This deliberately targets GTK3 only. GTK4/libadwaita applications keep their
+ * own appearance because changing them safely would require broader system or
+ * application preference ownership than this plugin has.
+ */
+
+@define-color bureau_paper #f3f0e6;
+@define-color bureau_ink #171717;
+@define-color bureau_carbon #303030;
+@define-color bureau_rule #77746d;
+@define-color bureau_selection #d6d2c5;
+@define-color bureau_danger #8a2828;
+
+* {
+  -gtk-icon-style: symbolic;
+  border-radius: 0;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+window, dialog, .background, .view, viewport, entry, textview, treeview.view {
+  background-color: @bureau_paper;
+  color: @bureau_ink;
+}
+
+headerbar, .titlebar, toolbar, menubar, .primary-toolbar, .toolbar {
+  background-color: @bureau_paper;
+  color: @bureau_ink;
+  border-bottom: 2px solid @bureau_ink;
+}
+
+button, entry, combobox, notebook > header > tabs > tab {
+  background-image: none;
+  background-color: @bureau_paper;
+  color: @bureau_ink;
+  border: 1px solid @bureau_ink;
+  min-height: 22px;
+}
+
+button:hover, button:focus, entry:focus, notebook > header > tabs > tab:checked {
+  background-color: @bureau_selection;
+  outline: 1px solid @bureau_ink;
+  outline-offset: -3px;
+}
+
+selection, treeview.view:selected, .view:selected, row:selected {
+  background-color: @bureau_ink;
+  color: @bureau_paper;
+}
+
+separator { background-color: @bureau_rule; }
+
+button.destructive-action { color: @bureau_danger; }

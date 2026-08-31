@@ -91,6 +91,10 @@ command -v python3 >/dev/null || fail "Python 3 is required"
 [[ -f $SCRIPT_DIR/fonts/MonaspaceKryptonNF-Regular-1.400.otf ]] || fail "Monaspace Krypton NF is missing"
 [[ -f $SCRIPT_DIR/branding/about.txt ]] || fail "About branding is missing"
 [[ -f $SCRIPT_DIR/branding/screensaver.txt ]] || fail "screensaver branding is missing"
+[[ -f $SCRIPT_DIR/scripts/one-bit-bureau-doctor ]] || fail "doctor helper is missing"
+[[ -f $SCRIPT_DIR/scripts/one-bit-bureau-app-chrome.py ]] || fail "GTK3 app-chrome helper is missing"
+[[ -f $SCRIPT_DIR/app-chrome/index.theme ]] || fail "GTK3 app-chrome theme metadata is missing"
+[[ -f $SCRIPT_DIR/app-chrome/gtk-3.0/gtk.css ]] || fail "GTK3 app-chrome preview is missing"
 jq -e --arg id "$PLUGIN_ID" --arg name "$PRODUCT_NAME" '
   .id == $id and .name == $name and (.version | type == "string")
 ' "$SCRIPT_DIR/manifest.json" >/dev/null || fail "manifest identity does not match this release"
@@ -480,6 +484,7 @@ install_local_plugin() {
   PLUGIN_STAGE=$(mktemp -d "$plugins_dir/.one-bit-bureau-plugin.XXXXXX")
   mkdir -p "$PLUGIN_STAGE/components"
   cp "$SCRIPT_DIR/manifest.json" "$SCRIPT_DIR/Experience.qml" "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$SCRIPT_DIR/one-bit-bureau" "$SCRIPT_DIR/update" "$SCRIPT_DIR/uninstall" "$PLUGIN_STAGE/"
+  cp -R "$SCRIPT_DIR/scripts" "$SCRIPT_DIR/app-chrome" "$PLUGIN_STAGE/"
   cp -R "$SCRIPT_DIR/components/active-window" "$SCRIPT_DIR/components/desktop" "$SCRIPT_DIR/components/dock" "$SCRIPT_DIR/components/overview" "$PLUGIN_STAGE/components/"
   rm -rf "$PLUGIN_STAGE/components/desktop/tests" "$PLUGIN_STAGE/components/dock/tests"
   find "$PLUGIN_STAGE" -type d -name __pycache__ -prune -exec rm -rf {} +
@@ -656,11 +661,15 @@ install_branding
 desktop_dir="$HOME/Desktop"
 if command -v xdg-user-dir >/dev/null; then
   configured_desktop=$(xdg-user-dir DESKTOP 2>/dev/null || true)
-  if [[ $configured_desktop == /* && $configured_desktop != "$HOME" ]]; then
-    desktop_dir="$configured_desktop"
+  if [[ $configured_desktop == "$HOME" ]]; then
+    desktop_dir=""
+  elif [[ $configured_desktop == /* ]]; then
+    desktop_dir=$configured_desktop
   fi
 fi
-mkdir -p "$desktop_dir"
+if [[ -n $desktop_dir ]]; then
+  mkdir -p "$desktop_dir"
+fi
 
 SETTINGS_CHANGED=1
 omarchy plugin enable "$PLUGIN_ID" --section left --after omarchy.menu
