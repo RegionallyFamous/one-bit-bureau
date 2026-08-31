@@ -108,26 +108,44 @@ bar_geometry_is() {
 }
 
 one_bit_hypr_geometry_is_active() {
-  [[ $(hyprctl -j getoption general:gaps_in | jq -r '.int') == 4 ]] &&
-    [[ $(hyprctl -j getoption general:gaps_out | jq -r '.int') == 8 ]] &&
-    [[ $(hyprctl -j getoption general:border_size | jq -r '.int') == 2 ]] &&
-    [[ $(hyprctl -j getoption decoration:rounding | jq -r '.int') == 0 ]] &&
-    awk -v value="$(hyprctl -j getoption decoration:active_opacity | jq -r '.float')" 'BEGIN { exit !(value == 1) }' &&
-    awk -v value="$(hyprctl -j getoption decoration:inactive_opacity | jq -r '.float')" 'BEGIN { exit !(value == 1) }' &&
-    [[ $(hyprctl -j getoption decoration:shadow:enabled | jq -r '.int') == 0 ]] &&
-    [[ $(hyprctl -j getoption decoration:blur:enabled | jq -r '.int') == 0 ]]
+  hypr_option_is general.gaps_in 4 &&
+    hypr_option_is general.gaps_out 8 &&
+    hypr_option_is general.border_size 2 &&
+    hypr_option_is decoration.rounding 0 &&
+    hypr_option_is decoration.active_opacity 1 &&
+    hypr_option_is decoration.inactive_opacity 1 &&
+    hypr_option_is decoration.shadow.enabled 0 &&
+    hypr_option_is decoration.blur.enabled 0
+}
+
+hypr_option_is() {
+  local option="$1"
+  local wanted="$2"
+
+  hyprctl -j getoption "$option" | jq -e --arg wanted "$wanted" '
+    if .int != null then
+      (.int | tostring) == $wanted
+    elif .float != null then
+      (.float | tonumber) == ($wanted | tonumber)
+    elif .custom != null then
+      [.custom | scan("-?[0-9]+(?:[.][0-9]+)?")] as $values
+      | ($values | length) > 0 and all($values[]; (tonumber) == ($wanted | tonumber))
+    else
+      false
+    end
+  ' >/dev/null
 }
 
 capture_hypr_geometry() {
   jq -n \
-    --argjson gapsIn "$(hyprctl -j getoption general:gaps_in | jq '.int')" \
-    --argjson gapsOut "$(hyprctl -j getoption general:gaps_out | jq '.int')" \
-    --argjson borderSize "$(hyprctl -j getoption general:border_size | jq '.int')" \
-    --argjson rounding "$(hyprctl -j getoption decoration:rounding | jq '.int')" \
-    --argjson activeOpacity "$(hyprctl -j getoption decoration:active_opacity | jq '.float')" \
-    --argjson inactiveOpacity "$(hyprctl -j getoption decoration:inactive_opacity | jq '.float')" \
-    --argjson shadow "$(hyprctl -j getoption decoration:shadow:enabled | jq '.int')" \
-    --argjson blur "$(hyprctl -j getoption decoration:blur:enabled | jq '.int')" \
+    --argjson gapsIn "$(hyprctl -j getoption general.gaps_in)" \
+    --argjson gapsOut "$(hyprctl -j getoption general.gaps_out)" \
+    --argjson borderSize "$(hyprctl -j getoption general.border_size)" \
+    --argjson rounding "$(hyprctl -j getoption decoration.rounding)" \
+    --argjson activeOpacity "$(hyprctl -j getoption decoration.active_opacity)" \
+    --argjson inactiveOpacity "$(hyprctl -j getoption decoration.inactive_opacity)" \
+    --argjson shadow "$(hyprctl -j getoption decoration.shadow.enabled)" \
+    --argjson blur "$(hyprctl -j getoption decoration.blur.enabled)" \
     '{gapsIn:$gapsIn,gapsOut:$gapsOut,borderSize:$borderSize,rounding:$rounding,activeOpacity:$activeOpacity,inactiveOpacity:$inactiveOpacity,shadow:$shadow,blur:$blur}'
 }
 
