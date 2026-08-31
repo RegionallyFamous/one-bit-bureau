@@ -164,7 +164,12 @@ class DesktopOperationTest(unittest.TestCase):
             changed_destination = Path(changed_receipt["results"][0]["destination"])
             changed_destination.write_text("after", encoding="utf-8")
 
-            with self.assertRaisesRegex(self.operation.RequestError, "changed"):
+            changed_status = self.operation.status(changed_receipt["operationId"])
+            self.assertFalse(changed_status["undoable"])
+
+            with self.assertRaisesRegex(
+                self.operation.RequestError, "safely provable|changed"
+            ):
                 self.operation.undo(changed_receipt["operationId"])
             self.assertEqual(changed_destination.read_text(encoding="utf-8"), "after")
 
@@ -290,6 +295,27 @@ class DesktopOperationTest(unittest.TestCase):
             )
             self.assertEqual(receipt["results"][0]["error"]["code"], "not_found")
 
+    def test_unwritable_destination_fails_without_touching_sources(self) -> None:
+        temporary, root, desktop, environment = self.workspace()
+        with temporary, mock.patch.dict(os.environ, environment):
+            destination = desktop / "Read only"
+            destination.mkdir()
+            source = root / "source.txt"
+            source.write_text("keep", encoding="utf-8")
+
+            with mock.patch.object(self.operation.os, "access", return_value=False):
+                receipt, exit_code = self.operation.transfer(
+                    "move", [str(source)], str(destination)
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(
+                receipt["results"][0]["error"]["code"],
+                "destination_not_writable",
+            )
+            self.assertEqual(source.read_text(encoding="utf-8"), "keep")
+            self.assertEqual(list(destination.iterdir()), [])
+
     def test_directory_recursion_same_folder_and_nested_selection_are_rejected(self) -> None:
         temporary, root, desktop, environment = self.workspace()
         with temporary, mock.patch.dict(os.environ, environment):
@@ -353,11 +379,16 @@ class DesktopOperationTest(unittest.TestCase):
             direct.write_text("direct", encoding="utf-8")
             outside = root / "outside.txt"
             outside.write_text("outside", encoding="utf-8")
-            failed_child = subprocess.CompletedProcess([], 17)
+            class FailedChild:
+                pid = 424242
+
+                @staticmethod
+                def wait(timeout=None):
+                    return 17
 
             with mock.patch.object(
-                self.operation.subprocess, "run", return_value=failed_child
-            ) as runner:
+                self.operation.subprocess, "Popen", return_value=FailedChild()
+            ) as launcher:
                 receipt, exit_code = self.operation.trash([str(direct), str(outside)])
 
             self.assertEqual(exit_code, 1)
@@ -365,19 +396,11 @@ class DesktopOperationTest(unittest.TestCase):
             self.assertFalse(receipt["undoable"])
             self.assertEqual(receipt["results"][0]["error"]["code"], "child_failed")
             self.assertEqual(receipt["results"][1]["error"]["code"], "outside_desktop")
-            runner.assert_called_once()
-            child_argv = runner.call_args.args[0]
+            launcher.assert_called_once()
+            child_argv = launcher.call_args.args[0]
             self.assertEqual(child_argv, ["gio", "trash", str(direct)])
-            self.assertFalse(runner.call_args.kwargs.get("shell", False))
-            self.assertTrue(runner.call_args.kwargs["start_new_session"])
-            self.assertIs(
-                runner.call_args.kwargs["preexec_fn"],
-                self.operation._kill_child_when_parent_dies,
-            )
-            self.assertEqual(
-                runner.call_args.kwargs["timeout"],
-                self.operation.CHILD_TIMEOUT_SECONDS,
-            )
+            self.assertFalse(launcher.call_args.kwargs.get("shell", False))
+            self.assertTrue(launcher.call_args.kwargs["start_new_session"])
 
     def test_invalid_operation_id_and_stale_status_are_structured_cli_errors(self) -> None:
         temporary, _root, _desktop, environment = self.workspace()
@@ -406,11 +429,232 @@ class DesktopOperationTest(unittest.TestCase):
             self.assertEqual(missing.returncode, 2)
             self.assertEqual(missing_receipt["error"]["code"], "operation_not_found")
 
+    def test_disabled_xdg_desktop_is_explicit_and_never_recreated(self) -> None:
+        temporary, _root, desktop, environment = self.workspace()
+        with temporary, mock.patch.dict(os.environ, environment):
+            desktop.rmdir()
+            (Path(environment["XDG_CONFIG_HOME"]) / "user-dirs.dirs").write_text(
+                'XDG_DESKTOP_DIR="$HOME"\n', encoding="utf-8"
+            )
+            source = Path(environment["HOME"]) / "source.txt"
+            source.write_text("source", encoding="utf-8")
+
+            with self.assertRaisesRegex(self.operation.RequestError, "disabled"):
+                self.operation.inspect_item(str(source))
+            receipt, exit_code = self.operation.trash([str(source)])
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(receipt["results"][0]["error"]["code"], "desktop_disabled")
+            self.assertFalse(desktop.exists())
+
+    def test_rename_is_direct_no_overwrite_and_reports_exact_destination(self) -> None:
+        temporary, _root, desktop, environment = self.workspace()
+        with temporary, mock.patch.dict(os.environ, environment):
+            source = desktop / "Old name.txt"
+            source.write_text("payload", encoding="utf-8")
+
+            receipt, exit_code = self.operation.rename_item(
+                str(source), "New name.txt"
+            )
+
+            destination = desktop / "New name.txt"
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(receipt["command"], "rename")
+            self.assertEqual(receipt["state"], "completed")
+            self.assertEqual(receipt["results"][0]["destination"], str(destination))
+            self.assertEqual(destination.read_text(encoding="utf-8"), "payload")
+            self.assertFalse(source.exists())
+
+            replacement = desktop / "Another.txt"
+            replacement.write_text("keep", encoding="utf-8")
+            collision, collision_exit = self.operation.rename_item(
+                str(destination), replacement.name
+            )
+            self.assertEqual(collision_exit, 1)
+            self.assertEqual(
+                collision["results"][0]["error"]["code"], "destination_exists"
+            )
+            self.assertEqual(destination.read_text(encoding="utf-8"), "payload")
+            self.assertEqual(replacement.read_text(encoding="utf-8"), "keep")
+
+    def test_rename_rejects_symlink_outside_and_launcher_conversion(self) -> None:
+        temporary, root, desktop, environment = self.workspace()
+        with temporary, mock.patch.dict(os.environ, environment):
+            outside = root / "outside.txt"
+            outside.write_text("keep", encoding="utf-8")
+            link = desktop / "Link"
+            link.symlink_to(outside)
+            regular = desktop / "script"
+            regular.write_text("echo nope", encoding="utf-8")
+
+            symlink_receipt, _ = self.operation.rename_item(str(link), "Renamed")
+            launcher_receipt, _ = self.operation.rename_item(
+                str(regular), "script.desktop"
+            )
+
+            self.assertEqual(
+                symlink_receipt["results"][0]["error"]["code"], "unsafe_symlink"
+            )
+            self.assertEqual(
+                launcher_receipt["results"][0]["error"]["code"],
+                "unsafe_launcher_name",
+            )
+            self.assertEqual(outside.read_text(encoding="utf-8"), "keep")
+            self.assertTrue(regular.exists())
+
+    def test_rename_name_limit_is_byte_based_for_multibyte_text(self) -> None:
+        accepted = ("é" * 127) + "a"
+        self.assertEqual(len(accepted.encode("utf-8")), self.operation.MAX_NAME_BYTES)
+        self.assertEqual(self.operation._validate_new_name(accepted), accepted)
+        with self.assertRaises(self.operation.RequestError):
+            self.operation._validate_new_name(accepted + "é")
+
+    def test_reserve_exposes_running_progress_and_exact_terminal_status(self) -> None:
+        temporary, root, desktop, environment = self.workspace()
+        with temporary, mock.patch.dict(os.environ, environment):
+            destination = desktop / "Projects"
+            destination.mkdir()
+            source = root / "progress.txt"
+            source.write_text("payload", encoding="utf-8")
+            reserved = self.operation.reserve("copy", 1)
+            observed = {}
+
+            def copying(source_path, destination_path, control):
+                observed.update(self.operation.status(reserved["operationId"]))
+                target = destination_path / source_path.name
+                target.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+                return target
+
+            with mock.patch.object(
+                self.operation, "_copy_to_unique", side_effect=copying
+            ):
+                receipt, exit_code = self.operation.transfer(
+                    "copy",
+                    [str(source)],
+                    str(destination),
+                    reserved["operationId"],
+                )
+
+            self.assertTrue(reserved["ok"])
+            self.assertTrue(reserved["reservationAccepted"])
+            self.assertEqual(observed["state"], "running")
+            self.assertEqual(observed["results"][0]["status"], "running")
+            self.assertEqual(observed["progress"]["currentIndex"], 0)
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(receipt["progress"]["completed"], 1)
+            terminal = self.operation.status(reserved["operationId"])
+            self.assertEqual(terminal["state"], "completed")
+            self.assertEqual(terminal["progress"]["pending"], 0)
+
+    def test_cancel_request_rolls_back_inflight_copy_and_marks_terminal_state(self) -> None:
+        temporary, root, desktop, environment = self.workspace()
+        with temporary, mock.patch.dict(os.environ, environment):
+            destination = desktop / "Projects"
+            destination.mkdir()
+            source = root / "cancel.txt"
+            source.write_text("payload", encoding="utf-8")
+            reserved = self.operation.reserve("copy", 1)
+
+            def cancel_copy(_source, _destination, control):
+                accepted = self.operation.cancel(reserved["operationId"])
+                self.assertTrue(accepted["cancelAccepted"])
+                control.check()
+                raise AssertionError("cancel check must raise")
+
+            with mock.patch.object(
+                self.operation, "_copy_to_unique", side_effect=cancel_copy
+            ):
+                receipt, exit_code = self.operation.transfer(
+                    "copy",
+                    [str(source)],
+                    str(destination),
+                    reserved["operationId"],
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(receipt["state"], "cancelled")
+            self.assertEqual(receipt["results"][0]["status"], "cancelled")
+            self.assertEqual(receipt["progress"]["cancelled"], 1)
+            self.assertEqual(list(destination.iterdir()), [])
+            with self.assertRaisesRegex(self.operation.RequestError, "no longer"):
+                self.operation.cancel(reserved["operationId"])
+
+    def test_reservation_id_and_count_are_strict(self) -> None:
+        temporary, root, desktop, environment = self.workspace()
+        with temporary, mock.patch.dict(os.environ, environment):
+            destination = desktop / "Projects"
+            destination.mkdir()
+            source = root / "one.txt"
+            source.write_text("one", encoding="utf-8")
+            reserved = self.operation.reserve("copy", 2)
+            at_limit = self.operation.reserve("copy", self.operation.MAX_SOURCES)
+
+            with self.assertRaisesRegex(self.operation.RequestError, "count"):
+                self.operation.transfer(
+                    "copy", [str(source)], str(destination), reserved["operationId"]
+                )
+            with self.assertRaises(self.operation.RequestError):
+                self.operation.reserve("copy", self.operation.MAX_SOURCES + 1)
+            self.assertTrue(at_limit["reservationAccepted"])
+            self.assertEqual(at_limit["progress"]["total"], self.operation.MAX_SOURCES)
+
+    def test_bounded_child_timeout_always_invokes_cleanup(self) -> None:
+        class StalledChild:
+            pid = 424242
+
+            @staticmethod
+            def wait(timeout=None):
+                raise subprocess.TimeoutExpired(["gio"], timeout)
+
+        control = mock.Mock()
+        with mock.patch.object(
+            self.operation.subprocess, "Popen", return_value=StalledChild()
+        ), mock.patch.object(
+            self.operation.time, "monotonic", side_effect=[0.0, 31.0]
+        ), mock.patch.object(self.operation, "_stop_child") as cleanup:
+            with self.assertRaises(self.operation.ItemError) as raised:
+                self.operation._run_bounded_child(["gio", "trash", "/tmp/item"], control)
+
+        self.assertEqual(raised.exception.code, "child_timeout")
+        cleanup.assert_called_once()
+
+    def test_operation_deadline_accepts_just_before_and_rejects_at_boundary(self) -> None:
+        operation_id = "b" * 32
+        with mock.patch.object(self.operation.time, "monotonic", return_value=0.0):
+            control = self.operation.OperationControl(operation_id)
+        control.deadline = 100.0
+        with mock.patch.object(self.operation, "_cancel_path") as cancel_path:
+            cancel_path.return_value.lstat.side_effect = FileNotFoundError
+            with mock.patch.object(self.operation.time, "monotonic", return_value=99.999):
+                control.check()
+            with mock.patch.object(self.operation.time, "monotonic", return_value=100.0):
+                with self.assertRaises(self.operation.OperationCancelled) as raised:
+                    control.check()
+        self.assertEqual(raised.exception.code, "operation_timeout")
+
+    def test_status_marks_dead_worker_as_failed_without_waiting(self) -> None:
+        temporary, _root, _desktop, environment = self.workspace()
+        with temporary, mock.patch.dict(os.environ, environment):
+            record = self.operation._new_record("copy", ["/tmp/item"], "/tmp")
+            record["workerPid"] = 2_147_483_647
+            record["workerToken"] = "dead"
+            self.operation._create_record(record)
+
+            status = self.operation.status(record["operationId"])
+
+            self.assertEqual(status["state"], "failed")
+            self.assertEqual(status["results"][0]["error"]["code"], "worker_lost")
+            self.assertFalse(status["cancellable"])
+
     def test_hard_argument_source_and_output_boundaries(self) -> None:
         at_limit = "x" * self.operation.MAX_RAW_ARG_BYTES
         self.operation._validate_raw_argv([at_limit])
+        multibyte_at_limit = "é" * (self.operation.MAX_RAW_ARG_BYTES // 2)
+        self.operation._validate_raw_argv([multibyte_at_limit])
         with self.assertRaises(self.operation.RequestError):
             self.operation._validate_raw_argv([at_limit + "x"])
+        with self.assertRaises(self.operation.RequestError):
+            self.operation._validate_raw_argv([multibyte_at_limit + "é"])
         with self.assertRaises(self.operation.RequestError):
             self.operation._validate_raw_argv(
                 ["x"] * (self.operation.MAX_RAW_ARGS + 1)
@@ -425,6 +669,11 @@ class DesktopOperationTest(unittest.TestCase):
             self.operation._json_bytes(
                 {"payload": "x" * self.operation.MAX_OUTPUT_BYTES}
             )
+        overhead = len(self.operation._json_bytes({"payload": ""}))
+        exact = self.operation._json_bytes(
+            {"payload": "x" * (self.operation.MAX_OUTPUT_BYTES - overhead)}
+        )
+        self.assertEqual(len(exact), self.operation.MAX_OUTPUT_BYTES)
 
     def test_journal_is_atomic_private_and_contains_no_temporary_files(self) -> None:
         temporary, root, desktop, environment = self.workspace()

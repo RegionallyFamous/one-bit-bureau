@@ -12,14 +12,97 @@ BIN_DIR = Path(__file__).resolve().parents[1] / "bin"
 sys.path.insert(0, str(BIN_DIR))
 
 from desktop_policy import (  # noqa: E402
+    MAX_USER_DIRS_BYTES,
     copy_untrusted_launcher,
     is_trusted_application_launcher,
     lexical_path,
+    require_desktop_directory,
+    resolve_desktop_location,
     trusted_application_dirs,
 )
 
 
 class DesktopPolicyTest(unittest.TestCase):
+    def test_xdg_home_value_disables_desktop_without_recreating_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary) / "home"
+            config = home / ".config"
+            config.mkdir(parents=True)
+            (config / "user-dirs.dirs").write_text(
+                'XDG_DESKTOP_DIR="$HOME"\n', encoding="utf-8"
+            )
+
+            location = resolve_desktop_location(
+                home=home,
+                environ={"XDG_CONFIG_HOME": str(config)},
+            )
+
+            self.assertFalse(location.enabled)
+            self.assertEqual(location.state, "disabled")
+            self.assertIsNone(location.path)
+            self.assertFalse((home / "Desktop").exists())
+            with self.assertRaisesRegex(RuntimeError, "disabled"):
+                require_desktop_directory(
+                    home=home,
+                    environ={"XDG_CONFIG_HOME": str(config)},
+                )
+
+    def test_xdg_custom_desktop_is_resolved_but_not_created(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary) / "home"
+            config = home / ".config"
+            config.mkdir(parents=True)
+            (config / "user-dirs.dirs").write_text(
+                'XDG_DESKTOP_DIR="$HOME/Desk Space"\n', encoding="utf-8"
+            )
+
+            location = resolve_desktop_location(
+                home=home,
+                environ={"XDG_CONFIG_HOME": str(config)},
+            )
+
+            self.assertTrue(location.enabled)
+            self.assertEqual(location.path, (home / "Desk Space").resolve())
+            self.assertFalse((home / "Desk Space").exists())
+
+    def test_user_dirs_byte_ceiling_accepts_exact_limit_and_rejects_one_over(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary) / "home"
+            config = home / ".config"
+            config.mkdir(parents=True)
+            user_dirs = config / "user-dirs.dirs"
+            assignment = b'XDG_DESKTOP_DIR="$HOME/Exact"\n'
+            user_dirs.write_bytes(
+                assignment + b"#" * (MAX_USER_DIRS_BYTES - len(assignment))
+            )
+            environment = {"XDG_CONFIG_HOME": str(config)}
+
+            at_limit = resolve_desktop_location(home=home, environ=environment)
+            self.assertEqual(at_limit.path, (home / "Exact").resolve())
+
+            user_dirs.write_bytes(
+                assignment + b"#" * (MAX_USER_DIRS_BYTES + 1 - len(assignment))
+            )
+            over_limit = resolve_desktop_location(home=home, environ=environment)
+            self.assertEqual(over_limit.path, (home / "Desktop").resolve())
+
+    def test_symlinked_user_dirs_configuration_is_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            config = home / ".config"
+            config.mkdir(parents=True)
+            outside = root / "outside-user-dirs"
+            outside.write_text('XDG_DESKTOP_DIR="$HOME/Outside"\n', encoding="utf-8")
+            (config / "user-dirs.dirs").symlink_to(outside)
+
+            location = resolve_desktop_location(
+                home=home,
+                environ={"XDG_CONFIG_HOME": str(config)},
+            )
+
+            self.assertEqual(location.path, (home / "Desktop").resolve())
+
     def test_empty_local_paths_are_rejected(self) -> None:
         for value in ("", "   ", "<>", "<   >", "file://", "file://localhost"):
             with self.subTest(value=value):

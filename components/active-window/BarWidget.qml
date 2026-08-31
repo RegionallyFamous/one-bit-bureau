@@ -30,6 +30,7 @@ BarWidget {
   property string executablePath: ""
   property int executableLookupPid: 0
   property bool settingsOpen: false
+  property string deskMenuError: ""
   readonly property bool opened: settingsOpen
 
   readonly property string executableName: {
@@ -50,6 +51,13 @@ BarWidget {
   }
   readonly property string iconName: desktopEntry ? String(desktopEntry.icon || "") : ""
   readonly property string iconSource: resolveIconSource(iconName)
+  readonly property string barLabel: hasActiveWindow && displayLabel
+    ? "Desk · " + displayLabel : "Desk"
+  readonly property string widgetScreenName: root.QsWindow && root.QsWindow.window
+    && root.QsWindow.window.screen ? String(root.QsWindow.window.screen.name || "") : ""
+  readonly property string omarchyShellCommand: String(
+    (root.bar && root.bar.omarchyPath) || Quickshell.env("OMARCHY_PATH") || ""
+  ) + "/bin/omarchy-shell"
 
   readonly property bool showTitle: setting("showTitle", true) === true
   readonly property bool reducedMotion: setting("reducedMotion", false) === true
@@ -61,20 +69,19 @@ BarWidget {
     return (percent - 100) / 100
   }
 
-  visible: hasActiveWindow && displayLabel !== ""
-  implicitWidth: visible
-    ? (vertical || !showTitle
-      ? barSize
-      : iconSize + Style.space(6) + Math.min(maxLabelWidth, ownerLabel.implicitWidth) + Style.space(16))
-    : 0
+  visible: true
+  implicitWidth: vertical || !showTitle
+    ? barSize
+    : (hasActiveWindow ? iconSize + Style.space(6) : 0)
+      + Math.min(maxLabelWidth, ownerLabel.implicitWidth) + Style.space(16)
   implicitHeight: barSize
   Accessible.role: Accessible.Button
-  Accessible.name: displayLabel ? "Activate " + displayLabel : "Active application"
-  Accessible.description: "Opens the active window; use the context menu for One-Bit Bureau appearance settings."
+  Accessible.name: "Open Desk menu"
+  Accessible.description: "Opens selection-aware desktop commands. Right-click opens One-Bit Bureau appearance settings."
   Accessible.focusable: visible
   Accessible.onPressAction: {
     root.settingsOpen = false
-    if (root.waylandToplevel) root.waylandToplevel.activate()
+    root.requestDeskMenu()
   }
 
   Behavior on implicitWidth {
@@ -97,6 +104,16 @@ BarWidget {
     executableLookupPid = activePid
     executableLookup.command = ["readlink", "-f", "/proc/" + activePid + "/exe"]
     executableLookup.running = true
+  }
+
+  function requestDeskMenu() {
+    root.settingsOpen = false
+    if (deskMenuProcess.running)
+      return
+    root.deskMenuError = ""
+    deskMenuProcess.command = [root.omarchyShellCommand,
+      "regionallyfamous.one-bit-bureau.desktop", "toggleDeskMenu", root.widgetScreenName]
+    deskMenuProcess.running = true
   }
 
   function close() {
@@ -141,6 +158,20 @@ BarWidget {
     }
   }
 
+  Process {
+    id: deskMenuProcess
+
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.deskMenuError = String(text || "").trim().slice(0, 240)
+    }
+
+    onExited: function(exitCode) {
+      if (exitCode !== 0)
+        console.warn("one-bit-bureau active-window: Desk menu IPC failed:", root.deskMenuError)
+    }
+  }
+
   Component.onCompleted: refreshExecutable()
 
   Row {
@@ -150,9 +181,10 @@ BarWidget {
 
     Item {
       id: iconContainer
-      width: root.iconSize
+      width: root.hasActiveWindow ? root.iconSize : 0
       height: root.iconSize
       anchors.verticalCenter: parent.verticalCenter
+      visible: root.hasActiveWindow
 
       Image {
         id: appIcon
@@ -194,7 +226,7 @@ BarWidget {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        text: root.displayLabel
+        text: root.barLabel
         color: root.bar ? root.bar.barForeground : Color.foreground
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.body
@@ -209,7 +241,7 @@ BarWidget {
     anchors.fill: parent
     hoverEnabled: true
     acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-    cursorShape: root.waylandToplevel ? Qt.PointingHandCursor : Qt.ArrowCursor
+    cursorShape: Qt.PointingHandCursor
 
     onClicked: function(mouse) {
       if (mouse.button === Qt.RightButton) {
@@ -217,12 +249,11 @@ BarWidget {
       } else if (mouse.button === Qt.MiddleButton) {
         if (root.waylandToplevel) root.waylandToplevel.close()
       } else {
-        root.settingsOpen = false
-        if (root.waylandToplevel) root.waylandToplevel.activate()
+        root.requestDeskMenu()
       }
     }
     onEntered: if (root.bar) {
-      root.bar.showTooltip(root, root.displayLabel + "\nRight-click: appearance")
+      root.bar.showTooltip(root, "Desk commands\nRight-click: appearance")
     }
     onExited: if (root.bar) root.bar.hideTooltip(root)
   }

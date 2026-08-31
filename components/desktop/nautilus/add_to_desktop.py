@@ -25,11 +25,15 @@ class AddToDesktopAction(GObject.GObject, Nautilus.MenuProvider):
         home = os.path.realpath(os.path.expanduser("~"))
         real = os.path.realpath(path)
         if real == home:
-            real = os.path.join(home, "Desktop")
+            # xdg-user-dirs defines a user directory pointing at $HOME as
+            # disabled.  Do not recreate or offer actions for ~/Desktop.
+            return None
         return real
 
     def _selected_paths(self, files):
         desktop = self._desktop_dir()
+        if not desktop:
+            return []
         paths = []
         for file in files:
             location = file.get_location()

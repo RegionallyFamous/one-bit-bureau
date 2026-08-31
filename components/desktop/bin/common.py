@@ -9,14 +9,17 @@ gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 from pathlib import Path
 
+from desktop_policy import require_desktop_directory, resolve_desktop_location
+
 
 def desktop_dir() -> Path:
-    special = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DESKTOP)
-    path = Path(special) if special else Path.home() / "Desktop"
-    if path.resolve() == Path.home().resolve():
-        path = Path.home() / "Desktop"
-    path.mkdir(parents=True, exist_ok=True)
-    return path.resolve()
+    # Keep every helper on the same xdg-user-dirs policy.  In particular,
+    # XDG_DESKTOP_DIR="$HOME" means disabled and must never recreate ~/Desktop.
+    return require_desktop_directory()
+
+
+def desktop_location():
+    return resolve_desktop_location()
 
 
 def unique_dest(directory: Path, name: str) -> Path:

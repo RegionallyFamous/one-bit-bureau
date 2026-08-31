@@ -13,7 +13,10 @@ Item {
   property var items: []
   property string itemsJson: ""
   property var positions: ({})
-  property string desktopPath: Quickshell.env("HOME") + "/Desktop"
+  property string desktopPath: ""
+  property bool desktopEnabled: false
+  property string desktopState: "loading"
+  property string desktopReason: ""
   // selectedId is the keyboard cursor/anchor for compatibility with the
   // original single-selection implementation. selectedIds is the bounded,
   // authoritative selection set.
@@ -37,10 +40,51 @@ Item {
   property string operationOutput: ""
   property string operationErrorOutput: ""
   property string operationCommand: ""
+  property string operationState: ""
+  property bool operationCancellable: false
+  property int operationTotal: 0
+  property int operationProcessed: 0
+  property int operationCompleted: 0
+  property int operationFailed: 0
+  property int operationCancelled: 0
+  property int operationCurrentIndex: -1
+  property string reserveOutput: ""
+  property string reserveErrorOutput: ""
+  property string reservationKind: ""
+  property var operationPendingSources: []
+  property string operationPendingDestination: ""
+  property string statusOutput: ""
+  property string statusErrorOutput: ""
+  property string cancelOutput: ""
+  property string cancelErrorOutput: ""
+  property bool virtualActionBusy: false
+  property string virtualActionOutput: ""
+  property string virtualActionErrorOutput: ""
+  property string virtualActionName: ""
+  property string virtualActionScreen: ""
   property string inspectOutput: ""
   property string inspectErrorOutput: ""
   property string inspectPendingId: ""
   property string inspectPendingScreen: ""
+  property bool deskMenuOpen: false
+  property string deskMenuScreen: ""
+  property int deskMenuRevision: 0
+  property string deskMenuCurrentAction: ""
+  property string announcement: ""
+  property bool quickLookBusy: false
+  property string quickLookOutput: ""
+  property string quickLookErrorOutput: ""
+  property string quickLookScreen: ""
+  property string renameOutput: ""
+  property string renameErrorOutput: ""
+  property string renamePendingId: ""
+  property string renamePendingName: ""
+  property string renamePendingScreen: ""
+  property string pendingSelectionPath: ""
+  property var layoutUndoSnapshot: null
+  property string layoutUndoScreen: ""
+  property bool layoutUndoAvailable: false
+  property string lastUndoKind: ""
   property var inspectorSubject: null
   property bool inspectorOpen: false
   property string inspectorScreen: ""
@@ -67,6 +111,7 @@ Item {
   readonly property string indexScript: pluginDir + "/bin/desktop-index"
   readonly property string addScript: pluginDir + "/bin/add-to-desktop"
   readonly property string operationScript: pluginDir + "/bin/desktop-operation"
+  readonly property string quickLookScript: pluginDir + "/bin/desktop-quick-look"
   readonly property string hyperlinkScript: home + "/.local/bin/create-hyperlink"
   readonly property string positionsPath: home + "/.config/omarchy/one-bit-bureau/desktop-icon-positions.json"
   readonly property string pluginId: String((root.manifest && root.manifest.id) || "io.github.regionallyfamous.one-bit-bureau")
@@ -82,6 +127,7 @@ Item {
 
   signal inspectRequested(var payload, string screenName)
   signal inspectorCloseRequested()
+  signal renameFinished(bool success, string message, string newPath, string screenName)
 
   IpcHandler {
     target: "regionallyfamous.one-bit-bureau.desktop"
@@ -92,6 +138,132 @@ Item {
     function getLastRouteValid(): bool { return root.lastRouteValid }
     function getLastRouteReason(): string { return root.lastRouteReason }
     function getLastRouteSummary(): string { return root.lastRouteSummary }
+    function openDeskMenu(screenName: string): bool { return root.openDeskMenu(screenName) }
+    function closeDeskMenu(): bool { return root.closeDeskMenu() }
+    function toggleDeskMenu(screenName: string): bool { return root.toggleDeskMenu(screenName) }
+    function getDeskMenuOpen(): bool { return root.deskMenuOpen }
+    function getDeskMenuScreen(): string { return root.deskMenuScreen }
+    function getDeskMenuCurrentAction(): string { return root.deskMenuCurrentAction }
+    function getDeskMenuLabels(): string {
+      var entries = root.deskMenuEntries()
+      var labels = []
+      for (var i = 0; i < entries.length; i++)
+        labels.push(String(entries[i].label || "").trim())
+      return labels.join("|")
+    }
+    function getSelectedId(): string { return root.selectedId }
+    function getVisualIndex(itemId: string, screenName: string): int {
+      var wanted = String(itemId || "").slice(0, 255)
+      var order = root.visualOrder(screenName)
+      for (var i = 0; i < order.length; i++)
+        if (String(order[i].id || "") === wanted)
+          return i
+      return -1
+    }
+    function getVisualBounds(screenName: string): string {
+      return JSON.stringify(root.visualBoundsForScreen(screenName))
+    }
+    function getSelectionCount(): int { return root.selectedIds.length }
+    function getOperationBusy(): bool { return root.operationBusy }
+    function getOperationState(): string { return root.operationState }
+    function getOperationMessage(): string { return root.operationMessage }
+    function getOperationProgress(): string {
+      return root.operationProcessed + "/" + root.operationTotal
+    }
+    function getOperationCancellable(): bool { return root.operationCancellable }
+    function cancelOperation(): bool { return root.cancelCurrentOperation() }
+  }
+
+  function normalizedScreenName(screenName) {
+    var requested = root.plainText(screenName, 120)
+    for (var i = 0; i < Quickshell.screens.length; i++) {
+      var candidate = String(Quickshell.screens[i].name || "default")
+      if (candidate === requested)
+        return candidate
+    }
+    return Quickshell.screens.length > 0
+      ? String(Quickshell.screens[0].name || "default") : "default"
+  }
+
+  function visualBoundsForScreen(screenName) {
+    var wanted = root.normalizedScreenName(screenName)
+    var instances = desktopInstances.instances
+    for (var i = 0; i < instances.length; i++) {
+      var instance = instances[i]
+      if (instance && instance.screenName === wanted)
+        return instance.visualBounds()
+    }
+    return []
+  }
+
+  function openDeskMenu(screenName) {
+    root.deskMenuScreen = root.normalizedScreenName(screenName)
+    root.deskMenuOpen = true
+    root.deskMenuCurrentAction = ""
+    root.deskMenuRevision += 1
+    return true
+  }
+
+  function closeDeskMenu() {
+    root.deskMenuOpen = false
+    root.deskMenuCurrentAction = ""
+    root.deskMenuRevision += 1
+    return true
+  }
+
+  function noteDeskMenuClosed(screenName) {
+    if (root.deskMenuScreen === String(screenName || "")) {
+      root.deskMenuOpen = false
+      root.deskMenuCurrentAction = ""
+    }
+  }
+
+  function toggleDeskMenu(screenName) {
+    var target = root.normalizedScreenName(screenName)
+    if (root.deskMenuOpen && root.deskMenuScreen === target)
+      return root.closeDeskMenu()
+    return root.openDeskMenu(target)
+  }
+
+  function deskMenuEntries() {
+    var chosen = root.selectedItems(null)
+    var single = chosen.length === 1 ? chosen[0] : null
+    var singleLocal = !!(single && root.localPath(single.path) && !root.isVirtual(single))
+    var current = root.itemById(root.selectedId)
+    var currentLocal = !!(current && root.isSelected(current)
+      && root.localPath(current.path) && !root.isVirtual(current))
+    var hasItems = root.items.length > 0
+    var canTrash = root.selectedPaths(null).length > 0 && !root.operationBusy
+    return [
+      { action: "folder", label: "New Folder", enabled: root.desktopEnabled && !root.operationBusy,
+        reason: !root.desktopEnabled ? "Desktop files are off."
+          : root.operationBusy ? "Another desktop action is in progress." : "" },
+      { action: "quick-look", label: "Quick Look",
+        enabled: currentLocal && !root.quickLookBusy && !root.operationBusy,
+        reason: !currentLocal ? "Select a local item."
+          : root.operationBusy ? "Another desktop action is in progress."
+          : root.quickLookBusy ? "Quick Look is opening." : "" },
+      { action: "inspect", label: "Get Info", enabled: singleLocal,
+        reason: singleLocal ? "" : "Select exactly one local item." },
+      { action: "rename", label: "Rename", enabled: singleLocal && !root.operationBusy,
+        reason: !singleLocal ? "Select exactly one local item."
+          : root.operationBusy ? "Another desktop action is in progress." : "" },
+      { action: "tidy", label: "Tidy Desk", enabled: hasItems,
+        reason: hasItems ? "" : "The Desk is empty." },
+      { action: "arrange-heading", label: "Arrange By", enabled: false,
+        reason: "Choose Name, Kind, or Modified below." },
+      { action: "arrange-name", label: "  Name", enabled: hasItems,
+        reason: hasItems ? "" : "The Desk is empty." },
+      { action: "arrange-kind", label: "  Kind", enabled: hasItems,
+        reason: hasItems ? "" : "The Desk is empty." },
+      { action: "arrange-modified", label: "  Modified", enabled: hasItems,
+        reason: hasItems ? "" : "The Desk is empty." },
+      { action: "undo-layout", label: "Undo Desk Layout", enabled: root.layoutUndoAvailable,
+        reason: root.layoutUndoAvailable ? "" : "No desk layout change to undo." },
+      { action: "trash-selected", label: "Move to Trash", enabled: canTrash,
+        reason: canTrash ? "" : root.operationBusy
+          ? "Another desktop action is in progress." : "Select one or more local items." }
+    ]
   }
 
   function publishRouteState(screenName, visible, valid, reason, summary) {
@@ -134,6 +306,14 @@ Item {
 
   function isTrash(item) {
     return !!(item && item.kind === "trash")
+  }
+
+  function isVirtual(item) {
+    return !!(item && item.virtual === true && item.virtualId)
+  }
+
+  function isFolderTarget(item) {
+    return !!(item && !root.isVirtual(item) && (item.kind === "folder" || item.isDir))
   }
 
   function isUntrustedLauncher(item) {
@@ -250,9 +430,22 @@ Item {
     for (var i = 0; i < root.selectedIds.length && selected.length < root.maxOperationItems; i++)
       wanted[root.selectedIds[i]] = true
     for (var j = 0; j < root.items.length && selected.length < root.maxOperationItems; j++)
-      if (wanted[root.items[j].id] && !root.isTrash(root.items[j]))
+      if (wanted[root.items[j].id] && !root.isVirtual(root.items[j]))
         selected.push(root.items[j])
-    if (selected.length === 0 && fallbackItem && !root.isTrash(fallbackItem))
+    if (selected.length === 0 && fallbackItem && !root.isVirtual(fallbackItem))
+      selected.push(fallbackItem)
+    return selected
+  }
+
+  function selectedOpenItems(fallbackItem) {
+    var selected = []
+    var wanted = ({})
+    for (var i = 0; i < root.selectedIds.length && selected.length < root.maxOperationItems; i++)
+      wanted[root.selectedIds[i]] = true
+    for (var j = 0; j < root.items.length && selected.length < root.maxOperationItems; j++)
+      if (wanted[root.items[j].id])
+        selected.push(root.items[j])
+    if (selected.length === 0 && fallbackItem)
       selected.push(fallbackItem)
     return selected
   }
@@ -391,6 +584,8 @@ Item {
     var kind = String(item.kind || "")
     if (kind === "trash")
       return "trash"
+    if (kind === "volume")
+      return "volume"
     if (kind === "folder" || item.isDir)
       return "folder"
     if (kind === "image")
@@ -427,7 +622,9 @@ Item {
     if (root.isUntrustedLauncher(item))
       return "Untrusted application shortcut. Opening asks for confirmation."
     if (root.isTrash(item))
-      return "Trash. Press to open."
+      return "Trash is " + (item.trashState || "in an unknown state") + ". Press to open."
+    if (item.kind === "volume")
+      return "Mounted volume. Press to open. Use the context menu to unmount or eject when available."
     if (root.hasImagePreview(item))
       return "Picture file shown as a grayscale photo thumbnail. Press to open the original."
     if (item.isDir || item.kind === "folder")
@@ -463,6 +660,14 @@ Item {
       preview: preview,
       isDir: !!item.isDir,
       kind: kind,
+      modifiedUnixMs: Math.max(0, Math.floor(Number(item.modifiedUnixMs || 0))),
+      virtual: item.virtual === true,
+      virtualId: String(item.virtualId || "").slice(0, 80),
+      trashState: root.plainText(item.trashState, 24),
+      canOpen: item.canOpen === true,
+      canUnmount: item.canUnmount === true,
+      canEject: item.canEject === true,
+      mountPath: String(item.mountPath || ""),
       trusted: item.trusted === true || kind !== "launcher"
     }
   }
@@ -573,18 +778,87 @@ Item {
   }
 
   function openItem(item) {
-    if (!item || !item.path) return
+    if (!item) return
+    if (root.isVirtual(item)) {
+      root.performVirtualAction("open", item.id, "")
+      return
+    }
+    if (!item.path) return
     Quickshell.execDetached(["/usr/bin/python3", root.indexScript, "--open", item.path])
   }
 
   function openOrConfirm(item, screenName) {
-    if (!item || !item.path) return
+    if (!item) return
+    if (root.isVirtual(item)) {
+      root.performVirtualAction("open", item.id, screenName)
+      return
+    }
+    if (!item.path) return
     if (root.isUntrustedLauncher(item)) {
       root.pendingTrust = item
       root.pendingTrustScreen = screenName || ""
       return
     }
     root.openItem(item)
+  }
+
+  function performVirtualAction(action, itemId, screenName) {
+    var verb = String(action || "")
+    var item = root.itemById(itemId)
+    if (virtualActionProc.running || root.virtualActionBusy || root.operationBusy) {
+      root.announcement = "Another desktop action is still in progress."
+      return false
+    }
+    if (!root.isVirtual(item) || ["open", "unmount", "eject"].indexOf(verb) === -1
+        || (verb === "open" && item.canOpen !== true)
+        || (verb === "unmount" && item.canUnmount !== true)
+        || (verb === "eject" && item.canEject !== true)) {
+      root.setOperationError("That virtual desktop action is unavailable.", screenName)
+      return false
+    }
+    root.virtualActionOutput = ""
+    root.virtualActionErrorOutput = ""
+    root.virtualActionName = verb
+    root.virtualActionScreen = String(screenName || "")
+    root.virtualActionBusy = true
+    root.operationScreen = root.virtualActionScreen
+    root.operationMessage = root.plainText(item.name, 100) + " -> "
+      + (verb === "open" ? "Open" : verb === "unmount" ? "Unmount" : "Eject")
+      + " -> " + (root.isTrash(item) ? "Trash" : "Device")
+    root.operationIsError = false
+    virtualActionProc.command = ["/usr/bin/python3", root.indexScript,
+      "--virtual-action", verb, "--virtual-id", String(item.virtualId)]
+    virtualActionProc.running = true
+    virtualActionDeadline.restart()
+    return true
+  }
+
+  function applyVirtualActionResult(raw, exitCode) {
+    virtualActionDeadline.stop()
+    root.virtualActionBusy = false
+    var text = String(raw || "").trim()
+    var data = null
+    try {
+      data = text && text.length <= root.maxOperationChars ? JSON.parse(text) : null
+    } catch (e) {
+      data = null
+    }
+    var success = data && data.schemaVersion === 1 && data.command === "virtual-action"
+      && data.ok === true && (data.state === "requested" || data.state === "completed")
+    if (success) {
+      var action = root.plainText(data.action, 24)
+      var resultVerb = action === "open" ? "Opening" : action === "unmount" ? "Unmounted" : "Ejected"
+      root.operationMessage = resultVerb + " " + root.plainText(data.name, 100)
+      root.operationIsError = false
+      receiptDismissTimer.restart()
+      Qt.callLater(root.refresh)
+    } else {
+      var reason = data && data.error ? root.plainText(data.error.message, 240)
+        : root.plainText(root.virtualActionErrorOutput, 240)
+      root.setOperationError(reason || "Virtual desktop action failed.", root.virtualActionScreen)
+    }
+    root.virtualActionName = ""
+    root.virtualActionScreen = ""
   }
 
   function clearTrustPrompt() {
@@ -633,7 +907,17 @@ Item {
     var command = String(data.command || root.operationCommand)
     var state = String(data.state || "")
     if (state === "partial")
-      return completed + " of " + total + " items completed · Review the failed items"
+      return completed + " of " + total + " items completed · "
+        + (Number(data.progress && data.progress.cancelled || 0) > 0
+          ? "The rest were cancelled" : "Review the failed items")
+    if (state === "cancelled")
+      return completed > 0
+        ? "Cancelled after " + completed + " of " + total + " items completed"
+        : "Cancelled before any items changed"
+    if (state === "failed")
+      return completed > 0
+        ? completed + " of " + total + " items completed · The action failed"
+        : "Desktop action failed before any items changed"
     if (command === "copy")
       return "Copied " + noun + " to " + destination
     if (command === "move")
@@ -649,6 +933,7 @@ Item {
 
   function applyOperationResult(raw, exitCode) {
     operationDeadline.stop()
+    statusPollTimer.stop()
     root.operationBusy = false
     var text = String(raw || "").trim()
     if (!text || text.length > root.maxOperationChars) {
@@ -659,25 +944,36 @@ Item {
     }
     try {
       var data = JSON.parse(text)
-      if (!data || data.schemaVersion !== 1 || typeof data.ok !== "boolean") {
+      if (!data || data.schemaVersion !== 1 || typeof data.ok !== "boolean"
+          || String(data.command || "") !== root.operationCommand
+          || String(data.operationId || "") !== root.operationId
+          || ["completed", "partial", "failed", "cancelled", "undone", "undo-partial"].indexOf(String(data.state || "")) === -1) {
         root.setOperationError("Desktop action returned an invalid result.")
         return
       }
       var error = data.error && typeof data.error === "object"
         ? root.plainText(data.error.message, 260)
         : ""
-      root.operationMessage = data.ok || data.state === "partial"
+      root.operationMessage = data.ok || data.state === "partial" || data.state === "cancelled"
         ? root.operationReceipt(data)
         : (error || "Desktop action failed.")
-      root.operationIsError = !data.ok
+      root.operationIsError = data.state === "failed" || data.state === "partial"
+      root.updateOperationProgress(data)
+      root.operationState = root.plainText(data.state, 32)
+      root.operationCancellable = false
       root.operationId = data.undoable === true ? String(data.operationId || "").slice(0, 160) : ""
       root.operationUndoable = data.undoable === true && root.operationId !== ""
+      if (root.operationUndoable)
+        root.lastUndoKind = "operation"
       if (!root.operationUndoable)
         receiptDismissTimer.restart()
       else
         receiptDismissTimer.stop()
       Qt.callLater(root.refresh)
       root.operationCommand = ""
+      root.reservationKind = ""
+      root.operationPendingSources = []
+      root.operationPendingDestination = ""
     } catch (e) {
       console.warn("one-bit-bureau desktop: failed to parse operation result:", e)
       var fallback = root.plainText(root.operationErrorOutput, 260)
@@ -686,8 +982,175 @@ Item {
     }
   }
 
+  function updateOperationProgress(data) {
+    var progress = data && data.progress && typeof data.progress === "object"
+      ? data.progress : ({})
+    function boundedInt(value, fallback) {
+      var number = Math.floor(Number(value))
+      if (!isFinite(number))
+        return fallback
+      return Math.max(0, Math.min(root.maxOperationItems, number))
+    }
+    root.operationTotal = boundedInt(progress.total, root.operationTotal)
+    root.operationProcessed = boundedInt(progress.processed, root.operationProcessed)
+    root.operationCompleted = boundedInt(progress.completed, root.operationCompleted)
+    root.operationFailed = boundedInt(progress.failed, root.operationFailed)
+    root.operationCancelled = boundedInt(progress.cancelled, root.operationCancelled)
+    var currentIndex = Number(progress.currentIndex)
+    root.operationCurrentIndex = isFinite(currentIndex)
+      ? Math.max(-1, Math.min(root.maxOperationItems - 1, Math.floor(currentIndex))) : -1
+  }
+
+  function beginReservation(command, sourceCount, kind) {
+    root.reserveOutput = ""
+    root.reserveErrorOutput = ""
+    root.reservationKind = String(kind || "operation")
+    reserveProc.command = ["/usr/bin/python3", root.operationScript,
+      "reserve", command, "--source-count", String(sourceCount)]
+    reserveProc.running = true
+    reserveDeadline.restart()
+  }
+
+  function applyReservation(raw, exitCode) {
+    reserveDeadline.stop()
+    var text = String(raw || "").trim()
+    var data = null
+    try {
+      data = text && text.length <= root.maxOperationChars ? JSON.parse(text) : null
+    } catch (e) {
+      data = null
+    }
+    var valid = data && data.schemaVersion === 1 && data.command === "reserve"
+      && data.ok === true && data.reservationAccepted === true
+      && String(data.operationCommand || "") === root.operationCommand
+      && Number(data.expectedSourceCount) === root.operationPendingSources.length
+      && data.state === "queued" && /^[0-9a-f]{32}$/.test(String(data.operationId || ""))
+    if (!valid) {
+      var reason = data && data.error ? root.plainText(data.error.message, 240) : ""
+      var kind = root.reservationKind
+      var screenName = root.operationScreen
+      root.operationBusy = false
+      root.operationState = "failed"
+      root.operationCancellable = false
+      root.reservationKind = ""
+      root.setOperationError(reason || "Desktop action could not be reserved.", screenName)
+      if (kind === "rename") {
+        root.renamePendingId = ""
+        root.renamePendingName = ""
+        root.renamePendingScreen = ""
+        root.renameFinished(false, root.operationMessage, "", screenName)
+      }
+      root.operationCommand = ""
+      root.operationPendingSources = []
+      root.operationPendingDestination = ""
+      return
+    }
+    root.operationId = String(data.operationId)
+    root.operationState = "queued"
+    root.operationCancellable = data.cancellable === true
+    root.updateOperationProgress(data)
+    root.startReservedWorker()
+  }
+
+  function startReservedWorker() {
+    var command = root.operationCommand
+    var id = root.operationId
+    if (!id || !command)
+      return
+    if (root.reservationKind === "rename") {
+      var renameSource = root.operationPendingSources.length > 0
+        ? root.operationPendingSources[0] : ""
+      renameProc.command = ["/usr/bin/python3", root.operationScript,
+        "rename", "--operation-id", id, "--name", root.renamePendingName, renameSource]
+      renameProc.running = true
+      renameDeadline.restart()
+    } else {
+      var cmd = ["/usr/bin/python3", root.operationScript, command,
+                 "--operation-id", id]
+      if (command === "copy" || command === "move") {
+        cmd.push("--destination")
+        cmd.push(root.operationPendingDestination)
+      }
+      for (var i = 0; i < root.operationPendingSources.length; i++)
+        cmd.push(root.operationPendingSources[i])
+      operationProc.command = cmd
+      operationProc.running = true
+      operationDeadline.restart()
+    }
+    statusPollTimer.restart()
+  }
+
+  function applyOperationStatus(raw, exitCode) {
+    if (!root.operationBusy)
+      return
+    var text = String(raw || "").trim()
+    if (!text || text.length > root.maxOperationChars)
+      return
+    try {
+      var data = JSON.parse(text)
+      if (!data || data.schemaVersion !== 1 || data.command !== "status"
+          || String(data.operationId || "") !== root.operationId
+          || String(data.operationCommand || "") !== root.operationCommand)
+        return
+      root.operationState = root.plainText(data.state, 32)
+      root.operationCancellable = data.cancellable === true
+      root.updateOperationProgress(data)
+      var progressText = root.operationTotal > 0
+        ? " · " + root.operationProcessed + "/" + root.operationTotal : ""
+      if (root.operationState === "cancelling")
+        root.operationMessage = "Cancelling desktop action" + progressText
+      else if (root.operationBusy)
+        root.operationMessage = root.operationNoun(root.operationTotal || root.operationPendingSources.length)
+          + " -> " + (root.operationCommand === "trash" ? "Move to Trash"
+            : root.operationCommand === "rename" ? "Rename"
+            : root.operationCommand === "copy" ? "Copy" : "Move")
+          + " -> " + (root.operationCommand === "trash" ? "Trash"
+            : root.operationCommand === "rename" ? root.renamePendingName
+            : root.basename(root.operationPendingDestination)) + progressText
+    } catch (e) {
+      // A single missed status sample must not interrupt the worker.
+    }
+  }
+
+  function cancelCurrentOperation() {
+    if (!root.operationBusy || !root.operationCancellable || !root.operationId
+        || cancelProc.running)
+      return false
+    root.cancelOutput = ""
+    root.cancelErrorOutput = ""
+    root.operationCancellable = false
+    root.operationState = "cancelling"
+    root.operationMessage = "Cancelling desktop action · "
+      + root.operationProcessed + "/" + root.operationTotal
+    cancelProc.command = ["/usr/bin/python3", root.operationScript,
+                          "cancel", root.operationId]
+    cancelProc.running = true
+    cancelDeadline.restart()
+    return true
+  }
+
+  function applyCancelResult(raw, exitCode) {
+    var text = String(raw || "").trim()
+    try {
+      var data = text && text.length <= root.maxOperationChars ? JSON.parse(text) : null
+      if (!data || data.schemaVersion !== 1 || data.command !== "cancel"
+          || data.cancelAccepted !== true || String(data.operationId || "") !== root.operationId
+          || String(data.operationCommand || "") !== root.operationCommand)
+        throw new Error("invalid cancel receipt")
+      root.operationState = root.plainText(data.state, 32)
+      root.operationCancellable = data.cancellable === true
+      root.updateOperationProgress(data)
+    } catch (e) {
+      root.operationCancellable = false
+      root.operationMessage = root.plainText(root.cancelErrorOutput, 220)
+        || "The desktop action could not be cancelled."
+      root.operationIsError = true
+    }
+  }
+
   function runOperation(command, sources, destination, screenName) {
-    if (operationProc.running || root.operationBusy) {
+    if (reserveProc.running || operationProc.running || renameProc.running
+        || quickLookProc.running || virtualActionProc.running || root.operationBusy) {
       root.operationMessage = "Another desktop action is still in progress."
       root.operationIsError = true
       return false
@@ -711,32 +1174,37 @@ Item {
       root.setOperationError("Only local files can be used in desktop actions.", screenName)
       return false
     }
-    var cmd = ["/usr/bin/python3", root.operationScript, verb]
     if (verb === "copy" || verb === "move") {
       var target = root.localPath(destination)
       if (!target) {
         root.setOperationError("The destination is not a local folder.", screenName)
         return false
       }
-      cmd.push("--destination")
-      cmd.push(target)
+      root.operationPendingDestination = target
+    } else {
+      root.operationPendingDestination = ""
     }
-    for (var j = 0; j < local.length; j++)
-      cmd.push(local[j])
+    root.operationPendingSources = local
     root.operationOutput = ""
     root.operationErrorOutput = ""
     root.operationCommand = verb
     root.operationScreen = String(screenName || "")
     root.operationBusy = true
+    root.operationState = "reserving"
+    root.operationTotal = local.length
+    root.operationProcessed = 0
+    root.operationCompleted = 0
+    root.operationFailed = 0
+    root.operationCancelled = 0
+    root.operationCurrentIndex = -1
+    root.operationCancellable = false
     root.operationMessage = root.operationNoun(local.length) + " -> "
       + (verb === "copy" ? "Copy" : verb === "move" ? "Move" : "Move to Trash")
       + " -> " + (verb === "trash" ? "Trash" : root.basename(destination))
     root.operationIsError = false
     root.operationUndoable = false
     root.operationId = ""
-    operationProc.command = cmd
-    operationProc.running = true
-    operationDeadline.restart()
+    root.beginReservation(verb, local.length, "operation")
     return true
   }
 
@@ -762,6 +1230,209 @@ Item {
     root.operationScreen = ""
   }
 
+  function quickLookSelection(screenName) {
+    if (root.operationBusy || root.virtualActionBusy) {
+      root.announcement = "Quick Look is unavailable while a desktop action is in progress."
+      return false
+    }
+    if (quickLookProc.running || root.quickLookBusy) {
+      root.setOperationError("Quick Look is already opening.", screenName)
+      return false
+    }
+    var current = root.itemById(root.selectedId)
+    if (!current || !root.isSelected(current) || root.isVirtual(current)) {
+      root.setOperationError("Quick Look needs a selected local file.", screenName)
+      return false
+    }
+    var path = root.localPath(current.path)
+    if (!path) {
+      root.setOperationError("Quick Look only previews local files.", screenName)
+      return false
+    }
+    root.quickLookOutput = ""
+    root.quickLookErrorOutput = ""
+    root.quickLookScreen = String(screenName || "")
+    root.quickLookBusy = true
+    root.announcement = "Opening Quick Look for " + root.plainText(current.name, 100)
+    quickLookProc.command = ["/usr/bin/python3", root.quickLookScript, path]
+    quickLookProc.running = true
+    quickLookDeadline.restart()
+    return true
+  }
+
+  function validRenameName(value) {
+    var name = String(value || "").trim()
+    if (!name || name === "." || name === ".." || name.length > root.maxNameLength)
+      return ""
+    if (name.indexOf("/") !== -1 || name.indexOf("\u0000") !== -1
+        || /[\u0001-\u001F\u007F]/.test(name))
+      return ""
+    return name
+  }
+
+  function requestRename(itemId, newName, screenName) {
+    if (renameProc.running || root.renamePendingId !== "" || root.operationBusy) {
+      root.renameFinished(false, "Another desktop action is still in progress.", "", String(screenName || ""))
+      return false
+    }
+    var item = root.itemById(itemId)
+    var name = root.validRenameName(newName)
+    var source = item ? root.localPath(item.path) : ""
+    if (!item || root.isVirtual(item) || !source || !name) {
+      root.renameFinished(false, "Choose one local desktop item and enter a valid name.", "", String(screenName || ""))
+      return false
+    }
+    if (name === String(item.name || "")) {
+      root.renameFinished(true, "Name unchanged.", source, String(screenName || ""))
+      return true
+    }
+    root.renameOutput = ""
+    root.renameErrorOutput = ""
+    root.renamePendingId = String(item.id || "")
+    root.renamePendingName = name
+    root.renamePendingScreen = String(screenName || "")
+    root.operationScreen = root.renamePendingScreen
+    root.operationMessage = root.plainText(item.name, 100) + " -> Rename -> " + name
+    root.operationIsError = false
+    root.operationBusy = true
+    root.operationCommand = "rename"
+    root.operationState = "reserving"
+    root.operationTotal = 1
+    root.operationProcessed = 0
+    root.operationCompleted = 0
+    root.operationFailed = 0
+    root.operationCancelled = 0
+    root.operationCurrentIndex = -1
+    root.operationCancellable = false
+    root.operationUndoable = false
+    root.operationId = ""
+    root.operationPendingSources = [source]
+    root.operationPendingDestination = ""
+    root.beginReservation("rename", 1, "rename")
+    return true
+  }
+
+  function applyRenameResult(raw, exitCode) {
+    renameDeadline.stop()
+    statusPollTimer.stop()
+    root.operationBusy = false
+    var pendingScreen = root.renamePendingScreen
+    var pendingName = root.renamePendingName
+    var text = String(raw || "").trim()
+    var success = false
+    var message = "Rename failed."
+    var newPath = ""
+    if (!text || text.length > root.maxOperationChars) {
+      message = text.length > root.maxOperationChars
+        ? "Rename returned too much data."
+        : "Rename is unavailable. The desktop helper did not return a result."
+    } else {
+      try {
+        var data = JSON.parse(text)
+        if (data && data.schemaVersion === 1 && data.command === "rename"
+            && typeof data.ok === "boolean"
+            && String(data.operationId || "") === root.operationId
+            && ["completed", "failed", "cancelled"].indexOf(String(data.state || "")) !== -1) {
+          root.updateOperationProgress(data)
+          root.operationState = root.plainText(data.state, 32)
+          var results = Array.isArray(data.results) ? data.results : []
+          if (data.ok && results.length > 0 && results[0].status === "completed") {
+            newPath = root.localPath(results[0].destination)
+            success = newPath !== ""
+            message = success ? "Renamed to " + pendingName : "Rename returned an invalid destination."
+          } else {
+            message = data.error && data.error.message
+              ? root.plainText(data.error.message, 260)
+              : results.length > 0 && results[0].error
+                ? root.plainText(results[0].error.message, 260) : "Rename failed."
+          }
+        } else {
+          message = "Rename returned an invalid result."
+        }
+      } catch (e) {
+        message = root.plainText(root.renameErrorOutput, 260) || "Rename returned an invalid result."
+      }
+    }
+    root.operationMessage = message
+    root.operationIsError = !success
+    root.operationUndoable = false
+    root.operationCancellable = false
+    root.operationId = ""
+    root.pendingSelectionPath = success ? newPath : ""
+    root.renamePendingId = ""
+    root.renamePendingName = ""
+    root.renamePendingScreen = ""
+    root.operationCommand = ""
+    root.reservationKind = ""
+    root.operationPendingSources = []
+    root.operationPendingDestination = ""
+    root.renameFinished(success, message, newPath, pendingScreen)
+    receiptDismissTimer.restart()
+    if (success)
+      Qt.callLater(root.refresh)
+  }
+
+  function applyDeskLayout(screenName, updates, label) {
+    var screen = root.normalizedScreenName(screenName)
+    var values = Array.isArray(updates) ? updates.slice(0, root.maxItems) : []
+    if (values.length === 0)
+      return false
+    var next = JSON.parse(JSON.stringify(root.positions || {}))
+    var current = next[screen] && typeof next[screen] === "object" ? next[screen] : ({})
+    root.layoutUndoSnapshot = JSON.parse(JSON.stringify(current))
+    root.layoutUndoScreen = screen
+    root.layoutUndoAvailable = true
+    root.lastUndoKind = "layout"
+    next[screen] = current
+    for (var i = 0; i < values.length; i++) {
+      var update = values[i]
+      if (!update || !root.itemById(update.id))
+        continue
+      current[String(update.id)] = {
+        x: Math.round(Number(update.x) || 0),
+        y: Math.round(Number(update.y) || 0)
+      }
+    }
+    root.positions = next
+    root.savePositions()
+    root.operationScreen = screen
+    root.operationMessage = root.plainText(label, 120) || "Desk layout updated"
+    root.operationIsError = false
+    root.operationUndoable = false
+    root.announcement = root.operationMessage + ". Undo Desk Layout is available."
+    receiptDismissTimer.restart()
+    return true
+  }
+
+  function undoDeskLayout() {
+    if (!root.layoutUndoAvailable || !root.layoutUndoSnapshot)
+      return false
+    var next = JSON.parse(JSON.stringify(root.positions || {}))
+    next[root.layoutUndoScreen] = JSON.parse(JSON.stringify(root.layoutUndoSnapshot))
+    root.positions = next
+    root.savePositions()
+    root.operationScreen = root.layoutUndoScreen
+    root.operationMessage = "Undid the last desk layout"
+    root.operationIsError = false
+    root.layoutUndoSnapshot = null
+    root.layoutUndoScreen = ""
+    root.layoutUndoAvailable = false
+    root.lastUndoKind = ""
+    root.announcement = root.operationMessage
+    receiptDismissTimer.restart()
+    return true
+  }
+
+  function undoMostRecent() {
+    if (root.lastUndoKind === "layout" && root.layoutUndoAvailable)
+      return root.undoDeskLayout()
+    if (root.operationUndoable) {
+      root.undoLastOperation()
+      return true
+    }
+    return false
+  }
+
   function trashUrls(urls, screenName) {
     root.runOperation("trash", urls, "", screenName)
   }
@@ -779,6 +1450,10 @@ Item {
   }
 
   function newFolder() {
+    if (!root.desktopEnabled || !root.localPath(root.desktopPath)) {
+      root.setOperationError("Desktop files are off. Choose a Desktop folder in your XDG user-directory settings.")
+      return
+    }
     Quickshell.execDetached([
       "bash", "-lc",
       "d=" + Util.shellQuote(root.desktopPath) + "; " +
@@ -802,7 +1477,8 @@ Item {
   }
 
   function openDesktopFolder() {
-    Quickshell.execDetached(["xdg-open", root.desktopPath])
+    if (root.desktopEnabled && root.localPath(root.desktopPath))
+      Quickshell.execDetached(["xdg-open", root.desktopPath])
   }
 
   function switchWallpaper() {
@@ -813,19 +1489,19 @@ Item {
   }
 
   function placeUrls(urls, mode) {
-    if (!urls || urls.length === 0) return
+    if (!root.desktopEnabled || !urls || urls.length === 0) return
     root.runOperation(mode === "move" ? "move" : "copy", urls, root.desktopPath)
   }
 
   function dropMode(drop) {
-    if (!drop) return "copy"
-    if (drop.proposedAction === Qt.LinkAction) return "link"
-    if (drop.proposedAction === Qt.MoveAction) return "move"
+    // External drags never transfer source ownership. Copy is the only
+    // supported route into the Desktop or one of its folders.
     return "copy"
   }
 
   function inspectorFallback(item, reason) {
-    var subtitle = item && (item.kind === "folder" || item.isDir)
+    var subtitle = item && item.kind === "volume" ? "Mounted volume"
+      : item && (item.kind === "folder" || item.isDir)
       ? "Folder"
       : item && item.kind === "launcher" ? "Application shortcut"
       : item && item.kind === "trash" ? "Trash"
@@ -865,8 +1541,9 @@ Item {
         {
           id: "moveToTrash",
           label: "Move to Trash",
-          enabled: !!item && !root.isTrash(item),
-          reason: item && root.isTrash(item) ? "Trash cannot be moved into itself." : item ? "" : "Item is missing.",
+          enabled: !!item && !root.isVirtual(item),
+          reason: item && root.isVirtual(item) ? "Virtual desktop objects cannot be moved to Trash."
+            : item ? "" : "Item is missing.",
           destructive: true
         },
         {
@@ -898,6 +1575,10 @@ Item {
   function requestInspector(item, screenName) {
     if (!item || !item.id)
       return
+    if (root.isVirtual(item)) {
+      root.publishInspector(root.inspectorFallback(item, "Virtual desktop object"), screenName)
+      return
+    }
     if (inspectProc.running) {
       root.inspectPendingId = ""
       root.inspectPendingScreen = ""
@@ -982,7 +1663,7 @@ Item {
       root.revealItem(item)
       return true
     }
-    if (action === "moveToTrash" && !root.isTrash(item)) {
+    if (action === "moveToTrash" && !root.isVirtual(item)) {
       root.trashUrls([item.path], root.inspectorScreen)
       return true
     }
@@ -1009,8 +1690,14 @@ Item {
     try {
       var data = JSON.parse(text)
       var errorMessage = root.plainText(data.error, 240)
-      root.statusMessage = errorMessage
-        ? "Desktop could not be read: " + errorMessage
+      root.desktopEnabled = data.desktopEnabled === true
+      root.desktopState = root.plainText(data.desktopState, 32)
+        || (root.desktopEnabled ? "enabled" : "disabled")
+      root.desktopReason = root.plainText(data.desktopReason, 240)
+      root.statusMessage = !root.desktopEnabled
+        ? "Desktop files are off. " + (root.desktopReason
+          || "Choose a Desktop folder in your XDG user-directory settings to show files here.")
+        : errorMessage ? "Desktop could not be read: " + errorMessage
         : data.truncated ? "Some desktop objects are not shown." : ""
       root.statusIsError = !!errorMessage
       var incoming = Array.isArray(data.items) ? data.items.slice(0, root.maxItems) : []
@@ -1020,13 +1707,28 @@ Item {
         if (item && item.id)
           items.push(item)
       }
-      var desktop = data.desktop ? String(data.desktop) : root.desktopPath
-      var next = JSON.stringify({ desktop: desktop, items: items })
+      var desktop = root.desktopEnabled ? root.localPath(data.desktop) : ""
+      var next = JSON.stringify({ desktopEnabled: root.desktopEnabled,
+        desktopState: root.desktopState, desktopReason: root.desktopReason,
+        desktop: desktop, items: items })
       if (next === root.itemsJson)
         return
       root.desktopPath = desktop
       root.itemsJson = next
       root.items = items
+      if (root.pendingSelectionPath) {
+        var renamedId = ""
+        for (var renamedIndex = 0; renamedIndex < items.length; renamedIndex++) {
+          if (root.localPath(items[renamedIndex].path) === root.pendingSelectionPath) {
+            renamedId = items[renamedIndex].id
+            break
+          }
+        }
+        if (renamedId) {
+          root.setSelectedIds([renamedId], renamedId, renamedId)
+          root.pendingSelectionPath = ""
+        }
+      }
       // Prune disappeared objects from selection without changing the anchor
       // of a surviving range.
       root.setSelectedIds(root.selectedIds, root.selectedId, root.selectionAnchorId)
@@ -1069,6 +1771,11 @@ Item {
     next[screenName][itemId] = { x: Math.round(x), y: Math.round(y) }
     root.positions = next
     root.savePositions()
+    root.layoutUndoSnapshot = null
+    root.layoutUndoScreen = ""
+    root.layoutUndoAvailable = false
+    if (root.lastUndoKind === "layout")
+      root.lastUndoKind = ""
   }
 
   function setItemPositions(screenName, updates) {
@@ -1087,6 +1794,11 @@ Item {
     }
     root.positions = next
     root.savePositions()
+    root.layoutUndoSnapshot = null
+    root.layoutUndoScreen = ""
+    root.layoutUndoAvailable = false
+    if (root.lastUndoKind === "layout")
+      root.lastUndoKind = ""
   }
 
   Process {
@@ -1113,6 +1825,215 @@ Item {
     }
   }
 
+  Process {
+    id: reserveProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.reserveOutput = text
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.reserveErrorOutput = text
+    }
+    onExited: function(exitCode) {
+      if (root.reservationKind !== "")
+        root.applyReservation(root.reserveOutput, exitCode)
+    }
+  }
+
+  Timer {
+    id: reserveDeadline
+    interval: 5000
+    repeat: false
+    onTriggered: {
+      if (!reserveProc.running)
+        return
+      var kind = root.reservationKind
+      var screenName = root.operationScreen
+      reserveProc.running = false
+      root.reservationKind = ""
+      root.setOperationError("Desktop action reservation timed out.", screenName)
+      if (kind === "rename") {
+        root.renamePendingId = ""
+        root.renamePendingName = ""
+        root.renamePendingScreen = ""
+        root.renameFinished(false, root.operationMessage, "", screenName)
+      }
+      root.operationCommand = ""
+      root.operationPendingSources = []
+      root.operationPendingDestination = ""
+    }
+  }
+
+  Process {
+    id: statusProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.statusOutput = text
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.statusErrorOutput = text
+    }
+    onExited: function(exitCode) {
+      root.applyOperationStatus(root.statusOutput, exitCode)
+    }
+  }
+
+  Timer {
+    id: statusPollTimer
+    interval: 250
+    repeat: true
+    onTriggered: {
+      if (!root.operationBusy || !root.operationId) {
+        stop()
+        return
+      }
+      if (statusProc.running)
+        return
+      root.statusOutput = ""
+      root.statusErrorOutput = ""
+      statusProc.command = ["/usr/bin/python3", root.operationScript,
+                            "status", root.operationId]
+      statusProc.running = true
+    }
+  }
+
+  Process {
+    id: cancelProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.cancelOutput = text
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.cancelErrorOutput = text
+    }
+    onExited: function(exitCode) {
+      cancelDeadline.stop()
+      root.applyCancelResult(root.cancelOutput, exitCode)
+    }
+  }
+
+  Timer {
+    id: cancelDeadline
+    interval: 5000
+    repeat: false
+    onTriggered: {
+      if (!cancelProc.running)
+        return
+      cancelProc.running = false
+      root.operationCancellable = false
+      root.operationMessage = "Cancellation did not respond; the desktop action is still running."
+      root.operationIsError = true
+    }
+  }
+
+  Process {
+    id: quickLookProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.quickLookOutput = text
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.quickLookErrorOutput = text
+    }
+    onExited: function(exitCode) {
+      quickLookDeadline.stop()
+      root.quickLookBusy = false
+      var data = null
+      try {
+        data = root.quickLookOutput && root.quickLookOutput.length <= root.maxOperationChars
+          ? JSON.parse(root.quickLookOutput) : null
+      } catch (e) {
+        data = null
+      }
+      if (exitCode !== 0 || !data || data.schemaVersion !== 1
+          || data.command !== "quick-look" || data.ok !== true
+          || data.state !== "requested") {
+        var reason = data && data.error ? root.plainText(data.error.message, 220)
+          : root.plainText(root.quickLookErrorOutput, 220)
+        root.setOperationError(reason || "Quick Look is unavailable. Install or start GNOME Sushi.", root.quickLookScreen)
+      }
+      root.quickLookScreen = ""
+    }
+  }
+
+  Process {
+    id: virtualActionProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.virtualActionOutput = text
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.virtualActionErrorOutput = text
+    }
+    onExited: function(exitCode) {
+      if (root.virtualActionName !== "")
+        root.applyVirtualActionResult(root.virtualActionOutput, exitCode)
+    }
+  }
+
+  Timer {
+    id: virtualActionDeadline
+    interval: 17000
+    repeat: false
+    onTriggered: {
+      if (!virtualActionProc.running)
+        return
+      var screenName = root.virtualActionScreen
+      root.virtualActionName = ""
+      root.virtualActionScreen = ""
+      root.virtualActionBusy = false
+      virtualActionProc.running = false
+      root.setOperationError("Virtual desktop action timed out.", screenName)
+    }
+  }
+
+  Timer {
+    id: quickLookDeadline
+    interval: 10000
+    repeat: false
+    onTriggered: {
+      if (!quickLookProc.running)
+        return
+      quickLookProc.running = false
+      root.quickLookBusy = false
+      root.setOperationError("Quick Look did not respond.", root.quickLookScreen)
+      root.quickLookScreen = ""
+    }
+  }
+
+  Process {
+    id: renameProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.renameOutput = text
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.renameErrorOutput = text
+    }
+    onExited: function(exitCode) {
+      if (root.renamePendingId !== "")
+        root.applyRenameResult(root.renameOutput, exitCode)
+    }
+  }
+
+  Timer {
+    id: renameDeadline
+    interval: 15000
+    repeat: false
+    onTriggered: {
+      if (!renameProc.running)
+        return
+      if (root.cancelCurrentOperation())
+        root.operationMessage = "Rename is taking too long · cancellation requested"
+    }
+  }
+
   Timer {
     id: operationDeadline
     interval: 120000
@@ -1120,9 +2041,8 @@ Item {
     onTriggered: {
       if (!operationProc.running)
         return
-      root.operationCommand = ""
-      operationProc.running = false
-      root.setOperationError("Desktop action timed out. Check the destination before retrying.")
+      if (root.cancelCurrentOperation())
+        root.operationMessage = "Desktop action is taking too long · cancellation requested"
     }
   }
 
@@ -1183,7 +2103,7 @@ Item {
   // immediately instead of waiting for the fallback poll below.
   FileView {
     id: desktopWatch
-    path: root.desktopPath
+    path: root.desktopEnabled ? root.desktopPath : ""
     watchChanges: true
     printErrors: false
     onLoaded: root.refresh()
@@ -1203,6 +2123,7 @@ Item {
   Component.onCompleted: root.refresh()
 
   Variants {
+    id: desktopInstances
     model: Quickshell.screens
 
     PanelWindow {
@@ -1258,8 +2179,35 @@ Item {
       property int emptyClicks: 0
       property int trustFocusIndex: 0
       property int menuCursorIndex: -1
+      property bool marqueeActive: false
+      property bool marqueeConsumed: false
+      property real marqueeStartX: 0
+      property real marqueeStartY: 0
+      property real marqueeCurrentX: 0
+      property real marqueeCurrentY: 0
+      property int marqueeModifiers: Qt.NoModifier
+      property var marqueeBaseSelection: []
+      property string renameItemId: ""
+      property string renameText: ""
+      property string renameError: ""
+      property bool renameBusy: false
       property bool _initialized: false
       property var _knownIds: ({})
+
+      function resetEmptyClickSequence() {
+        panel.emptyClicks = 0
+        emptyClickTimer.stop()
+      }
+
+      onMenuCursorIndexChanged: {
+        if (panel.menuKind !== "desk" || panel.menuCursorIndex < 0
+            || panel.menuCursorIndex >= panel.menuEntries.length) {
+          if (panel.menuKind === "desk")
+            host.deskMenuCurrentAction = ""
+          return
+        }
+        host.deskMenuCurrentAction = String(panel.menuEntries[panel.menuCursorIndex].action || "")
+      }
 
       function selectionNoun(items) {
         var count = items && items.length ? items.length : 0
@@ -1280,7 +2228,7 @@ Item {
 
       function resolveRoute(target, sources, mode, external) {
         var items = Array.isArray(sources) ? sources.slice(0, host.maxOperationItems) : []
-        if (target && (target.kind === "folder" || target.isDir)) {
+        if (host.isFolderTarget(target)) {
           var withoutTarget = []
           for (var sourceIndex = 0; sourceIndex < items.length; sourceIndex++)
             if (String(items[sourceIndex].id || "") !== String(target.id || ""))
@@ -1289,7 +2237,7 @@ Item {
         }
         var noun = panel.selectionNoun(items)
         var destination = target ? host.plainText(target.name, 80) : "Desktop"
-        var verb = external ? (mode === "move" ? "Move" : "Copy") : "Arrange"
+        var verb = external ? "Copy" : "Arrange"
         var valid = items.length > 0
         var reason = valid ? "" : "No local items"
         if (mode === "link") {
@@ -1305,8 +2253,8 @@ Item {
               break
             }
           }
-        } else if (target && (target.kind === "folder" || target.isDir)) {
-          verb = external ? (mode === "move" ? "Move" : "Copy") : "Move"
+        } else if (host.isFolderTarget(target)) {
+          verb = external ? "Copy" : "Move"
           destination = host.plainText(target.name, 80)
           var targetPath = host.localPath(target.path)
           if (!targetPath) {
@@ -1359,7 +2307,7 @@ Item {
         host.publishRouteState(panel.screenName, true, route.valid, route.reason, panel.routeText)
         if (panel.routeEligibilityResolved && panel.routeValid && panel.routeTarget
             && panel.springOpenedTargetId !== panel.routeTargetId
-            && (panel.routeTarget.kind === "folder" || panel.routeTarget.isDir))
+            && host.isFolderTarget(panel.routeTarget))
           springOpenTimer.restart()
       }
 
@@ -1412,10 +2360,10 @@ Item {
         }
         if (route.target && host.isTrash(route.target))
           return host.runOperation("trash", paths, "", panel.screenName)
-        if (route.target && (route.target.kind === "folder" || route.target.isDir))
-          return host.runOperation(route.external && route.mode === "copy" ? "copy" : "move", paths, route.target.path, panel.screenName)
+        if (host.isFolderTarget(route.target))
+          return host.runOperation(route.external ? "copy" : "move", paths, route.target.path, panel.screenName)
         if (route.external)
-          return host.runOperation(route.mode === "move" ? "move" : "copy", paths, host.desktopPath, panel.screenName)
+          return host.runOperation("copy", paths, host.desktopPath, panel.screenName)
         return false
       }
 
@@ -1432,7 +2380,7 @@ Item {
           if (!panel.routeVisible || !panel.routeEligibilityResolved || !panel.routeValid)
             return
           var target = host.itemById(panel.routeTargetId)
-          if (target && (target.kind === "folder" || target.isDir)) {
+          if (host.isFolderTarget(target)) {
             panel.springOpenedTargetId = panel.routeTargetId
             host.openItem(target)
           }
@@ -1455,6 +2403,22 @@ Item {
         if (item && byScreen && byScreen[item.id] && byScreen[item.id].x !== undefined)
           return byScreen[item.id]
         return layoutPos(index)
+      }
+
+      function visualBounds() {
+        var values = []
+        for (var i = 0; i < host.items.length && values.length < host.maxItems; i++) {
+          var item = host.items[i]
+          var pos = panel.posFor(item, i)
+          values.push({
+            id: String(item.id || "").slice(0, 255),
+            x: Math.round(pos.x),
+            y: Math.round(pos.y),
+            width: host.cellW,
+            height: host.cellH
+          })
+        }
+        return values
       }
 
       function snap(x, y) {
@@ -1480,12 +2444,67 @@ Item {
         return null
       }
 
+      function marqueeIds(x1, y1, x2, y2) {
+        var left = Math.min(x1, x2)
+        var top = Math.min(y1, y2)
+        var right = Math.max(x1, x2)
+        var bottom = Math.max(y1, y2)
+        var hits = []
+        for (var i = 0; i < host.items.length && hits.length < host.maxOperationItems; i++) {
+          var item = host.items[i]
+          var pos = panel.posFor(item, i)
+          if (pos.x < right && pos.x + host.cellW > left
+              && pos.y < bottom && pos.y + host.cellH > top)
+            hits.push(String(item.id || ""))
+        }
+        return hits
+      }
+
+      function updateMarqueeSelection() {
+        var hits = panel.marqueeIds(panel.marqueeStartX, panel.marqueeStartY,
+                                    panel.marqueeCurrentX, panel.marqueeCurrentY)
+        var base = Array.isArray(panel.marqueeBaseSelection)
+          ? panel.marqueeBaseSelection.slice(0, host.maxOperationItems) : []
+        var ctrl = !!(panel.marqueeModifiers & Qt.ControlModifier)
+        var shift = !!(panel.marqueeModifiers & Qt.ShiftModifier)
+        var next = []
+        if (shift) {
+          next = base.concat(hits)
+        } else if (ctrl) {
+          var hitSet = ({})
+          for (var i = 0; i < hits.length; i++)
+            hitSet[hits[i]] = true
+          for (var j = 0; j < base.length; j++)
+            if (!hitSet[base[j]])
+              next.push(base[j])
+          for (var k = 0; k < hits.length; k++)
+            if (base.indexOf(hits[k]) === -1)
+              next.push(hits[k])
+        } else {
+          next = hits
+        }
+        var cursor = hits.length > 0 ? hits[hits.length - 1]
+          : next.length > 0 ? next[next.length - 1] : ""
+        host.setSelectedIds(next, cursor,
+                            shift ? (host.selectionAnchorId || cursor) : cursor)
+      }
+
       function trustIconPos() {
         var item = host.pendingTrust
         if (!item)
           return null
         for (var i = 0; i < host.items.length; i++) {
           if (host.items[i].id === item.id)
+            return panel.posFor(host.items[i], i)
+        }
+        return null
+      }
+
+      function renameIconPos() {
+        if (!panel.renameItemId)
+          return null
+        for (var i = 0; i < host.items.length; i++) {
+          if (host.items[i].id === panel.renameItemId)
             return panel.posFor(host.items[i], i)
         }
         return null
@@ -1591,9 +2610,12 @@ Item {
       }
 
       function closeMenu() {
+        var wasDesk = menuKind === "desk"
         menuKind = ""
         menuItem = null
         menuCursorIndex = -1
+        if (wasDesk)
+          host.noteDeskMenuClosed(panel.screenName)
       }
 
       function firstEnabledMenuIndex(fromEnd) {
@@ -1662,6 +2684,112 @@ Item {
         panel.resetMenuCursor(false)
       }
 
+      function openDeskMenuAt() {
+        menuKind = "desk"
+        menuItem = null
+        menuX = panel.padLeft + 12
+        menuY = panel.padTop + 8
+        panel.resetMenuCursor(false)
+        emptyMouse.forceActiveFocus()
+      }
+
+      function arrangementItems(mode) {
+        var ordered = mode === "tidy" ? host.visualOrder(panel.screenName) : host.items.slice()
+        if (mode === "tidy")
+          return ordered
+        function compareText(a, b) {
+          var left = String(a || "").toLocaleLowerCase()
+          var right = String(b || "").toLocaleLowerCase()
+          if (left < right) return -1
+          if (left > right) return 1
+          return 0
+        }
+        function kindKey(item) {
+          if (host.isTrash(item)) return "9-trash"
+          if (item.kind === "folder" || item.isDir) return "0-folder"
+          if (item.kind === "launcher") return "1-application"
+          if (item.kind === "image") return "2-image"
+          return "3-" + String(item.kind || "file")
+        }
+        ordered.sort(function(a, b) {
+          var primary = 0
+          if (mode === "kind")
+            primary = compareText(kindKey(a), kindKey(b))
+          else if (mode === "modified") {
+            var leftModified = Number(a.modifiedUnixMs || 0)
+            var rightModified = Number(b.modifiedUnixMs || 0)
+            if (leftModified !== rightModified)
+              primary = rightModified - leftModified
+          }
+          if (primary !== 0)
+            return primary
+          var byName = compareText(a.name, b.name)
+          return byName !== 0 ? byName : compareText(a.id, b.id)
+        })
+        return ordered
+      }
+
+      function arrangeDesk(mode) {
+        var allowed = ["tidy", "name", "kind", "modified"]
+        if (allowed.indexOf(mode) === -1 || host.items.length === 0)
+          return false
+        var ordered = panel.arrangementItems(mode)
+        var updates = []
+        for (var i = 0; i < ordered.length && i < host.maxItems; i++) {
+          var pos = panel.layoutPos(i)
+          updates.push({ id: ordered[i].id, x: pos.x, y: pos.y })
+        }
+        var labels = {
+          tidy: "Tidied the Desk",
+          name: "Arranged the Desk by Name",
+          kind: "Arranged the Desk by Kind",
+          modified: "Arranged the Desk by Modified"
+        }
+        return host.applyDeskLayout(panel.screenName, updates, labels[mode])
+      }
+
+      function beginRename(item) {
+        if (!item || host.isVirtual(item) || host.operationBusy)
+          return false
+        panel.closeMenu()
+        host.setSelectedIds([String(item.id || "")], String(item.id || ""), String(item.id || ""))
+        panel.renameItemId = String(item.id || "")
+        panel.renameText = String(item.name || "").slice(0, host.maxNameLength)
+        panel.renameError = ""
+        panel.renameBusy = false
+        Qt.callLater(function() {
+          renameField.forceActiveFocus()
+          renameField.selectAll()
+        })
+        return true
+      }
+
+      function cancelRename() {
+        panel.renameItemId = ""
+        panel.renameText = ""
+        panel.renameError = ""
+        panel.renameBusy = false
+        emptyMouse.forceActiveFocus()
+      }
+
+      function commitRename() {
+        if (!panel.renameItemId || panel.renameBusy)
+          return false
+        var name = host.validRenameName(panel.renameText)
+        if (!name) {
+          panel.renameError = "Use a name without slashes or control characters."
+          renameField.forceActiveFocus()
+          return false
+        }
+        panel.renameBusy = true
+        panel.renameError = ""
+        if (!host.requestRename(panel.renameItemId, name, panel.screenName)) {
+          panel.renameBusy = false
+          return false
+        }
+        return true
+      }
+
       function openItemMenu(item, iconItem, mouse) {
         var p = contentItem.mapFromItem(iconItem, mouse.x, mouse.y)
         panel.openItemMenuAt(item, p.x, p.y)
@@ -1697,7 +2825,7 @@ Item {
         if (menuKind === "item") {
           var selected = host.selectedItems(null)
           var targetSelected = menuItem ? host.isSelected(menuItem) : false
-          var canRouteHere = menuItem && (menuItem.kind === "folder" || menuItem.isDir)
+          var canRouteHere = host.isFolderTarget(menuItem)
             && selected.length > (targetSelected ? 1 : 0)
           var canTrashSelection = menuItem && host.isTrash(menuItem) && selected.length > 0
           if (host.isTrash(menuItem)) {
@@ -1710,22 +2838,37 @@ Item {
             ]
             return trashEntries
           }
+          if (host.isVirtual(menuItem) && menuItem.kind === "volume")
+            return [
+              { action: "open", label: "Open", enabled: menuItem.canOpen === true },
+              { action: "inspect", label: "Get Info", enabled: true },
+              { action: "unmount", label: "Unmount", enabled: menuItem.canUnmount === true,
+                reason: menuItem.canUnmount === true ? "" : "This volume cannot be unmounted here." },
+              { action: "eject", label: "Eject", enabled: menuItem.canEject === true,
+                reason: menuItem.canEject === true ? "" : "This volume cannot be ejected here." },
+              { action: "trash", label: "Move to Trash", enabled: false,
+                reason: "Mounted volumes cannot be moved to Trash." }
+            ]
           if (menuItem && menuItem.kind === "launcher")
             return [
               { action: "open", label: "Open", enabled: !host.isUntrustedLauncher(menuItem) },
+              { action: "quick-look", label: "Quick Look", enabled: true },
               { action: "trust-open", label: "Trust and Open", enabled: host.isUntrustedLauncher(menuItem) },
               { action: "trust", label: "Allow Launching", enabled: host.isUntrustedLauncher(menuItem) },
               { action: "inspect", label: "Get Info", enabled: true },
+              { action: "rename", label: "Rename", enabled: !host.operationBusy },
               { action: "files", label: "Show in Files", enabled: true },
               { action: "trash", label: "Move to Trash", enabled: true }
             ]
           var entries = [
             { action: "open", label: "Open", enabled: true },
+            { action: "quick-look", label: "Quick Look", enabled: true },
             { action: "inspect", label: "Get Info", enabled: true },
+            { action: "rename", label: "Rename", enabled: !host.operationBusy },
             { action: "files", label: "Show in Files", enabled: true },
             { action: "trash", label: "Move to Trash", enabled: true }
           ]
-          if (menuItem && (menuItem.kind === "folder" || menuItem.isDir)) {
+          if (host.isFolderTarget(menuItem)) {
             entries.splice(2, 0,
               { action: "move-here", label: "Move Selected Here", enabled: canRouteHere },
               { action: "copy-here", label: "Copy Selected Here", enabled: canRouteHere })
@@ -1734,13 +2877,24 @@ Item {
         }
         if (menuKind === "empty")
           return [
-            { action: "folder", label: "New Folder", enabled: true },
-            { action: "shortcut", label: "New Shortcut…", enabled: true },
-            { action: "pin", label: "Pin Application…", enabled: true },
-            { action: "addfiles", label: "Add Files…", enabled: true },
-            { action: "files", label: "Open Desktop Folder", enabled: true },
+            { action: "folder", label: "New Folder", enabled: host.desktopEnabled,
+              reason: host.desktopEnabled ? "" : "Desktop files are off." },
+            { action: "tidy", label: "Tidy Desk", enabled: host.items.length > 0 },
+            { action: "arrange-heading", label: "Arrange By", enabled: false,
+              reason: "Choose Name, Kind, or Modified below." },
+            { action: "arrange-name", label: "  Name", enabled: host.items.length > 0 },
+            { action: "arrange-kind", label: "  Kind", enabled: host.items.length > 0 },
+            { action: "arrange-modified", label: "  Modified", enabled: host.items.length > 0 },
+            { action: "undo-layout", label: "Undo Desk Layout", enabled: host.layoutUndoAvailable,
+              reason: host.layoutUndoAvailable ? "" : "No desk layout change to undo." },
+            { action: "shortcut", label: "New Shortcut…", enabled: host.desktopEnabled },
+            { action: "pin", label: "Pin Application…", enabled: host.desktopEnabled },
+            { action: "addfiles", label: "Add Files…", enabled: host.desktopEnabled },
+            { action: "files", label: "Open Desktop Folder", enabled: host.desktopEnabled },
             { action: "refresh", label: "Refresh", enabled: true }
           ]
+        if (menuKind === "desk")
+          return host.deskMenuEntries()
         return []
       }
 
@@ -1817,13 +2971,20 @@ Item {
           if (contextMenuKey) {
             panel.openKeyboardContextMenu()
             event.accepted = true
-          } else if (event.key === Qt.Key_Z && (event.modifiers & Qt.ControlModifier)
-                     && host.operationUndoable) {
-            host.undoLastOperation()
-            event.accepted = true
+          } else if (event.key === Qt.Key_Z && (event.modifiers & Qt.ControlModifier)) {
+            if (host.undoMostRecent())
+              event.accepted = true
           } else if (event.key === Qt.Key_Escape) {
-            if (panel.routeVisible)
+            if (panel.marqueeActive) {
+              panel.marqueeActive = false
+              host.setSelectedIds(panel.marqueeBaseSelection, host.selectedId, host.selectionAnchorId)
+            } else if (panel.routeVisible)
               panel.cancelRoute()
+            else if (host.operationBusy && host.operationCancellable)
+              host.cancelCurrentOperation()
+            else if (host.operationBusy) {
+              // Keep a non-cancellable running receipt visible.
+            }
             else if (host.operationMessage !== "")
               host.dismissReceipt()
             else
@@ -1843,11 +3004,26 @@ Item {
             if (infoItem)
               host.requestInspector(infoItem, panel.screenName)
             event.accepted = true
+          } else if (event.key === Qt.Key_F2) {
+            var renameItem = host.itemById(host.selectedId)
+            if (renameItem)
+              panel.beginRename(renameItem)
+            event.accepted = true
+          } else if (event.key === Qt.Key_N
+                     && (event.modifiers & Qt.ControlModifier)
+                     && (event.modifiers & Qt.ShiftModifier)) {
+            host.newFolder()
+            event.accepted = true
+          } else if (event.key === Qt.Key_Space && event.modifiers === Qt.NoModifier) {
+            host.quickLookSelection(panel.screenName)
+            event.accepted = true
           } else if (event.key === Qt.Key_Delete && host.selectedIds.length > 0) {
-            host.trashUrls(host.selectedPaths(null), panel.screenName)
+            var trashPaths = host.selectedPaths(null)
+            if (trashPaths.length > 0)
+              host.trashUrls(trashPaths, panel.screenName)
             event.accepted = true
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            var openItems = host.selectedItems(null)
+            var openItems = host.selectedOpenItems(null)
             for (var j = 0; j < openItems.length; j++) {
               host.openOrConfirm(openItems[j], panel.screenName)
               if (host.pendingTrust)
@@ -1879,8 +3055,57 @@ Item {
             event.accepted = true
           }
         }
+        onPressed: function(mouse) {
+          if (mouse.button !== Qt.LeftButton)
+            return
+          panel.marqueeStartX = mouse.x
+          panel.marqueeStartY = mouse.y
+          panel.marqueeCurrentX = mouse.x
+          panel.marqueeCurrentY = mouse.y
+          panel.marqueeModifiers = mouse.modifiers
+          panel.marqueeBaseSelection = host.selectedIds.slice(0, host.maxOperationItems)
+          panel.marqueeConsumed = false
+        }
+        onPositionChanged: function(mouse) {
+          if (!(emptyMouse.pressedButtons & Qt.LeftButton))
+            return
+          panel.marqueeCurrentX = mouse.x
+          panel.marqueeCurrentY = mouse.y
+          if (!panel.marqueeActive) {
+            var distance = Math.abs(mouse.x - panel.marqueeStartX)
+              + Math.abs(mouse.y - panel.marqueeStartY)
+            if (distance < 8)
+              return
+            panel.closeMenu()
+            panel.marqueeActive = true
+            panel.marqueeConsumed = true
+          }
+          panel.updateMarqueeSelection()
+        }
+        onReleased: function(mouse) {
+          if (!panel.marqueeActive)
+            return
+          panel.updateMarqueeSelection()
+          panel.marqueeActive = false
+          panel.marqueeConsumed = true
+          host.announcement = host.selectedIds.length === 1
+            ? "1 desktop item selected"
+            : host.selectedIds.length + " desktop items selected"
+          emptyMouse.forceActiveFocus()
+        }
+        onCanceled: {
+          if (panel.marqueeActive)
+            host.setSelectedIds(panel.marqueeBaseSelection, host.selectedId, host.selectionAnchorId)
+          panel.marqueeActive = false
+          panel.marqueeConsumed = false
+        }
         onClicked: function(mouse) {
-          host.clearSelection()
+          if (panel.marqueeConsumed) {
+            panel.marqueeConsumed = false
+            return
+          }
+          if (!(mouse.modifiers & (Qt.ControlModifier | Qt.ShiftModifier)))
+            host.clearSelection()
           emptyMouse.forceActiveFocus()
           if (host.pendingTrust) {
             host.clearTrustPrompt()
@@ -1904,9 +3129,33 @@ Item {
         }
       }
 
+      Rectangle {
+        id: marqueeBox
+        visible: panel.marqueeActive
+        z: 4
+        x: Math.min(panel.marqueeStartX, panel.marqueeCurrentX)
+        y: Math.min(panel.marqueeStartY, panel.marqueeCurrentY)
+        width: Math.abs(panel.marqueeCurrentX - panel.marqueeStartX)
+        height: Math.abs(panel.marqueeCurrentY - panel.marqueeStartY)
+        color: Qt.rgba(1, 1, 1, 0.08)
+        border.width: 2
+        border.color: Color.foreground
+        Accessible.role: Accessible.StaticText
+        Accessible.name: host.selectedIds.length === 1
+          ? "1 desktop item in marquee selection"
+          : host.selectedIds.length + " desktop items in marquee selection"
+        Accessible.description: "Release to keep this selection. Press Escape to cancel."
+
+        Behavior on opacity {
+          enabled: !host.reducedMotion
+          NumberAnimation { duration: 70; easing.type: Easing.Linear }
+        }
+      }
+
       DropArea {
         z: 0
         anchors.fill: parent
+        enabled: host.desktopEnabled
         keys: ["text/uri-list"]
         onEntered: function(drop) {
           panel.dropping = true
@@ -1983,6 +3232,68 @@ Item {
       }
 
       Rectangle {
+        id: desktopDisabledBox
+        visible: !host.desktopEnabled && host.desktopState === "disabled"
+        z: 17
+        width: Math.min(480, Math.max(280, panel.width - 48))
+        height: disabledColumn.implicitHeight + 28
+        x: Math.round(panel.width / 2 - width / 2)
+        y: Math.max(panel.padTop + 80, Math.round(panel.height / 2 - height / 2))
+        color: Color.popups.background
+        border.width: 2
+        border.color: Color.popups.border
+        Accessible.role: Accessible.StaticText
+        Accessible.name: "Desktop files are off"
+        Accessible.description: disabledBody.text + " " + disabledReason.text
+
+        Column {
+          id: disabledColumn
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: 14
+          spacing: 8
+
+          Text {
+            width: parent.width
+            text: "Desktop files are off"
+            textFormat: Text.PlainText
+            color: Color.popups.text
+            font.pixelSize: 16
+            font.bold: true
+            font.family: Style.fontFamily
+            horizontalAlignment: Text.AlignHCenter
+          }
+
+          Text {
+            id: disabledBody
+            width: parent.width
+            text: "Choose a Desktop folder in your XDG user-directory settings to show files here."
+            textFormat: Text.PlainText
+            color: Color.popups.text
+            font.pixelSize: 13
+            font.family: Style.fontFamily
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+          }
+
+          Text {
+            id: disabledReason
+            width: parent.width
+            visible: host.desktopReason !== ""
+            text: host.desktopReason
+            textFormat: Text.PlainText
+            color: Color.popups.text
+            opacity: 0.72
+            font.pixelSize: 12
+            font.family: Style.fontFamily
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+          }
+        }
+      }
+
+      Rectangle {
         id: statusBox
         visible: host.statusMessage !== ""
           && Quickshell.screens.length > 0
@@ -2018,6 +3329,17 @@ Item {
         }
       }
 
+      Item {
+        visible: host.announcement !== ""
+        width: 1
+        height: 1
+        x: panel.padLeft
+        y: panel.padTop
+        Accessible.role: Accessible.StaticText
+        Accessible.name: host.announcement
+        Accessible.description: "Desktop announcement"
+      }
+
       Rectangle {
         id: receiptBox
         visible: host.operationMessage !== ""
@@ -2038,7 +3360,10 @@ Item {
         Accessible.name: receiptMessage.text
         Accessible.description: host.operationUndoable
           ? "Desktop action completed and can be undone."
-          : host.operationIsError ? "Desktop action failed." : "Desktop action receipt."
+          : host.operationBusy
+            ? "Desktop action in progress: " + host.operationProcessed + " of "
+              + host.operationTotal + " processed."
+            : host.operationIsError ? "Desktop action failed." : "Desktop action receipt."
 
         Row {
           id: receiptContent
@@ -2061,6 +3386,7 @@ Item {
           Rectangle {
             id: undoButton
             visible: host.operationUndoable
+              || (host.lastUndoKind === "layout" && host.layoutUndoAvailable)
             enabled: visible && !host.operationBusy
             width: Math.max(52, undoLabel.implicitWidth + 20)
             height: 44
@@ -2068,10 +3394,13 @@ Item {
             border.width: 1
             border.color: Color.popups.border
             Accessible.role: Accessible.Button
-            Accessible.name: "Undo desktop action"
-            Accessible.description: "Restore the files moved by the last completed operation."
+            Accessible.name: host.lastUndoKind === "layout"
+              ? "Undo desk layout" : "Undo desktop action"
+            Accessible.description: host.lastUndoKind === "layout"
+              ? "Restore icon positions from before the last Tidy or Arrange command."
+              : "Restore the files moved by the last completed operation."
             Accessible.focusable: true
-            Accessible.onPressAction: host.undoLastOperation()
+            Accessible.onPressAction: host.undoMostRecent()
 
             Text {
               id: undoLabel
@@ -2088,7 +3417,47 @@ Item {
               anchors.fill: parent
               hoverEnabled: true
               enabled: parent.enabled
-              onClicked: host.undoLastOperation()
+                onClicked: host.undoMostRecent()
+            }
+          }
+
+          Rectangle {
+            id: cancelOperationButton
+            visible: host.operationBusy
+            enabled: visible && host.operationCancellable
+            width: Math.max(68, cancelOperationLabel.implicitWidth + 20)
+            height: 44
+            color: cancelOperationMouse.containsMouse && enabled
+              ? Color.menu.selectedBackground : "transparent"
+            border.width: 1
+            border.color: Color.popups.border
+            Accessible.role: Accessible.Button
+            Accessible.name: host.operationState === "cancelling"
+              ? "Cancelling desktop action" : "Cancel desktop action"
+            Accessible.description: enabled
+              ? "Stop after the current safe operation boundary."
+              : "Cancellation is no longer available."
+            Accessible.focusable: enabled
+            Accessible.onPressAction: host.cancelCurrentOperation()
+
+            Text {
+              id: cancelOperationLabel
+              anchors.centerIn: parent
+              text: host.operationState === "cancelling" ? "Cancelling…" : "Cancel"
+              textFormat: Text.PlainText
+              color: cancelOperationMouse.containsMouse && parent.enabled
+                ? Color.menu.selectedText : Color.popups.text
+              opacity: parent.enabled ? 1 : 0.55
+              font.pixelSize: 13
+              font.family: Style.fontFamily
+            }
+
+            MouseArea {
+              id: cancelOperationMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              enabled: parent.enabled
+              onClicked: host.cancelCurrentOperation()
             }
           }
 
@@ -2269,6 +3638,29 @@ Item {
                   font.family: Style.fontFamily
                 }
               }
+
+              Rectangle {
+                visible: panel.host.isTrash(iconRoot.modelData)
+                  && iconRoot.modelData.trashState === "full"
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                width: 20
+                height: 20
+                color: Color.foreground
+                border.width: 1
+                border.color: Color.menu.background
+                Accessible.role: Accessible.StaticText
+                Accessible.name: "Trash contains items"
+
+                Text {
+                  anchors.centerIn: parent
+                  text: "●"
+                  textFormat: Text.PlainText
+                  color: Color.menu.selectedText
+                  font.pixelSize: 10
+                  font.family: Style.fontFamily
+                }
+              }
             }
 
             Rectangle {
@@ -2317,6 +3709,7 @@ Item {
             drag.maximumX: Math.max(0, panel.width - iconRoot.width)
             drag.maximumY: Math.max(0, panel.height - iconRoot.height)
             onPressed: function(mouse) {
+              panel.resetEmptyClickSequence()
               iconRoot.pressX = iconRoot.x
               iconRoot.pressY = iconRoot.y
               iconRoot.preservedMultiSelectionOnPress = mouse.button === Qt.LeftButton
@@ -2325,14 +3718,15 @@ Item {
                 && panel.host.selectedIds.length > 1
               var routingTarget = mouse.button === Qt.RightButton
                 && (panel.host.isTrash(iconRoot.modelData)
-                    || iconRoot.modelData.kind === "folder" || iconRoot.modelData.isDir)
+                    || panel.host.isFolderTarget(iconRoot.modelData))
                 && panel.host.selectedIds.length > 0
                 && !panel.host.isSelected(iconRoot.modelData)
               if (!routingTarget && !iconRoot.preservedMultiSelectionOnPress)
                 panel.host.selectItem(iconRoot.modelData, mouse.modifiers, panel.screenName)
               panel.dragCanceled = false
               panel.draggingItemId = String(iconRoot.modelData.id || "")
-              panel.dragItems = panel.host.selectedItems(iconRoot.modelData)
+              panel.dragItems = panel.host.isVirtual(iconRoot.modelData)
+                ? [iconRoot.modelData] : panel.host.selectedItems(iconRoot.modelData)
               var originals = ({})
               for (var i = 0; i < panel.dragItems.length; i++) {
                 var source = panel.dragItems[i]
@@ -2350,6 +3744,10 @@ Item {
             onPositionChanged: function(mouse) {
               if (!iconMouse.drag.active || panel.host.isTrash(iconRoot.modelData))
                 return
+              if (panel.host.isVirtual(iconRoot.modelData)) {
+                panel.clearRoute()
+                return
+              }
               panel.updateInternalRoute(
                 iconRoot.x + iconRoot.width / 2,
                 iconRoot.y + iconRoot.height / 2,
@@ -2432,7 +3830,7 @@ Item {
             anchors.fill: parent
             z: 3
             enabled: panel.host.isTrash(iconRoot.modelData)
-              || iconRoot.modelData.kind === "folder" || iconRoot.modelData.isDir
+              || panel.host.isFolderTarget(iconRoot.modelData)
             keys: ["text/uri-list"]
             onEntered: function(drop) {
               panel.dropping = true
@@ -2507,13 +3905,22 @@ Item {
           var item = currentItem
           var plugin = pluginHost
           var screenName = currentScreen
+          var selectedItem = plugin ? plugin.itemById(plugin.selectedId) : null
           closeTick += 1
           if (!plugin)
             return
           if (action === "open")
             plugin.openOrConfirm(item, screenName)
+          else if (action === "quick-look")
+            plugin.quickLookSelection(screenName)
           else if (action === "inspect")
-            plugin.requestInspector(item, screenName)
+            plugin.requestInspector(item || selectedItem, screenName)
+          else if (action === "rename")
+            panel.beginRename(item || selectedItem)
+          else if (action === "unmount" && item)
+            plugin.performVirtualAction("unmount", item.id, screenName)
+          else if (action === "eject" && item)
+            plugin.performVirtualAction("eject", item.id, screenName)
           else if (action === "trust")
             plugin.allowLaunching(item)
           else if (action === "trust-open")
@@ -2528,6 +3935,16 @@ Item {
             plugin.runOperation("copy", plugin.selectedPathsExcept(item), item.path, screenName)
           else if (action === "folder")
             plugin.newFolder()
+          else if (action === "tidy")
+            panel.arrangeDesk("tidy")
+          else if (action === "arrange-name")
+            panel.arrangeDesk("name")
+          else if (action === "arrange-kind")
+            panel.arrangeDesk("kind")
+          else if (action === "arrange-modified")
+            panel.arrangeDesk("modified")
+          else if (action === "undo-layout")
+            plugin.undoDeskLayout()
           else if (action === "shortcut")
             plugin.newShortcut()
           else if (action === "pin")
@@ -2568,7 +3985,9 @@ Item {
                 : "transparent"
               Accessible.role: Accessible.MenuItem
               Accessible.name: String(modelData.label || "")
-              Accessible.description: rowEnabled ? "Activate command" : "Unavailable command"
+              Accessible.description: rowEnabled
+                ? "Activate command"
+                : String(modelData.reason || "Unavailable command")
               Accessible.focusable: rowEnabled
               Accessible.focused: keyboardCurrent
               Accessible.selected: keyboardCurrent
@@ -2621,10 +4040,213 @@ Item {
         function onItemsChanged() {
           panel.maybeRepack()
         }
+        function onDeskMenuRevisionChanged() {
+          if (host.deskMenuOpen && host.deskMenuScreen === panel.screenName)
+            panel.openDeskMenuAt()
+          else if (panel.menuKind === "desk")
+            panel.closeMenu()
+        }
         function onPendingTrustChanged() {
           panel.trustFocusIndex = 0
           if (host.pendingTrust)
             emptyMouse.forceActiveFocus()
+        }
+        function onRenameFinished(success, message, newPath, screenName) {
+          if (screenName !== panel.screenName || panel.renameItemId === "")
+            return
+          if (success) {
+            panel.cancelRename()
+          } else {
+            panel.renameBusy = false
+            panel.renameError = host.plainText(message, 220)
+            Qt.callLater(function() { renameField.forceActiveFocus() })
+          }
+        }
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        visible: panel.renameItemId !== ""
+        z: 20
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onClicked: renameField.forceActiveFocus()
+      }
+
+      Rectangle {
+        id: renameBox
+        visible: panel.renameItemId !== ""
+        z: 21
+        width: Math.min(360, Math.max(280, panel.width - 48))
+        height: renameColumn.implicitHeight + 24
+        color: Color.popups.background
+        border.width: 2
+        border.color: panel.renameError ? Color.urgent : Color.popups.border
+        Accessible.role: Accessible.Dialog
+        Accessible.name: "Rename desktop item"
+        Accessible.description: panel.renameError
+          ? panel.renameError : "Edit the name, then choose Rename or Cancel."
+        Accessible.focusable: true
+        x: {
+          var p = panel.renameIconPos()
+          if (!p)
+            return Math.max(8, Math.round(panel.width / 2 - width / 2))
+          return Math.min(Math.max(8, Math.round(p.x + host.cellW / 2 - width / 2)),
+                          Math.max(8, panel.width - width - 8))
+        }
+        y: {
+          var p = panel.renameIconPos()
+          if (!p)
+            return Math.max(8, Math.round(panel.height / 2 - height / 2))
+          var below = p.y + host.cellH + 8
+          if (below + height <= panel.height - 8)
+            return below
+          return Math.max(8, p.y - height - 8)
+        }
+
+        MouseArea { anchors.fill: parent; onClicked: {} }
+
+        Column {
+          id: renameColumn
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: 12
+          spacing: 10
+
+          Text {
+            width: parent.width
+            text: "Rename"
+            textFormat: Text.PlainText
+            color: Color.popups.text
+            font.pixelSize: 15
+            font.bold: true
+            font.family: Style.fontFamily
+            Accessible.role: Accessible.Heading
+            Accessible.name: text
+          }
+
+          Rectangle {
+            width: parent.width
+            height: 44
+            color: Color.menu.background
+            border.width: 2
+            border.color: renameField.activeFocus ? Color.foreground : Color.popups.border
+
+            TextInput {
+              id: renameField
+              anchors.fill: parent
+              anchors.margins: 9
+              text: panel.renameText
+              color: Color.foreground
+              selectedTextColor: Color.menu.selectedText
+              selectionColor: Color.menu.selectedBackground
+              font.pixelSize: 14
+              font.family: Style.fontFamily
+              maximumLength: host.maxNameLength
+              enabled: !panel.renameBusy
+              selectByMouse: true
+              Accessible.role: Accessible.EditableText
+              Accessible.name: "New desktop item name"
+              Accessible.description: "Enter commits the rename. Escape cancels it."
+              onTextChanged: panel.renameText = text
+              Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape) {
+                  panel.cancelRename()
+                  event.accepted = true
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                  panel.commitRename()
+                  event.accepted = true
+                }
+              }
+            }
+          }
+
+          Text {
+            width: parent.width
+            visible: panel.renameError !== ""
+            text: panel.renameError
+            textFormat: Text.PlainText
+            color: Color.urgent
+            wrapMode: Text.WordWrap
+            font.pixelSize: 12
+            font.family: Style.fontFamily
+            Accessible.role: Accessible.AlertMessage
+            Accessible.name: text
+          }
+
+          Row {
+            anchors.right: parent.right
+            spacing: 8
+
+            Rectangle {
+              id: renameCancelButton
+              width: Math.max(72, renameCancelLabel.implicitWidth + 20)
+              height: 44
+              color: renameCancelMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+              border.width: 2
+              border.color: Color.popups.border
+              enabled: !panel.renameBusy
+              Accessible.role: Accessible.Button
+              Accessible.name: "Cancel rename"
+              Accessible.description: "Keep the current filename and return focus to the Desk."
+              Accessible.onPressAction: panel.cancelRename()
+
+              Text {
+                id: renameCancelLabel
+                anchors.centerIn: parent
+                text: "Cancel"
+                textFormat: Text.PlainText
+                color: renameCancelMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
+                font.pixelSize: 13
+                font.family: Style.fontFamily
+              }
+
+              MouseArea {
+                id: renameCancelMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                enabled: parent.enabled
+                onClicked: panel.cancelRename()
+              }
+            }
+
+            Rectangle {
+              id: renameCommitButton
+              width: Math.max(72, renameCommitLabel.implicitWidth + 20)
+              height: 44
+              color: renameCommitMouse.containsMouse ? Color.menu.selectedBackground : "transparent"
+              border.width: 2
+              border.color: Color.popups.border
+              enabled: !panel.renameBusy && host.validRenameName(panel.renameText) !== ""
+              Accessible.role: Accessible.Button
+              Accessible.name: panel.renameBusy ? "Renaming" : "Commit rename"
+              Accessible.description: "Rename without overwriting an existing desktop item."
+              Accessible.onPressAction: panel.commitRename()
+
+              Text {
+                id: renameCommitLabel
+                anchors.centerIn: parent
+                text: panel.renameBusy ? "Renaming…" : "Rename"
+                textFormat: Text.PlainText
+                color: renameCommitMouse.containsMouse ? Color.menu.selectedText : Color.popups.text
+                font.pixelSize: 13
+                font.family: Style.fontFamily
+              }
+
+              MouseArea {
+                id: renameCommitMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                enabled: parent.enabled
+                onClicked: panel.commitRename()
+              }
+            }
+          }
+        }
+
+        Behavior on opacity {
+          enabled: !host.reducedMotion
+          NumberAnimation { duration: 80; easing.type: Easing.Linear }
         }
       }
 

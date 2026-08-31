@@ -23,6 +23,7 @@ import signal
 import stat
 import subprocess
 import sys
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,7 +34,11 @@ _BIN_DIR = str(Path(__file__).resolve().parent)
 if _BIN_DIR not in sys.path:
     sys.path.insert(0, _BIN_DIR)
 
-from desktop_policy import enforce_untrusted_launcher
+from desktop_policy import (
+    DesktopDisabledError,
+    enforce_untrusted_launcher,
+    require_desktop_directory,
+)
 
 
 SCHEMA_VERSION = 1
@@ -48,8 +53,9 @@ MAX_ERROR_BYTES = 240
 MAX_TREE_ENTRIES = 20_000
 MAX_UNDO_FILE_BYTES = 64 * 1024 * 1024
 MAX_UNIQUE_ATTEMPTS = 10_000
-MAX_USER_DIRS_BYTES = 64 * 1024
 CHILD_TIMEOUT_SECONDS = 30
+CHILD_CANCEL_GRACE_SECONDS = 0.5
+MAX_OPERATION_SECONDS = 10 * 60
 OPERATION_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 URI_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 PR_SET_PDEATHSIG = 1
@@ -66,6 +72,10 @@ class ItemError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+
+
+class OperationCancelled(ItemError):
+    pass
 
 
 class ReceiptParser(argparse.ArgumentParser):
@@ -190,28 +200,10 @@ def _home_path() -> Path:
 
 
 def desktop_dir() -> Path:
-    """Read user-dirs.dirs without shell evaluation and return the real Desktop."""
-
-    home = _home_path()
-    config_raw = os.environ.get("XDG_CONFIG_HOME")
-    config = local_path(config_raw).resolve() if config_raw else home / ".config"
-    user_dirs = config / "user-dirs.dirs"
-    chosen: Path | None = None
     try:
-        info = user_dirs.lstat()
-        if stat.S_ISREG(info.st_mode) and info.st_size <= MAX_USER_DIRS_BYTES:
-            for line in user_dirs.read_text(encoding="utf-8").splitlines():
-                match = re.fullmatch(r'\s*XDG_DESKTOP_DIR="((?:[^"\\]|\\.)*)"\s*', line)
-                if not match:
-                    continue
-                value = re.sub(r"\\([\\\"$`])", r"\1", match.group(1))
-                value = value.replace("${HOME}", str(home)).replace("$HOME", str(home))
-                if "$" not in value:
-                    chosen = local_path(value)
-                break
-    except (OSError, UnicodeError, RequestError):
-        chosen = None
-    return (chosen or (home / "Desktop")).resolve()
+        return require_desktop_directory()
+    except DesktopDisabledError as error:
+        raise RequestError("desktop_disabled", str(error)) from error
 
 
 def _lstat_supported(path: Path, *, allow_symlink: bool = False) -> os.stat_result:
@@ -304,11 +296,17 @@ def _candidate(destination: Path, name: str, attempt: int) -> Path:
     return destination / (name if attempt == 1 else _numbered_name(name, attempt))
 
 
-def _copy_regular(source: Path, destination: Path) -> None:
+def _copy_regular(
+    source: Path,
+    destination: Path,
+    control: "OperationControl | None" = None,
+) -> None:
     source_fd = -1
     destination_fd = -1
     created = False
     try:
+        if control is not None:
+            control.check()
         source_fd = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         before = os.fstat(source_fd)
         if not stat.S_ISREG(before.st_mode):
@@ -320,6 +318,8 @@ def _copy_regular(source: Path, destination: Path) -> None:
         )
         created = True
         while True:
+            if control is not None:
+                control.check()
             block = os.read(source_fd, 1024 * 1024)
             if not block:
                 break
@@ -351,14 +351,54 @@ def _copy_regular(source: Path, destination: Path) -> None:
             os.close(source_fd)
 
 
-def _copy_directory(source: Path, destination: Path) -> None:
+def _copy_directory(
+    source: Path,
+    destination: Path,
+    control: "OperationControl | None" = None,
+) -> None:
     created = False
     try:
+        if control is not None:
+            control.check()
         destination.mkdir(mode=0o700)
         created = True
-        shutil.copytree(source, destination, dirs_exist_ok=True, symlinks=True)
+        entry_count = 1
+        directories: list[tuple[Path, Path]] = [(source, destination)]
+        copied_directories: list[tuple[Path, Path]] = []
+        while directories:
+            source_dir, destination_dir = directories.pop()
+            copied_directories.append((source_dir, destination_dir))
+            with os.scandir(source_dir) as entries:
+                for entry in entries:
+                    if control is not None:
+                        control.check()
+                    entry_count += 1
+                    if entry_count > MAX_TREE_ENTRIES:
+                        raise ItemError(
+                            "tree_too_large",
+                            f"Folder contains more than {MAX_TREE_ENTRIES} entries",
+                        )
+                    child_source = source_dir / entry.name
+                    child_destination = destination_dir / entry.name
+                    info = child_source.lstat()
+                    if stat.S_ISLNK(info.st_mode):
+                        raise ItemError(
+                            "unsafe_symlink",
+                            f"Symbolic links are not accepted: {child_source.name}",
+                        )
+                    if stat.S_ISDIR(info.st_mode):
+                        child_destination.mkdir(mode=0o700)
+                        directories.append((child_source, child_destination))
+                    elif stat.S_ISREG(info.st_mode):
+                        _copy_regular(child_source, child_destination, control)
+                    else:
+                        raise ItemError(
+                            "unsupported_type",
+                            f"Unsupported filesystem item: {child_source.name}",
+                        )
+        for source_dir, destination_dir in reversed(copied_directories):
+            shutil.copystat(source_dir, destination_dir, follow_symlinks=False)
         _validate_tree(destination)
-        shutil.copystat(source, destination, follow_symlinks=False)
     except FileExistsError:
         raise
     except Exception:
@@ -367,32 +407,46 @@ def _copy_directory(source: Path, destination: Path) -> None:
         raise
 
 
-def _copy_to_unique(source: Path, destination: Path) -> Path:
+def _copy_to_unique(
+    source: Path,
+    destination: Path,
+    control: "OperationControl | None" = None,
+) -> Path:
     source_info = source.lstat()
     for attempt in range(1, MAX_UNIQUE_ATTEMPTS + 1):
         target = _candidate(destination, source.name, attempt)
         try:
             if stat.S_ISDIR(source_info.st_mode):
-                _copy_directory(source, target)
+                _copy_directory(source, target, control)
             else:
-                _copy_regular(source, target)
+                _copy_regular(source, target, control)
             return target
         except FileExistsError:
             continue
     raise ItemError("name_exhausted", f"Could not find a unique name for {source.name}")
 
 
-def _launcher_to_desktop(source: Path, destination: Path, *, move: bool) -> Path:
+def _launcher_to_desktop(
+    source: Path,
+    destination: Path,
+    *,
+    move: bool,
+    control: "OperationControl | None" = None,
+) -> Path:
     """Transfer a launcher only after its Desktop copy is provably untrusted."""
 
     for attempt in range(1, MAX_UNIQUE_ATTEMPTS + 1):
         target = _candidate(destination, source.name, attempt)
         try:
-            _copy_regular(source, target)
+            _copy_regular(source, target, control)
         except FileExistsError:
             continue
         try:
+            if control is not None:
+                control.check()
             enforce_untrusted_launcher(target)
+            if control is not None:
+                control.check()
             if move:
                 source.unlink()
             return target
@@ -408,17 +462,30 @@ def _launcher_to_desktop(source: Path, destination: Path, *, move: bool) -> Path
 def _rename_noreplace(source: Path, destination: Path) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
     renameat2 = getattr(libc, "renameat2", None)
-    if renameat2 is None:
-        raise OSError(errno.ENOSYS, "renameat2 is unavailable")
-    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-    renameat2.restype = ctypes.c_int
-    result = renameat2(
-        -100,
-        os.fsencode(source),
-        -100,
-        os.fsencode(destination),
-        1,
-    )
+    if renameat2 is not None:
+        renameat2.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        renameat2.restype = ctypes.c_int
+        result = renameat2(
+            -100,
+            os.fsencode(source),
+            -100,
+            os.fsencode(destination),
+            1,
+        )
+    else:
+        renamex_np = getattr(libc, "renamex_np", None)
+        if renamex_np is None:
+            raise OSError(errno.ENOSYS, "No-replace rename is unavailable")
+        renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        renamex_np.restype = ctypes.c_int
+        # Darwin's RENAME_EXCL provides the same no-overwrite guarantee.
+        result = renamex_np(os.fsencode(source), os.fsencode(destination), 0x00000004)
     if result != 0:
         error_number = ctypes.get_errno()
         raise OSError(error_number, os.strerror(error_number), str(destination))
@@ -435,7 +502,13 @@ def _remove_created(path: Path) -> None:
         path.unlink()
 
 
-def _move_exact(source: Path, destination: Path) -> None:
+def _move_exact(
+    source: Path,
+    destination: Path,
+    control: "OperationControl | None" = None,
+) -> None:
+    if control is not None:
+        control.check()
     try:
         _rename_noreplace(source, destination)
         return
@@ -449,10 +522,12 @@ def _move_exact(source: Path, destination: Path) -> None:
     # O_EXCL/mkdir, and is rolled back if removing the source does not finish.
     source_info = source.lstat()
     if stat.S_ISDIR(source_info.st_mode):
-        _copy_directory(source, destination)
+        _copy_directory(source, destination, control)
     else:
-        _copy_regular(source, destination)
+        _copy_regular(source, destination, control)
     try:
+        if control is not None:
+            control.check()
         if stat.S_ISDIR(source_info.st_mode):
             shutil.rmtree(source)
         else:
@@ -468,11 +543,15 @@ def _move_exact(source: Path, destination: Path) -> None:
         raise
 
 
-def _move_to_unique(source: Path, destination: Path) -> Path:
+def _move_to_unique(
+    source: Path,
+    destination: Path,
+    control: "OperationControl | None" = None,
+) -> Path:
     for attempt in range(1, MAX_UNIQUE_ATTEMPTS + 1):
         target = _candidate(destination, source.name, attempt)
         try:
-            _move_exact(source, target)
+            _move_exact(source, target, control)
             return target
         except FileExistsError:
             continue
@@ -553,6 +632,16 @@ def _move_proof(source: Path, destination: Path) -> dict[str, Any] | None:
 
 
 def _proof_matches(proof: dict[str, Any]) -> bool:
+    if not _proof_metadata_matches(proof):
+        return False
+    path = Path(proof["destination"])
+    try:
+        return secrets.compare_digest(_sha256(path), proof["sha256"])
+    except (OSError, ItemError, KeyError, TypeError):
+        return False
+
+
+def _proof_metadata_matches(proof: dict[str, Any]) -> bool:
     path = Path(proof["destination"])
     try:
         info = path.lstat()
@@ -569,7 +658,7 @@ def _proof_matches(proof: dict[str, Any]) -> bool:
             or info.st_gid != proof["gid"]
         ):
             return False
-        return secrets.compare_digest(_sha256(path), proof["sha256"])
+        return True
     except (OSError, ItemError, KeyError, TypeError):
         return False
 
@@ -599,6 +688,70 @@ def _validate_operation_id(operation_id: str) -> str:
 
 def _journal_path(operation_id: str) -> Path:
     return _state_directory() / f"{_validate_operation_id(operation_id)}.json"
+
+
+def _cancel_path(operation_id: str) -> Path:
+    return _state_directory() / f"{_validate_operation_id(operation_id)}.cancel"
+
+
+_SIGNAL_CANCELLED = False
+
+
+def _request_signal_cancel(_signum: int, _frame: Any) -> None:
+    global _SIGNAL_CANCELLED
+    _SIGNAL_CANCELLED = True
+
+
+def _process_token(pid: int) -> str:
+    """Return Linux's process start-time token to make PID checks reuse-safe."""
+
+    path = Path(f"/proc/{pid}/stat")
+    fd = -1
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        payload = os.read(fd, 4097)
+        if len(payload) > 4096:
+            return ""
+        tail = payload[payload.rfind(b")") + 2 :].split()
+        return tail[19].decode("ascii") if len(tail) > 19 else ""
+    except (OSError, UnicodeError):
+        return ""
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def _worker_alive(record: dict[str, Any]) -> bool:
+    pid = record.get("workerPid")
+    if not isinstance(pid, int) or pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    expected = str(record.get("workerToken") or "")
+    return not expected or secrets.compare_digest(_process_token(pid), expected)
+
+
+class OperationControl:
+    def __init__(self, operation_id: str):
+        self.operation_id = _validate_operation_id(operation_id)
+        self.deadline = time.monotonic() + MAX_OPERATION_SECONDS
+
+    def check(self) -> None:
+        if _SIGNAL_CANCELLED:
+            raise OperationCancelled("cancelled", "Operation was cancelled")
+        if time.monotonic() >= self.deadline:
+            raise OperationCancelled("operation_timeout", "Operation exceeded its time limit")
+        try:
+            info = _cancel_path(self.operation_id).lstat()
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            raise OperationCancelled("cancelled", f"Cancellation state is unavailable: {error}") from error
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            raise OperationCancelled("cancelled", "Operation cancellation was requested")
+        raise OperationCancelled("cancelled", "Operation was cancelled")
 
 
 @contextmanager
@@ -657,25 +810,69 @@ def _write_journal(record: dict[str, Any]) -> None:
 
 def _read_journal(operation_id: str) -> dict[str, Any]:
     path = _journal_path(operation_id)
+    fd = -1
     try:
-        info = path.lstat()
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
             raise RequestError("unsafe_journal", "Operation journal is not a regular file")
         if info.st_uid != os.getuid() or info.st_size > MAX_JOURNAL_BYTES:
             raise RequestError("unsafe_journal", "Operation journal failed validation")
-        with path.open("rb") as handle:
-            record = json.load(handle)
+        chunks: list[bytes] = []
+        remaining = MAX_JOURNAL_BYTES + 1
+        while remaining:
+            block = os.read(fd, min(8192, remaining))
+            if not block:
+                break
+            chunks.append(block)
+            remaining -= len(block)
+        payload = b"".join(chunks)
+        if len(payload) > MAX_JOURNAL_BYTES:
+            raise RequestError("unsafe_journal", "Operation journal failed validation")
+        record = json.loads(payload)
     except FileNotFoundError as error:
         raise RequestError("operation_not_found", "Operation was not found") from error
-    except json.JSONDecodeError as error:
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise RequestError("invalid_journal", "Operation journal is corrupt") from error
+    finally:
+        if fd >= 0:
+            os.close(fd)
     if not isinstance(record, dict) or record.get("operationId") != operation_id:
         raise RequestError("invalid_journal", "Operation journal identity does not match")
     return record
 
 
+def _create_record(record: dict[str, Any]) -> None:
+    operation_id = _validate_operation_id(record.get("operationId", ""))
+    with _operation_lock(operation_id):
+        if os.path.lexists(_journal_path(operation_id)) or os.path.lexists(
+            _cancel_path(operation_id)
+        ):
+            raise RequestError("operation_id_in_use", "Operation ID is already in use")
+        _write_journal(record)
+
+
+def _save_record(record: dict[str, Any]) -> None:
+    operation_id = _validate_operation_id(record.get("operationId", ""))
+    with _operation_lock(operation_id):
+        try:
+            current = _read_journal(operation_id)
+            if current.get("cancelRequested"):
+                record["cancelRequested"] = True
+                if current.get("state") == "cancelling" and record.get("state") == "running":
+                    record["state"] = "cancelling"
+        except RequestError as error:
+            if error.code != "operation_not_found":
+                raise
+        _write_journal(record)
+
+
 def _public_record(record: dict[str, Any], *, command: str | None = None) -> dict[str, Any]:
-    public = {key: value for key, value in record.items() if key not in {"proofs"}}
+    public = {
+        key: value
+        for key, value in record.items()
+        if key not in {"proofs", "workerPid", "workerToken"}
+    }
     if command and command != record.get("command"):
         public["operationCommand"] = record.get("command")
         public["command"] = command
@@ -744,39 +941,175 @@ def inspect_item(raw: str) -> dict[str, Any]:
     }
 
 
-def _new_record(command: str, sources: list[str], destination: str | None = None) -> dict[str, Any]:
-    operation_id = secrets.token_hex(16)
+def _new_record(
+    command: str,
+    sources: list[str],
+    destination: str | None = None,
+    *,
+    operation_id: str | None = None,
+    state: str = "running",
+) -> dict[str, Any]:
+    operation_id = _validate_operation_id(operation_id) if operation_id else secrets.token_hex(16)
+    now = _utc_now()
     record: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
         "operationId": operation_id,
         "command": command,
         "ok": False,
-        "state": "running",
+        "state": state,
         "undoable": False,
-        "createdAt": _utc_now(),
-        "updatedAt": _utc_now(),
+        "cancellable": state in {"queued", "running", "cancelling"},
+        "cancelRequested": False,
+        "createdAt": now,
+        "updatedAt": now,
         "sources": sources,
-        "results": [],
+        "results": [
+            {"source": source, "destination": None, "status": "pending"}
+            for source in sources
+        ],
         "proofs": [],
+        "progress": {
+            "total": len(sources),
+            "processed": 0,
+            "completed": 0,
+            "failed": 0,
+            "cancelled": 0,
+            "pending": len(sources),
+            "currentIndex": -1,
+        },
     }
     if destination is not None:
         record["destination"] = destination
     return record
 
 
+def reserve(command: str, source_count: int) -> dict[str, Any]:
+    if command not in {"copy", "move", "trash", "rename"}:
+        raise RequestError("invalid_operation", "Operation cannot be reserved")
+    if source_count < 1 or source_count > MAX_SOURCES:
+        raise RequestError(
+            "invalid_source_count",
+            f"Source count must be between 1 and {MAX_SOURCES}",
+        )
+    if command == "rename" and source_count != 1:
+        raise RequestError("invalid_source_count", "Rename requires exactly one source")
+    for _attempt in range(16):
+        record = _new_record(command, [], state="queued")
+        record["expectedSourceCount"] = source_count
+        record["progress"]["total"] = source_count
+        record["progress"]["pending"] = source_count
+        try:
+            _create_record(record)
+            public = _public_record(record, command="reserve")
+            public["ok"] = True
+            public["reservationAccepted"] = True
+            return public
+        except RequestError as error:
+            if error.code != "operation_id_in_use":
+                raise
+    raise RequestError("operation_id_unavailable", "Could not allocate an operation ID")
+
+
+def _start_record(
+    command: str,
+    sources: list[str],
+    destination: str | None,
+    operation_id: str | None,
+) -> dict[str, Any]:
+    if operation_id is None:
+        for _attempt in range(16):
+            record = _new_record(command, sources, destination)
+            record["workerPid"] = os.getpid()
+            record["workerToken"] = _process_token(os.getpid())
+            record["startedAt"] = _utc_now()
+            try:
+                _create_record(record)
+                break
+            except RequestError as error:
+                if error.code != "operation_id_in_use":
+                    raise
+        else:
+            raise RequestError("operation_id_unavailable", "Could not allocate an operation ID")
+    else:
+        operation_id = _validate_operation_id(operation_id)
+        with _operation_lock(operation_id):
+            path = _journal_path(operation_id)
+            if os.path.lexists(path):
+                record = _read_journal(operation_id)
+                if record.get("state") != "queued":
+                    raise RequestError("operation_id_in_use", "Operation ID is already in use")
+                if record.get("command") != command:
+                    raise RequestError("operation_mismatch", "Reserved operation does not match")
+                if record.get("expectedSourceCount") != len(sources):
+                    raise RequestError("operation_mismatch", "Reserved source count does not match")
+                if record.get("cancelRequested"):
+                    raise RequestError("operation_cancelled", "Reserved operation was cancelled")
+                created_at = record.get("createdAt") or _utc_now()
+                record = _new_record(
+                    command,
+                    sources,
+                    destination,
+                    operation_id=operation_id,
+                )
+                record["createdAt"] = created_at
+            else:
+                if os.path.lexists(_cancel_path(operation_id)):
+                    raise RequestError("operation_id_in_use", "Operation ID is already in use")
+                record = _new_record(
+                    command,
+                    sources,
+                    destination,
+                    operation_id=operation_id,
+                )
+            record["workerPid"] = os.getpid()
+            record["workerToken"] = _process_token(os.getpid())
+            record["startedAt"] = _utc_now()
+            _write_journal(record)
+        return record
+    return record
+
+
+def _update_progress(record: dict[str, Any], current_index: int = -1) -> None:
+    statuses = [str(result.get("status") or "") for result in record.get("results", [])]
+    completed = statuses.count("completed")
+    failed = statuses.count("failed")
+    cancelled = statuses.count("cancelled")
+    processed = completed + failed + cancelled
+    total = len(statuses)
+    record["progress"] = {
+        "total": total,
+        "processed": processed,
+        "completed": completed,
+        "failed": failed,
+        "cancelled": cancelled,
+        "pending": max(0, total - processed),
+        "currentIndex": current_index,
+    }
+
+
 def _finish_record(record: dict[str, Any]) -> None:
-    completed = sum(result.get("status") == "completed" for result in record["results"])
-    failed = len(record["results"]) - completed
-    if completed and failed:
+    _update_progress(record)
+    progress = record["progress"]
+    completed = progress["completed"]
+    failed = progress["failed"]
+    cancelled = progress["cancelled"]
+    if completed and (failed or cancelled):
         record["state"] = "partial"
-    elif completed:
+    elif completed and completed == progress["total"]:
         record["state"] = "completed"
+    elif cancelled and not completed and not failed:
+        record["state"] = "cancelled"
     else:
         record["state"] = "failed"
-    record["ok"] = failed == 0 and completed > 0
-    if failed:
+    record["ok"] = record["state"] == "completed"
+    record["cancellable"] = False
+    if failed or cancelled:
         first_failed = next(
-            (result for result in record["results"] if result.get("status") == "failed"),
+            (
+                result
+                for result in record["results"]
+                if result.get("status") in {"failed", "cancelled"}
+            ),
             None,
         )
         if first_failed and first_failed.get("error"):
@@ -795,137 +1128,432 @@ def _result_error(source: str, error: Exception, destination: str | None = None)
     return result
 
 
-def transfer(command: str, raw_sources: list[str], raw_destination: str) -> tuple[dict[str, Any], int]:
+def _result_cancelled(source: str, error: Exception) -> dict[str, Any]:
+    return {
+        "source": source,
+        "destination": None,
+        "status": "cancelled",
+        "error": _error(getattr(error, "code", "cancelled"), error),
+    }
+
+
+def _save_progress(record: dict[str, Any], current_index: int = -1) -> None:
+    _update_progress(record, current_index)
+    record["updatedAt"] = _utc_now()
+    _save_record(record)
+
+
+def transfer(
+    command: str,
+    raw_sources: list[str],
+    raw_destination: str,
+    operation_id: str | None = None,
+) -> tuple[dict[str, Any], int]:
     if len(raw_sources) > MAX_SOURCES:
         raise RequestError("too_many_sources", f"At most {MAX_SOURCES} sources are allowed")
-    destination = _validate_destination(raw_destination)
-    record = _new_record(command, raw_sources, str(destination))
-    operation_id = record["operationId"]
-    with _operation_lock(operation_id):
-        _write_journal(record)
-        seen: set[str] = set()
-        resolved_sources: list[Path] = []
-        parsed: list[tuple[str, Path | None, Exception | None]] = []
-        for raw in raw_sources:
-            try:
-                path = local_path(raw)
-                canonical = str(path.resolve())
-                if canonical in seen:
-                    raise ItemError("duplicate_source", f"Source appears more than once: {path.name}")
-                seen.add(canonical)
-                parsed.append((raw, path, None))
-                resolved_sources.append(path.resolve())
-            except Exception as error:
-                parsed.append((raw, None, error))
-
-        for raw, source, parse_error in parsed:
-            if parse_error is not None or source is None:
-                record["results"].append(_result_error(raw, parse_error or ItemError("invalid_path", "Invalid source")))
-                continue
-            try:
-                _preflight_source(source, destination)
-                resolved = source.resolve()
-                if any(
-                    other != resolved and _is_relative_to(resolved, other)
-                    for other in resolved_sources
-                ):
-                    raise ItemError("nested_source", f"Nested source is also selected: {source.name}")
-                launcher_to_desktop = (
-                    source.suffix.lower() == ".desktop"
-                    and destination == desktop_dir()
-                )
-                if launcher_to_desktop:
-                    target = _launcher_to_desktop(
-                        source,
-                        destination,
-                        move=command == "move",
-                    )
-                elif command == "copy":
-                    target = _copy_to_unique(source, destination)
-                else:
-                    target = _move_to_unique(source, destination)
-                record["results"].append(
-                    {"source": str(source), "destination": str(target), "status": "completed"}
-                )
-                if command == "move":
-                    proof = _move_proof(source, target)
-                    if proof is not None:
-                        record["proofs"].append(proof)
-            except Exception as error:
-                record["results"].append(_result_error(str(source), error))
-            record["updatedAt"] = _utc_now()
-            _write_journal(record)
-
+    if not raw_sources:
+        raise RequestError("no_sources", "At least one source is required")
+    record = _start_record(command, raw_sources, raw_destination, operation_id)
+    control = OperationControl(record["operationId"])
+    try:
+        destination = _validate_destination(raw_destination)
+        record["destination"] = str(destination)
+    except Exception as error:
+        for index, raw in enumerate(raw_sources):
+            record["results"][index] = _result_error(raw, error)
         _finish_record(record)
-        completed = sum(result["status"] == "completed" for result in record["results"])
-        record["undoable"] = (
-            command == "move"
-            and completed > 0
-            and len(record["proofs"]) == completed
-        )
-        _write_journal(record)
+        _save_record(record)
+        return _public_record(record), 1
+
+    seen: set[str] = set()
+    resolved_sources: list[Path] = []
+    parsed: list[tuple[str, Path | None, Exception | None]] = []
+    for raw in raw_sources:
+        try:
+            path = local_path(raw)
+            canonical = str(path.resolve())
+            if canonical in seen:
+                raise ItemError("duplicate_source", f"Source appears more than once: {path.name}")
+            seen.add(canonical)
+            parsed.append((raw, path, None))
+            resolved_sources.append(path.resolve())
+        except Exception as error:
+            parsed.append((raw, None, error))
+
+    for index, (raw, source, parse_error) in enumerate(parsed):
+        try:
+            control.check()
+        except OperationCancelled as error:
+            for pending_index in range(index, len(raw_sources)):
+                record["results"][pending_index] = _result_cancelled(
+                    raw_sources[pending_index], error
+                )
+            break
+        if parse_error is not None or source is None:
+            record["results"][index] = _result_error(
+                raw,
+                parse_error or ItemError("invalid_path", "Invalid source"),
+            )
+            _save_progress(record)
+            continue
+        record["results"][index] = {
+            "source": str(source),
+            "destination": None,
+            "status": "running",
+        }
+        _save_progress(record, index)
+        try:
+            _preflight_source(source, destination)
+            resolved = source.resolve()
+            if any(
+                other != resolved and _is_relative_to(resolved, other)
+                for other in resolved_sources
+            ):
+                raise ItemError("nested_source", f"Nested source is also selected: {source.name}")
+            launcher_to_desktop = (
+                source.suffix.lower() == ".desktop"
+                and destination == desktop_dir()
+            )
+            if launcher_to_desktop:
+                target = _launcher_to_desktop(
+                    source,
+                    destination,
+                    move=command == "move",
+                    control=control,
+                )
+            elif command == "copy":
+                target = _copy_to_unique(source, destination, control)
+            else:
+                target = _move_to_unique(source, destination, control)
+            record["results"][index] = {
+                "source": str(source),
+                "destination": str(target),
+                "status": "completed",
+            }
+            if command == "move":
+                proof = _move_proof(source, target)
+                if proof is not None:
+                    record["proofs"].append(proof)
+        except OperationCancelled as error:
+            record["results"][index] = _result_cancelled(str(source), error)
+            for pending_index in range(index + 1, len(raw_sources)):
+                record["results"][pending_index] = _result_cancelled(
+                    raw_sources[pending_index], error
+                )
+            break
+        except Exception as error:
+            record["results"][index] = _result_error(str(source), error)
+        _save_progress(record)
+
+    _finish_record(record)
+    completed = record["progress"]["completed"]
+    record["undoable"] = (
+        command == "move"
+        and completed > 0
+        and len(record["proofs"]) == completed
+    )
+    _save_record(record)
     return _public_record(record), 0 if record["ok"] else 1
 
 
-def _run_gio_trash(path: Path) -> None:
+def _stop_child(child: subprocess.Popen[Any]) -> None:
     try:
-        result = subprocess.run(
-            ["gio", "trash", str(path)],
+        if os.getpgid(child.pid) == child.pid:
+            os.killpg(child.pid, signal.SIGTERM)
+        else:
+            child.terminate()
+    except (ProcessLookupError, OSError):
+        return
+    try:
+        child.wait(timeout=CHILD_CANCEL_GRACE_SECONDS)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        if os.getpgid(child.pid) == child.pid:
+            os.killpg(child.pid, signal.SIGKILL)
+        else:
+            child.kill()
+    except (ProcessLookupError, OSError):
+        pass
+    try:
+        child.wait(timeout=CHILD_CANCEL_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        raise ItemError("child_cleanup_failed", "A helper process could not be stopped")
+
+
+def _run_bounded_child(argv: list[str], control: OperationControl) -> None:
+    child: subprocess.Popen[Any] | None = None
+    deadline = time.monotonic() + CHILD_TIMEOUT_SECONDS
+    try:
+        child = subprocess.Popen(
+            argv,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=CHILD_TIMEOUT_SECONDS,
-            check=False,
             start_new_session=True,
-            preexec_fn=_kill_child_when_parent_dies,
+            preexec_fn=_kill_child_when_parent_dies if sys.platform.startswith("linux") else None,
         )
+        while True:
+            control.check()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ItemError("child_timeout", "The local helper timed out")
+            try:
+                return_code = child.wait(timeout=min(0.1, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
     except FileNotFoundError as error:
-        raise ItemError("child_missing", "The local Trash helper is unavailable") from error
-    except subprocess.TimeoutExpired as error:
-        raise ItemError("child_timeout", "The local Trash helper timed out") from error
+        raise ItemError("child_missing", "The local helper is unavailable") from error
+    except (OperationCancelled, ItemError):
+        if child is not None:
+            _stop_child(child)
+        raise
     except OSError as error:
-        raise ItemError("child_failed", f"Could not start the local Trash helper: {error}") from error
-    if result.returncode != 0:
-        raise ItemError("child_failed", f"The local Trash helper exited with status {result.returncode}")
+        if child is not None:
+            _stop_child(child)
+        raise ItemError("child_failed", f"Could not start the local helper: {error}") from error
+    if return_code != 0:
+        raise ItemError("child_failed", f"The local helper exited with status {return_code}")
 
 
-def trash(raw_sources: list[str]) -> tuple[dict[str, Any], int]:
+def _run_gio_trash(path: Path, control: OperationControl) -> None:
+    try:
+        _run_bounded_child(
+            ["gio", "trash", str(path)],
+            control,
+        )
+    except ItemError as error:
+        if error.code == "child_missing":
+            raise ItemError("child_missing", "The local Trash helper is unavailable") from error
+        raise
+
+
+def trash(
+    raw_sources: list[str], operation_id: str | None = None
+) -> tuple[dict[str, Any], int]:
     if len(raw_sources) > MAX_SOURCES:
         raise RequestError("too_many_sources", f"At most {MAX_SOURCES} sources are allowed")
-    desktop = desktop_dir()
-    record = _new_record("trash", raw_sources)
-    operation_id = record["operationId"]
-    with _operation_lock(operation_id):
-        _write_journal(record)
-        seen: set[str] = set()
-        for raw in raw_sources:
-            try:
-                path = local_path(raw)
-                lexical_key = str(path)
-                if lexical_key in seen:
-                    raise ItemError("duplicate_source", f"Source appears more than once: {path.name}")
-                seen.add(lexical_key)
-                if path.parent.resolve() != desktop:
-                    raise ItemError("outside_desktop", "Trash is limited to direct Desktop items")
-                _lstat_supported(path, allow_symlink=True)
-                _run_gio_trash(path)
-                record["results"].append(
-                    {"source": str(path), "destination": None, "status": "completed"}
-                )
-            except Exception as error:
-                record["results"].append(_result_error(raw, error))
-            record["updatedAt"] = _utc_now()
-            _write_journal(record)
+    if not raw_sources:
+        raise RequestError("no_sources", "At least one source is required")
+    record = _start_record("trash", raw_sources, None, operation_id)
+    control = OperationControl(record["operationId"])
+    try:
+        desktop = desktop_dir()
+    except Exception as error:
+        for index, raw in enumerate(raw_sources):
+            record["results"][index] = _result_error(raw, error)
         _finish_record(record)
-        record["undoable"] = False
-        _write_journal(record)
+        _save_record(record)
+        return _public_record(record), 1
+
+    seen: set[str] = set()
+    for index, raw in enumerate(raw_sources):
+        try:
+            control.check()
+        except OperationCancelled as error:
+            for pending_index in range(index, len(raw_sources)):
+                record["results"][pending_index] = _result_cancelled(
+                    raw_sources[pending_index], error
+                )
+            break
+        record["results"][index] = {
+            "source": raw,
+            "destination": None,
+            "status": "running",
+        }
+        _save_progress(record, index)
+        try:
+            path = local_path(raw)
+            lexical_key = str(path)
+            if lexical_key in seen:
+                raise ItemError("duplicate_source", f"Source appears more than once: {path.name}")
+            seen.add(lexical_key)
+            if path.parent.resolve() != desktop:
+                raise ItemError("outside_desktop", "Trash is limited to direct Desktop items")
+            _lstat_supported(path, allow_symlink=True)
+            _run_gio_trash(path, control)
+            record["results"][index] = {
+                "source": str(path),
+                "destination": None,
+                "status": "completed",
+            }
+        except OperationCancelled as error:
+            record["results"][index] = _result_cancelled(raw, error)
+            for pending_index in range(index + 1, len(raw_sources)):
+                record["results"][pending_index] = _result_cancelled(
+                    raw_sources[pending_index], error
+                )
+            break
+        except Exception as error:
+            record["results"][index] = _result_error(raw, error)
+        _save_progress(record)
+    _finish_record(record)
+    record["undoable"] = False
+    _save_record(record)
     return _public_record(record), 0 if record["ok"] else 1
+
+
+def _validate_new_name(raw_name: str) -> str:
+    name = str(raw_name or "")
+    if not name or name in {".", ".."}:
+        raise RequestError("invalid_name", "A new name is required")
+    if name != name.strip():
+        raise RequestError("invalid_name", "A name cannot start or end with whitespace")
+    if "/" in name or "\x00" in name:
+        raise RequestError("invalid_name", "A name cannot contain a path separator")
+    if any(ord(character) < 32 or ord(character) == 127 for character in name):
+        raise RequestError("invalid_name", "A name cannot contain control characters")
+    if len(os.fsencode(name)) > MAX_NAME_BYTES:
+        raise RequestError("name_too_long", f"Names are limited to {MAX_NAME_BYTES} bytes")
+    return name
+
+
+def rename_item(
+    raw_source: str,
+    raw_name: str,
+    operation_id: str | None = None,
+) -> tuple[dict[str, Any], int]:
+    record = _start_record("rename", [raw_source], None, operation_id)
+    control = OperationControl(record["operationId"])
+    try:
+        control.check()
+        desktop = desktop_dir()
+        source = local_path(raw_source)
+        name = _validate_new_name(raw_name)
+        if source.parent.resolve() != desktop:
+            raise ItemError("outside_desktop", "Rename is limited to direct Desktop items")
+        before = _lstat_supported(source)
+        destination = source.parent / name
+        if source.name == name:
+            raise ItemError("same_name", "The item already has that name")
+        if source.suffix.lower() != ".desktop" and destination.suffix.lower() == ".desktop":
+            raise ItemError(
+                "unsafe_launcher_name",
+                "A non-launcher cannot be renamed into a Desktop launcher",
+            )
+        record["destination"] = str(destination)
+        record["results"][0] = {
+            "source": str(source),
+            "destination": str(destination),
+            "status": "running",
+        }
+        _save_progress(record, 0)
+        _rename_noreplace(source, destination)
+        after = destination.lstat()
+        if os.path.lexists(source) or (before.st_dev, before.st_ino) != (
+            after.st_dev,
+            after.st_ino,
+        ):
+            raise ItemError("postcondition_failed", "Rename postcondition could not be proved")
+        record["results"][0] = {
+            "source": str(source),
+            "destination": str(destination),
+            "status": "completed",
+        }
+    except FileExistsError as error:
+        record["results"][0] = _result_error(
+            raw_source,
+            ItemError("destination_exists", "An item with that name already exists"),
+            record.get("destination"),
+        )
+    except OperationCancelled as error:
+        record["results"][0] = _result_cancelled(raw_source, error)
+    except Exception as error:
+        record["results"][0] = _result_error(
+            raw_source,
+            error,
+            record.get("destination"),
+        )
+    _finish_record(record)
+    record["undoable"] = False
+    _save_record(record)
+    return _public_record(record), 0 if record["ok"] else 1
+
+
+def _write_cancel_marker(operation_id: str) -> None:
+    path = _cancel_path(operation_id)
+    fd = -1
+    try:
+        fd = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        os.write(fd, b"cancel\n")
+        os.fsync(fd)
+    except FileExistsError:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            raise RequestError("unsafe_cancel_state", "Operation cancellation state is unsafe")
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def cancel(operation_id: str) -> dict[str, Any]:
+    operation_id = _validate_operation_id(operation_id)
+    with _operation_lock(operation_id):
+        record = _read_journal(operation_id)
+        state = str(record.get("state") or "")
+        if state not in {"queued", "running", "cancelling"}:
+            raise RequestError("operation_finished", "Operation is no longer cancellable")
+        _write_cancel_marker(operation_id)
+        record["cancelRequested"] = True
+        record["updatedAt"] = _utc_now()
+        if state == "queued":
+            total = int(record.get("expectedSourceCount") or 0)
+            record["state"] = "cancelled"
+            record["cancellable"] = False
+            record["progress"] = {
+                "total": total,
+                "processed": total,
+                "completed": 0,
+                "failed": 0,
+                "cancelled": total,
+                "pending": 0,
+                "currentIndex": -1,
+            }
+        else:
+            record["state"] = "cancelling"
+            record["cancellable"] = True
+        _write_journal(record)
+    public = _public_record(record, command="cancel")
+    public["ok"] = True
+    public["cancelAccepted"] = True
+    return public
+
+
+def _mark_interrupted(record: dict[str, Any]) -> None:
+    error = ItemError("worker_lost", "Operation worker stopped before completion")
+    for index, result in enumerate(record.get("results", [])):
+        if result.get("status") in {"pending", "running"}:
+            record["results"][index] = _result_error(
+                str(result.get("source") or "item"), error
+            )
+    _finish_record(record)
+    record["undoable"] = False
 
 
 def status(operation_id: str) -> dict[str, Any]:
     operation_id = _validate_operation_id(operation_id)
     with _operation_lock(operation_id):
         record = _read_journal(operation_id)
+        if record.get("state") in {"running", "cancelling"} and not _worker_alive(record):
+            _mark_interrupted(record)
+            _write_journal(record)
+        if record.get("command") == "move" and record.get("undoable"):
+            proofs = [proof for proof in record.get("proofs", []) if not proof.get("undone")]
+            still_undoable = bool(proofs) and all(
+                not os.path.lexists(local_path(proof["source"]))
+                and _proof_metadata_matches(proof)
+                for proof in proofs
+            )
+            if not still_undoable:
+                record["undoable"] = False
+                record["updatedAt"] = _utc_now()
+                _write_journal(record)
     return _public_record(record, command="status")
 
 
@@ -978,14 +1606,25 @@ def _parser() -> ReceiptParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect")
     inspect_parser.add_argument("path")
+    reserve_parser = subparsers.add_parser("reserve")
+    reserve_parser.add_argument("operation", choices=("copy", "move", "trash", "rename"))
+    reserve_parser.add_argument("--source-count", required=True, type=int)
     for command in ("copy", "move"):
         operation_parser = subparsers.add_parser(command)
+        operation_parser.add_argument("--operation-id")
         operation_parser.add_argument("--destination", required=True)
         operation_parser.add_argument("sources", nargs="+")
     trash_parser = subparsers.add_parser("trash")
+    trash_parser.add_argument("--operation-id")
     trash_parser.add_argument("sources", nargs="+")
+    rename_parser = subparsers.add_parser("rename")
+    rename_parser.add_argument("--operation-id")
+    rename_parser.add_argument("--name", required=True)
+    rename_parser.add_argument("source")
     status_parser = subparsers.add_parser("status")
     status_parser.add_argument("operation_id")
+    cancel_parser = subparsers.add_parser("cancel")
+    cancel_parser.add_argument("operation_id")
     undo_parser = subparsers.add_parser("undo")
     undo_parser.add_argument("operation_id")
     return parser
@@ -999,12 +1638,33 @@ def main(argv: list[str] | None = None) -> int:
         args = _parser().parse_args(raw_argv)
         if args.command == "inspect":
             payload, exit_code = inspect_item(args.path), 0
+        elif args.command == "reserve":
+            payload, exit_code = reserve(args.operation, args.source_count), 0
         elif args.command in {"copy", "move"}:
-            payload, exit_code = transfer(args.command, args.sources, args.destination)
+            signal.signal(signal.SIGTERM, _request_signal_cancel)
+            signal.signal(signal.SIGINT, _request_signal_cancel)
+            payload, exit_code = transfer(
+                args.command,
+                args.sources,
+                args.destination,
+                args.operation_id,
+            )
         elif args.command == "trash":
-            payload, exit_code = trash(args.sources)
+            signal.signal(signal.SIGTERM, _request_signal_cancel)
+            signal.signal(signal.SIGINT, _request_signal_cancel)
+            payload, exit_code = trash(args.sources, args.operation_id)
+        elif args.command == "rename":
+            signal.signal(signal.SIGTERM, _request_signal_cancel)
+            signal.signal(signal.SIGINT, _request_signal_cancel)
+            payload, exit_code = rename_item(
+                args.source,
+                args.name,
+                args.operation_id,
+            )
         elif args.command == "status":
             payload, exit_code = status(args.operation_id), 0
+        elif args.command == "cancel":
+            payload, exit_code = cancel(args.operation_id), 0
         elif args.command == "undo":
             payload, exit_code = undo(args.operation_id)
         else:

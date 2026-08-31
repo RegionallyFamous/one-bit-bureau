@@ -8,11 +8,126 @@ path rules can be unit-tested outside a running Omarchy session.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
+
+
+MAX_USER_DIRS_BYTES = 64 * 1024
+LAUNCHER_METADATA_TIMEOUT_SECONDS = 10
+_DESKTOP_ASSIGNMENT_RE = re.compile(
+    rb'^\s*XDG_DESKTOP_DIR="((?:[^"\\]|\\.)*)"\s*$'
+)
+
+
+class DesktopDisabledError(RuntimeError):
+    """The user explicitly disabled the XDG Desktop directory."""
+
+
+@dataclass(frozen=True)
+class DesktopLocation:
+    enabled: bool
+    path: Path | None
+    state: str
+    reason: str
+
+
+def _absolute_path(value: str, *, home: Path) -> Path:
+    expanded = os.path.expanduser(value.replace("${HOME}", str(home)).replace("$HOME", str(home)))
+    if "$" in expanded or not os.path.isabs(expanded) or expanded.startswith("//"):
+        raise ValueError("XDG Desktop path is not an absolute local path")
+    return Path(os.path.abspath(expanded)).resolve()
+
+
+def _read_regular_file(path: Path, limit: int) -> bytes | None:
+    """Read a small regular file without following a final symlink."""
+
+    fd = -1
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+            return None
+        chunks: list[bytes] = []
+        remaining = limit + 1
+        while remaining:
+            block = os.read(fd, min(8192, remaining))
+            if not block:
+                break
+            chunks.append(block)
+            remaining -= len(block)
+        payload = b"".join(chunks)
+        return payload if len(payload) <= limit else None
+    except OSError:
+        return None
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def resolve_desktop_location(
+    *,
+    home: Path | None = None,
+    environ: dict[str, str] | None = None,
+    max_user_dirs_bytes: int = MAX_USER_DIRS_BYTES,
+) -> DesktopLocation:
+    """Resolve XDG_DESKTOP_DIR without evaluating shell syntax.
+
+    Per xdg-user-dirs, a user directory which resolves to the home directory is
+    disabled.  A missing or invalid configuration falls back to the conventional
+    ``$HOME/Desktop`` path, but this function never creates it.
+    """
+
+    env = os.environ if environ is None else environ
+    user_home = (Path.home() if home is None else Path(home)).expanduser().resolve()
+    config_raw = env.get("XDG_CONFIG_HOME", "")
+    try:
+        config = (
+            _absolute_path(config_raw, home=user_home)
+            if config_raw
+            else user_home / ".config"
+        )
+    except ValueError:
+        config = user_home / ".config"
+
+    payload = _read_regular_file(config / "user-dirs.dirs", max_user_dirs_bytes)
+    configured: Path | None = None
+    if payload is not None:
+        for line in payload.splitlines():
+            match = _DESKTOP_ASSIGNMENT_RE.fullmatch(line)
+            if not match:
+                continue
+            try:
+                raw = re.sub(rb"\\([\\\"$`])", rb"\1", match.group(1)).decode(
+                    "utf-8", "strict"
+                )
+                configured = _absolute_path(raw, home=user_home)
+            except (UnicodeDecodeError, ValueError, OSError):
+                configured = None
+            break
+
+    path = configured if configured is not None else (user_home / "Desktop").resolve()
+    if path == user_home:
+        return DesktopLocation(
+            enabled=False,
+            path=None,
+            state="disabled",
+            reason="The Desktop directory is disabled in XDG user directories.",
+        )
+    return DesktopLocation(enabled=True, path=path, state="enabled", reason="")
+
+
+def require_desktop_directory(
+    *, home: Path | None = None, environ: dict[str, str] | None = None
+) -> Path:
+    location = resolve_desktop_location(home=home, environ=environ)
+    if not location.enabled or location.path is None:
+        raise DesktopDisabledError(location.reason)
+    return location.path
 
 
 def lexical_path(value: str) -> Path:
@@ -58,6 +173,8 @@ def enforce_untrusted_launcher(
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
+        timeout=LAUNCHER_METADATA_TIMEOUT_SECONDS,
+        start_new_session=True,
     )
     after = path.stat(follow_symlinks=False)
     if after.st_mode & 0o111:
@@ -68,6 +185,8 @@ def enforce_untrusted_launcher(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        timeout=LAUNCHER_METADATA_TIMEOUT_SECONDS,
+        start_new_session=True,
     )
     if _metadata_is_trusted(info.stdout):
         raise PermissionError("Could not clear launcher trusted metadata")

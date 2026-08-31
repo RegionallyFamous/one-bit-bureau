@@ -96,6 +96,250 @@ class DesktopIndexBoundaryTest(unittest.TestCase):
             self.assertEqual(item["kind"], "image")
             self.assertEqual(item["preview"], str(image.resolve()))
 
+    def test_direct_item_emits_bounded_modified_timestamp(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            item_path = Path(temporary) / "note.txt"
+            item_path.write_text("note", encoding="utf-8")
+            timestamp_ns = 1_700_000_000_123_000_000
+            os.utime(item_path, ns=(timestamp_ns, timestamp_ns))
+
+            with mock.patch.object(self.index, "guess_icon", return_value="text-x-generic"):
+                item = self.index.item_for(item_path)
+
+            self.assertEqual(item["modifiedUnixMs"], timestamp_ns // 1_000_000)
+
+    def test_disabled_desktop_returns_explicit_state_without_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            config = home / ".config"
+            config.mkdir(parents=True)
+            (config / "user-dirs.dirs").write_text(
+                'XDG_DESKTOP_DIR="$HOME"\n', encoding="utf-8"
+            )
+            environment = {
+                "HOME": str(home),
+                "XDG_CONFIG_HOME": str(config),
+            }
+            with mock.patch.dict(os.environ, environment), mock.patch.object(
+                self.index, "mounted_volume_records", return_value=[]
+            ):
+                payload = self.index.list_items()
+
+            self.assertFalse(payload["desktopEnabled"])
+            self.assertEqual(payload["desktopState"], "disabled")
+            self.assertEqual(payload["desktop"], "")
+            self.assertEqual(payload["items"][0]["id"], "virtual:trash")
+            self.assertFalse((home / "Desktop").exists())
+
+    def test_trash_virtual_object_reports_empty_full_and_unknown(self) -> None:
+        class Enumerator:
+            def __init__(self, value):
+                self.value = value
+
+            def next_file(self, _cancellable):
+                return self.value
+
+            def close(self, _cancellable):
+                pass
+
+        class TrashFile:
+            def __init__(self, value):
+                self.value = value
+
+            def enumerate_children(self, *_args):
+                if isinstance(self.value, Exception):
+                    raise self.value
+                return Enumerator(self.value)
+
+        class FileFactory:
+            value = None
+
+            @classmethod
+            def new_for_uri(cls, _uri):
+                return TrashFile(cls.value)
+
+        fake_gio = types.SimpleNamespace(
+            File=FileFactory,
+            FileQueryInfoFlags=types.SimpleNamespace(NOFOLLOW_SYMLINKS=0),
+        )
+        with mock.patch.object(self.index, "Gio", fake_gio):
+            FileFactory.value = None
+            self.assertEqual(self.index.virtual_trash_item()["trashState"], "empty")
+            FileFactory.value = object()
+            full = self.index.virtual_trash_item()
+            self.assertEqual(full["trashState"], "full")
+            self.assertEqual(full["icon"], "user-trash-full")
+            FileFactory.value = RuntimeError("injected")
+            self.assertEqual(self.index.virtual_trash_item()["trashState"], "unknown")
+
+    def test_volume_records_are_deterministic_bounded_and_local_only(self) -> None:
+        class Icon:
+            def to_string(self):
+                return "drive-removable-media"
+
+        class Root:
+            def __init__(self, index):
+                self.index = index
+
+            def get_path(self):
+                return f"/run/media/test/Volume {self.index}"
+
+            def get_uri(self):
+                return f"file:///run/media/test/Volume%20{self.index}"
+
+        class Volume:
+            def __init__(self, index):
+                self.index = index
+
+            def get_uuid(self):
+                return f"uuid-{self.index}"
+
+            def get_identifier(self, kind):
+                self.kind = kind
+                return f"/dev/test{self.index}"
+
+            def can_eject(self):
+                return self.index % 2 == 0
+
+        class Mount:
+            def __init__(self, index):
+                self.index = index
+
+            def is_shadowed(self):
+                return False
+
+            def get_root(self):
+                return Root(self.index)
+
+            def get_volume(self):
+                return Volume(self.index)
+
+            def get_uuid(self):
+                return ""
+
+            def get_name(self):
+                return f"Volume {self.index}"
+
+            def get_icon(self):
+                return Icon()
+
+            def can_unmount(self):
+                return True
+
+            def can_eject(self):
+                return False
+
+        mounts = [Mount(index) for index in range(self.index.MAX_VOLUMES + 1)]
+        monitor = types.SimpleNamespace(get_mounts=lambda: mounts)
+        fake_gio = types.SimpleNamespace(
+            VolumeMonitor=types.SimpleNamespace(get=lambda: monitor)
+        )
+        with mock.patch.object(self.index, "Gio", fake_gio):
+            first = self.index.mounted_volume_records()
+            second = self.index.mounted_volume_records()
+
+        self.assertEqual(len(first), self.index.MAX_VOLUMES)
+        self.assertEqual(
+            [record["virtualId"] for record in first],
+            [record["virtualId"] for record in second],
+        )
+        self.assertTrue(all(record["virtualId"].startswith("volume:") for record in first))
+        self.assertTrue(all(len(os.fsencode(record["path"])) <= self.index.MAX_PATH_BYTES for record in first))
+
+    def test_virtual_actions_revalidate_capability_and_postcondition(self) -> None:
+        virtual_id = "volume:" + "a" * 32
+        record = {
+            "virtualId": virtual_id,
+            "name": "Disk",
+            "_uri": "file:///run/media/test/Disk",
+            "canUnmount": False,
+            "canEject": True,
+        }
+        commands = []
+        with mock.patch.object(
+            self.index, "mounted_volume_records", return_value=[record]
+        ), mock.patch.object(
+            self.index, "_run_device_command", side_effect=commands.append
+        ):
+            refusal, refusal_exit = self.index.perform_virtual_action(
+                "unmount", "virtual:" + virtual_id
+            )
+        self.assertEqual(refusal_exit, 1)
+        self.assertEqual(refusal["error"]["code"], "unsupported_action")
+        self.assertEqual(commands, [])
+
+        with mock.patch.object(
+            self.index,
+            "mounted_volume_records",
+            side_effect=[[record], []],
+        ), mock.patch.object(
+            self.index, "_run_device_command", side_effect=commands.append
+        ):
+            success, success_exit = self.index.perform_virtual_action(
+                "eject", virtual_id
+            )
+        self.assertEqual(success_exit, 0)
+        self.assertEqual(success["state"], "completed")
+        self.assertEqual(
+            commands[-1],
+            [
+                "/usr/bin/gio",
+                "mount",
+                "--eject",
+                "file:///run/media/test/Disk",
+            ],
+        )
+
+    def test_virtual_open_uses_omarchys_files_application(self) -> None:
+        virtual_id = "volume:" + "b" * 32
+        record = {
+            "virtualId": virtual_id,
+            "name": "Disk",
+            "_uri": "file:///run/media/test/Disk",
+            "canUnmount": False,
+            "canEject": False,
+        }
+        commands = []
+        with mock.patch.object(
+            self.index, "mounted_volume_records", return_value=[record]
+        ), mock.patch.object(
+            self.index, "_run_device_command", side_effect=commands.append
+        ):
+            trash, trash_exit = self.index.perform_virtual_action("open", "trash")
+            volume, volume_exit = self.index.perform_virtual_action("open", virtual_id)
+
+        self.assertEqual(trash_exit, 0)
+        self.assertEqual(trash["state"], "requested")
+        self.assertEqual(
+            commands[0],
+            [
+                "/usr/bin/uwsm",
+                "app",
+                "-t",
+                "service",
+                "--",
+                "/usr/bin/nautilus",
+                "--new-window",
+                "trash:///",
+            ],
+        )
+        self.assertEqual(volume_exit, 0)
+        self.assertEqual(volume["state"], "requested")
+        self.assertEqual(
+            commands[1],
+            [
+                "/usr/bin/uwsm",
+                "app",
+                "-t",
+                "service",
+                "--",
+                "/usr/bin/nautilus",
+                "--new-window",
+                "file:///run/media/test/Disk",
+            ],
+        )
+
     def test_animated_or_vector_image_falls_back_to_the_bitmap_icon(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             image = Path(temporary) / "drawing.svg"

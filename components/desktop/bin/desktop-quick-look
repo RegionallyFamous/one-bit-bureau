@@ -1,0 +1,202 @@
+#!/usr/bin/python3
+"""Bounded bridge to GNOME Sushi without replacing Omarchy Quick Look."""
+
+from __future__ import annotations
+
+import ctypes
+import json
+import os
+import signal
+import stat
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+_BIN_DIR = str(Path(__file__).resolve().parent)
+if _BIN_DIR not in sys.path:
+    sys.path.insert(0, _BIN_DIR)
+
+from desktop_policy import DesktopDisabledError, lexical_path, require_desktop_directory
+
+
+SCHEMA_VERSION = 1
+MAX_RAW_ARG_BYTES = 1024
+MAX_PATH_BYTES = 1024
+MAX_ERROR_BYTES = 240
+PREVIEW_TIMEOUT_SECONDS = 8
+FOCUS_TIMEOUT_SECONDS = 3.0
+FOCUS_ATTEMPT_TIMEOUT_SECONDS = 1.0
+FOCUS_RETRY_SECONDS = 0.05
+KILL_GRACE_SECONDS = 0.5
+PR_SET_PDEATHSIG = 1
+
+
+class QuickLookError(Exception):
+    def __init__(self, code: str, message: str, exit_code: int = 1):
+        super().__init__(message)
+        self.code = code
+        self.exit_code = exit_code
+
+
+def bounded_text(value: object, limit: int = MAX_ERROR_BYTES) -> str:
+    text = " ".join(
+        str(value or "").replace("\x00", " ").replace("\r", " ").replace("\n", " ").split()
+    )
+    encoded = text.encode("utf-8", "replace")
+    return text if len(encoded) <= limit else encoded[:limit].decode("utf-8", "ignore").rstrip()
+
+
+def emit(payload: dict) -> None:
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def validate_path(raw: str) -> Path:
+    if not raw or len(raw.encode("utf-8", "surrogateescape")) > MAX_RAW_ARG_BYTES:
+        raise QuickLookError("invalid_argument", "Quick Look path is missing or too long", 2)
+    if "\x00" in raw or any(ord(character) < 32 or ord(character) == 127 for character in raw):
+        raise QuickLookError("invalid_argument", "Quick Look path contains control characters", 2)
+    if "://" in raw and not raw.startswith("file://"):
+        raise QuickLookError("remote_uri", "Quick Look accepts only local Desktop items", 2)
+    if not raw.startswith("file://") and not os.path.isabs(os.path.expanduser(raw)):
+        raise QuickLookError("invalid_path", "Quick Look requires an absolute local path", 2)
+    try:
+        path = lexical_path(raw)
+    except ValueError as error:
+        raise QuickLookError("invalid_path", str(error), 2) from error
+    if not path.is_absolute() or str(path).startswith("//"):
+        raise QuickLookError("invalid_path", "Quick Look requires an absolute local path", 2)
+    if len(os.fsencode(path)) > MAX_PATH_BYTES:
+        raise QuickLookError("path_too_long", f"Paths are limited to {MAX_PATH_BYTES} bytes", 2)
+    try:
+        desktop = require_desktop_directory()
+    except DesktopDisabledError as error:
+        raise QuickLookError("desktop_disabled", str(error), 2) from error
+    try:
+        if path.parent.resolve() != desktop.resolve():
+            raise QuickLookError("outside_desktop", "Quick Look is limited to direct Desktop items", 2)
+        info = path.lstat()
+    except FileNotFoundError as error:
+        raise QuickLookError("not_found", "Desktop item no longer exists", 2) from error
+    except OSError as error:
+        raise QuickLookError("stat_failed", "Desktop item could not be inspected", 2) from error
+    if stat.S_ISLNK(info.st_mode):
+        raise QuickLookError("unsafe_symlink", "Quick Look does not follow Desktop symlinks", 2)
+    if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+        raise QuickLookError("unsupported_type", "Quick Look does not support this item type", 2)
+    return path
+
+
+def child_preexec() -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
+        os._exit(127)
+    if os.getppid() == 1:
+        os._exit(127)
+
+
+def stop_child(child: subprocess.Popen) -> None:
+    try:
+        if os.getpgid(child.pid) == child.pid:
+            os.killpg(child.pid, signal.SIGTERM)
+        else:
+            child.terminate()
+    except (ProcessLookupError, OSError):
+        return
+    try:
+        child.wait(timeout=KILL_GRACE_SECONDS)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        if os.getpgid(child.pid) == child.pid:
+            os.killpg(child.pid, signal.SIGKILL)
+        else:
+            child.kill()
+    except (ProcessLookupError, OSError):
+        pass
+    try:
+        child.wait(timeout=KILL_GRACE_SECONDS)
+    except subprocess.TimeoutExpired as error:
+        raise QuickLookError("preview_cleanup_failed", "Preview helper could not be stopped") from error
+
+
+def focus_previewer() -> None:
+    deadline = time.monotonic() + FOCUS_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        try:
+            focused = subprocess.run(
+                ["omarchy-hyprland-focus-app", r"^org\.gnome\.NautilusPreviewer$"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=FOCUS_ATTEMPT_TIMEOUT_SECONDS,
+            )
+            if focused.returncode == 0:
+                return
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        time.sleep(FOCUS_RETRY_SECONDS)
+    raise QuickLookError("preview_focus_failed", "GNOME Sushi opened without taking focus")
+
+
+def request_preview(path: Path) -> None:
+    child = None
+    try:
+        child = subprocess.Popen(
+            ["/usr/bin/sushi", str(path)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            preexec_fn=child_preexec if sys.platform.startswith("linux") else None,
+        )
+        return_code = child.wait(timeout=PREVIEW_TIMEOUT_SECONDS)
+    except FileNotFoundError as error:
+        raise QuickLookError("preview_unavailable", "GNOME Sushi preview is unavailable") from error
+    except subprocess.TimeoutExpired as error:
+        if child is not None:
+            stop_child(child)
+        raise QuickLookError("preview_timeout", "GNOME Sushi did not respond in time") from error
+    except OSError as error:
+        if child is not None:
+            stop_child(child)
+        raise QuickLookError("preview_failed", "GNOME Sushi could not be started") from error
+    if return_code != 0:
+        raise QuickLookError("preview_failed", f"GNOME Sushi exited with status {return_code}")
+    focus_previewer()
+
+
+def main(argv: list[str] | None = None) -> int:
+    values = list(sys.argv[1:] if argv is None else argv)
+    try:
+        if len(values) != 1:
+            raise QuickLookError("invalid_arguments", "Quick Look requires exactly one path", 2)
+        path = validate_path(values[0])
+        request_preview(path)
+        emit(
+            {
+                "schemaVersion": SCHEMA_VERSION,
+                "command": "quick-look",
+                "ok": True,
+                "state": "requested",
+                "path": str(path),
+            }
+        )
+        return 0
+    except QuickLookError as error:
+        emit(
+            {
+                "schemaVersion": SCHEMA_VERSION,
+                "command": "quick-look",
+                "ok": False,
+                "state": "failed",
+                "error": {"code": error.code, "message": bounded_text(error)},
+            }
+        )
+        return error.exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

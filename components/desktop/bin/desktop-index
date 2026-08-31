@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import hashlib
 import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -23,7 +27,7 @@ _BIN_DIR = str(Path(__file__).resolve().parent)
 if _BIN_DIR not in sys.path:
     sys.path.insert(0, _BIN_DIR)
 
-from common import desktop_dir, guess_icon, unique_dest
+from common import desktop_dir, desktop_location, guess_icon, unique_dest
 from desktop_policy import (
     is_trusted_application_launcher,
     is_under,
@@ -49,6 +53,8 @@ SAFE_PREVIEW_SUFFIXES = SAFE_ICON_SUFFIXES
 
 MAX_ITEMS = 256
 MAX_PATH_ARGS = 256
+MAX_RAW_ARGS = 260
+MAX_RAW_ARG_BYTES = 1024
 MAX_OUTPUT_BYTES = 256 * 1024
 MAX_NAME_LENGTH = 120
 MAX_ID_LENGTH = 255
@@ -57,6 +63,14 @@ MAX_DESKTOP_FILE_BYTES = 64 * 1024
 MAX_ICON_FILE_BYTES = 2 * 1024 * 1024
 MAX_PREVIEW_FILE_BYTES = 32 * 1024 * 1024
 MAX_ERROR_LENGTH = 240
+MAX_PATH_BYTES = 1024
+MAX_URI_BYTES = 4096
+MAX_VOLUMES = 32
+MAX_DEVICE_FIELD_LENGTH = 240
+DEVICE_ACTION_TIMEOUT_SECONDS = 15
+DEVICE_KILL_GRACE_SECONDS = 0.5
+VIRTUAL_VOLUME_ID_RE = re.compile(r"^volume:[a-f0-9]{32}$")
+PR_SET_PDEATHSIG = 1
 
 ALLOWED_URL_SCHEMES = frozenset({"http", "https", "mailto", "file", "trash"})
 THEME_ICON_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
@@ -91,6 +105,145 @@ def plain_text(value: str, max_length: int = MAX_NAME_LENGTH) -> str:
         else:
             cleaned.append(" ")
     return " ".join("".join(cleaned).split())[:max_length]
+
+
+def bounded_field(value: object, max_bytes: int = MAX_DEVICE_FIELD_LENGTH) -> str:
+    text = plain_text(str(value or ""), max_bytes)
+    encoded = text.encode("utf-8", "replace")
+    if len(encoded) <= max_bytes:
+        return text
+    return encoded[:max_bytes].decode("utf-8", "ignore").rstrip()
+
+
+def _safe_call(obj, method: str, default=None, *args):
+    try:
+        function = getattr(obj, method)
+        return function(*args)
+    except Exception:
+        return default
+
+
+def trash_state() -> str:
+    enumerator = None
+    try:
+        trash = Gio.File.new_for_uri("trash:///")
+        enumerator = trash.enumerate_children(
+            "standard::name",
+            Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
+            None,
+        )
+        return "full" if enumerator.next_file(None) is not None else "empty"
+    except Exception:
+        return "unknown"
+    finally:
+        if enumerator is not None:
+            try:
+                enumerator.close(None)
+            except Exception:
+                pass
+
+
+def virtual_trash_item() -> dict:
+    state = trash_state()
+    return {
+        "id": "virtual:trash",
+        "virtualId": "trash",
+        "virtual": True,
+        "name": "Trash",
+        "path": "",
+        "icon": "user-trash-full" if state == "full" else "user-trash",
+        "preview": "",
+        "isDir": False,
+        "kind": "trash",
+        "trusted": True,
+        "trashState": state,
+        "canOpen": True,
+        "canUnmount": False,
+        "canEject": False,
+    }
+
+
+def _mount_identity(root_uri: str, uuid: str, device: str) -> str:
+    material = "\x00".join((uuid, device, root_uri)).encode("utf-8", "strict")
+    return "volume:" + hashlib.sha256(material).hexdigest()[:32]
+
+
+def mounted_volume_records() -> list[dict]:
+    try:
+        monitor_type = getattr(Gio, "VolumeMonitor")
+        monitor = monitor_type.get()
+        mounts = list(monitor.get_mounts() or [])[: MAX_VOLUMES + 1]
+    except Exception:
+        return []
+
+    records: list[dict] = []
+    seen: set[str] = set()
+    for mount in mounts:
+        if len(records) >= MAX_VOLUMES:
+            break
+        if _safe_call(mount, "is_shadowed", False):
+            continue
+        root = _safe_call(mount, "get_root")
+        root_path = _safe_call(root, "get_path", "") if root is not None else ""
+        root_uri = _safe_call(root, "get_uri", "") if root is not None else ""
+        if not root_path or not root_uri or not str(root_uri).startswith("file://"):
+            continue
+        if len(str(root_uri).encode("utf-8", "replace")) > MAX_URI_BYTES:
+            continue
+        root_path = os.path.abspath(str(root_path))
+        if root_path == "/" or root_path.startswith("//"):
+            continue
+        if len(os.fsencode(root_path)) > MAX_PATH_BYTES:
+            continue
+        volume = _safe_call(mount, "get_volume")
+        if volume is None:
+            continue
+        uuid = bounded_field(
+            _safe_call(volume, "get_uuid", "") or _safe_call(mount, "get_uuid", "")
+        )
+        device = bounded_field(_safe_call(volume, "get_identifier", "", "unix-device"))
+        virtual_id = _mount_identity(str(root_uri), uuid, device)
+        if virtual_id in seen:
+            continue
+        seen.add(virtual_id)
+        name = bounded_field(_safe_call(mount, "get_name", "Volume")) or "Volume"
+        icon_object = _safe_call(mount, "get_icon")
+        icon = sanitize_icon(_safe_call(icon_object, "to_string", "drive-removable-media"))
+        can_unmount = bool(_safe_call(mount, "can_unmount", False))
+        can_eject = bool(
+            _safe_call(mount, "can_eject", False)
+            or _safe_call(volume, "can_eject", False)
+        )
+        records.append(
+            {
+                "id": "virtual:" + virtual_id,
+                "virtualId": virtual_id,
+                "virtual": True,
+                "name": name,
+                "path": root_path,
+                "mountPath": root_path,
+                "icon": icon or "drive-removable-media",
+                "preview": "",
+                "isDir": True,
+                "kind": "volume",
+                "trusted": True,
+                "device": device,
+                "uuid": uuid,
+                "canOpen": True,
+                "canUnmount": can_unmount,
+                "canEject": can_eject,
+                "_uri": str(root_uri),
+            }
+        )
+    records.sort(key=lambda record: (record["name"].casefold(), record["virtualId"]))
+    return records
+
+
+def virtual_items() -> list[dict]:
+    items = [virtual_trash_item()]
+    for record in mounted_volume_records():
+        items.append({key: value for key, value in record.items() if not key.startswith("_")})
+    return items
 
 
 def _file_size(path: Path) -> int:
@@ -301,6 +454,10 @@ def item_for(path: Path) -> dict:
     kind = "folder" if path.is_dir() else "file"
     suffix = path.suffix.lower()
     trusted = True
+    try:
+        modified_unix_ms = path.lstat().st_mtime_ns // 1_000_000
+    except OSError:
+        modified_unix_ms = 0
 
     if suffix == ".desktop":
         entry = read_desktop_entry(path)
@@ -329,6 +486,7 @@ def item_for(path: Path) -> dict:
         "isDir": path.is_dir(),
         "kind": kind,
         "trusted": trusted,
+        "modifiedUnixMs": modified_unix_ms,
     }
 
 
@@ -337,15 +495,26 @@ def encode_payload(payload: dict) -> str:
 
 
 def list_items() -> dict:
-    desktop = desktop_dir()
-    items: list[dict] = []
+    location = desktop_location()
+    items: list[dict] = virtual_items()
     truncated = False
+    payload: dict = {
+        "desktopEnabled": location.enabled,
+        "desktopState": location.state,
+        "desktopReason": bounded_field(location.reason, MAX_ERROR_LENGTH),
+        "desktop": str(location.path) if location.enabled and location.path else "",
+        "items": items,
+    }
+    if not location.enabled or location.path is None:
+        return payload
+    desktop = location.path
     try:
         entries = sorted(
             desktop.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())
         )
     except OSError as error:
-        return {"desktop": str(desktop), "items": [], "error": plain_text(str(error), MAX_ERROR_LENGTH)}
+        payload["error"] = plain_text(str(error), MAX_ERROR_LENGTH)
+        return payload
 
     for path in entries:
         if path.name.startswith("."):
@@ -353,9 +522,13 @@ def list_items() -> dict:
         if len(items) >= MAX_ITEMS:
             truncated = True
             break
-        items.append(item_for(path))
+        item = item_for(path)
+        # A deterministic virtual Trash replaces launcher-file heuristics and
+        # avoids duplicate Trash nouns when an older setup left one behind.
+        if item.get("kind") == "trash":
+            continue
+        items.append(item)
 
-    payload: dict = {"desktop": str(desktop), "items": items}
     if truncated:
         payload["truncated"] = True
 
@@ -378,6 +551,158 @@ def open_trash() -> None:
         [nautilus, "--new-window", "trash:///"],
         Gio.SubprocessFlags.NONE,
     )
+
+
+class VirtualActionError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def _device_child_preexec() -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
+        os._exit(127)
+    if os.getppid() == 1:
+        os._exit(127)
+
+
+def _stop_device_child(child: subprocess.Popen) -> None:
+    try:
+        if os.getpgid(child.pid) == child.pid:
+            os.killpg(child.pid, signal.SIGTERM)
+        else:
+            child.terminate()
+    except (ProcessLookupError, OSError):
+        return
+    try:
+        child.wait(timeout=DEVICE_KILL_GRACE_SECONDS)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        if os.getpgid(child.pid) == child.pid:
+            os.killpg(child.pid, signal.SIGKILL)
+        else:
+            child.kill()
+    except (ProcessLookupError, OSError):
+        pass
+    try:
+        child.wait(timeout=DEVICE_KILL_GRACE_SECONDS)
+    except subprocess.TimeoutExpired as error:
+        raise VirtualActionError("helper_cleanup_failed", "Device helper could not be stopped") from error
+
+
+def _run_device_command(argv: list[str]) -> None:
+    child = None
+    try:
+        child = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            preexec_fn=_device_child_preexec if sys.platform.startswith("linux") else None,
+        )
+        return_code = child.wait(timeout=DEVICE_ACTION_TIMEOUT_SECONDS)
+    except FileNotFoundError as error:
+        raise VirtualActionError("helper_missing", "The local desktop helper is unavailable") from error
+    except subprocess.TimeoutExpired as error:
+        if child is not None:
+            _stop_device_child(child)
+        raise VirtualActionError("helper_timeout", "Device action timed out") from error
+    except OSError as error:
+        if child is not None:
+            _stop_device_child(child)
+        raise VirtualActionError("helper_failed", "Device action could not be started") from error
+    if return_code != 0:
+        raise VirtualActionError(
+            "helper_failed",
+            f"Device helper exited with status {return_code}",
+        )
+
+
+def _launch_files_window(uri: str) -> None:
+    # GUI applications outlive this request helper. UWSM service mode hands
+    # the fixed command to the user manager while preserving immediate launch
+    # failures; unmount/eject commands stay on the stricter path above.
+    _run_device_command(
+        [
+            "/usr/bin/uwsm",
+            "app",
+            "-t",
+            "service",
+            "--",
+            "/usr/bin/nautilus",
+            "--new-window",
+            uri,
+        ]
+    )
+
+
+def perform_virtual_action(action: str, virtual_id: str) -> tuple[dict, int]:
+    canonical_id = str(virtual_id or "")
+    if canonical_id == "virtual:trash":
+        canonical_id = "trash"
+    elif canonical_id.startswith("virtual:volume:"):
+        canonical_id = canonical_id[len("virtual:") :]
+    payload = {
+        "schemaVersion": 1,
+        "command": "virtual-action",
+        "action": action,
+        "virtualId": canonical_id,
+        "ok": False,
+        "state": "failed",
+    }
+    try:
+        if action not in {"open", "unmount", "eject"}:
+            raise VirtualActionError("invalid_action", "Unsupported virtual object action")
+        if canonical_id == "trash":
+            if action != "open":
+                raise VirtualActionError("unsupported_action", "Trash cannot be unmounted or ejected")
+            _launch_files_window("trash:///")
+            payload.update(ok=True, state="requested", name="Trash")
+            return payload, 0
+        if not VIRTUAL_VOLUME_ID_RE.fullmatch(canonical_id):
+            raise VirtualActionError("invalid_virtual_id", "Virtual object ID is invalid")
+        record = next(
+            (
+                candidate
+                for candidate in mounted_volume_records()
+                if candidate.get("virtualId") == canonical_id
+            ),
+            None,
+        )
+        if record is None:
+            raise VirtualActionError("volume_not_found", "The mounted volume is no longer available")
+        if action == "open":
+            _launch_files_window(record["_uri"])
+            payload.update(ok=True, state="requested", name=record["name"])
+            return payload, 0
+        capability = "canUnmount" if action == "unmount" else "canEject"
+        if record.get(capability) is not True:
+            raise VirtualActionError(
+                "unsupported_action",
+                f"This volume does not support {action}",
+            )
+        option = "--unmount" if action == "unmount" else "--eject"
+        _run_device_command(["/usr/bin/gio", "mount", option, record["_uri"]])
+        if any(
+            candidate.get("virtualId") == canonical_id
+            for candidate in mounted_volume_records()
+        ):
+            raise VirtualActionError(
+                "postcondition_failed",
+                f"The volume is still mounted after {action}",
+            )
+        payload.update(ok=True, state="completed", name=record["name"])
+        return payload, 0
+    except VirtualActionError as error:
+        payload["error"] = {
+            "code": error.code,
+            "message": bounded_field(error, MAX_ERROR_LENGTH),
+        }
+        return payload, 1
 
 
 def trash_one(path: Path) -> None:
@@ -518,7 +843,19 @@ def _bounded_paths(values: list[str], flag: str) -> list[str]:
     return values
 
 
+def _validate_raw_argv(values: list[str]) -> None:
+    if len(values) > MAX_RAW_ARGS:
+        raise ValueError(f"Too many arguments (max {MAX_RAW_ARGS})")
+    for value in values:
+        if "\x00" in value or any(ord(character) < 32 or ord(character) == 127 for character in value):
+            raise ValueError("Arguments cannot contain control characters")
+        if len(value.encode("utf-8", "surrogateescape")) > MAX_RAW_ARG_BYTES:
+            raise ValueError(f"Each argument is limited to {MAX_RAW_ARG_BYTES} bytes")
+
+
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    _validate_raw_argv(raw_argv)
     parser = argparse.ArgumentParser(description="Desktop icon helper")
     parser.add_argument("--open", nargs="+", metavar="PATH", help="Open desktop items")
     parser.add_argument(
@@ -551,7 +888,33 @@ def main(argv: list[str] | None = None) -> int:
         default="copy",
         help="How --place should add items (default: copy)",
     )
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--virtual-action",
+        choices=("open", "unmount", "eject"),
+        help="Act on a deterministic virtual Trash or volume object.",
+    )
+    parser.add_argument("--virtual-id", help="Virtual object identity from the index.")
+    args = parser.parse_args(raw_argv)
+
+    if args.virtual_action:
+        if not args.virtual_id:
+            payload = {
+                "schemaVersion": 1,
+                "command": "virtual-action",
+                "action": args.virtual_action,
+                "virtualId": "",
+                "ok": False,
+                "state": "failed",
+                "error": {
+                    "code": "invalid_virtual_id",
+                    "message": "A virtual object ID is required",
+                },
+            }
+            sys.stdout.write(encode_payload(payload) + "\n")
+            return 2
+        payload, exit_code = perform_virtual_action(args.virtual_action, args.virtual_id)
+        sys.stdout.write(encode_payload(payload) + "\n")
+        return exit_code
 
     if args.trust_and_open:
         for raw in _bounded_paths(args.trust_and_open, "--trust-and-open"):
@@ -591,6 +954,22 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as error:
+        if "--virtual-action" in sys.argv:
+            json.dump(
+                {
+                    "schemaVersion": 1,
+                    "command": "virtual-action",
+                    "ok": False,
+                    "state": "failed",
+                    "error": {
+                        "code": "invalid_arguments",
+                        "message": plain_text(str(error), MAX_ERROR_LENGTH),
+                    },
+                },
+                sys.stdout,
+            )
+            sys.stdout.write("\n")
+            raise SystemExit(2)
         mutating = any(
             flag in sys.argv
             for flag in ("--open", "--place", "--trash", "--trust", "--trust-and-open")
@@ -612,7 +991,9 @@ if __name__ == "__main__":
             raise SystemExit(1)
         json.dump(
             {
-                "desktop": str(Path.home() / "Desktop"),
+                "desktopEnabled": False,
+                "desktopState": "unavailable",
+                "desktop": "",
                 "items": [],
                 "error": plain_text(str(error), MAX_ERROR_LENGTH),
             },
