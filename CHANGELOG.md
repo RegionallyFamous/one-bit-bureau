@@ -5,12 +5,13 @@
 ### Product changes
 
 - Fixed the memorable `bash <(curl -fsSL https://bureau.regionallyfamous.com/install)` command so Omarchy's intentional initial disabled-plugin state is followed immediately by theme, font, branding, and plugin activation in the same run.
+- Added a bounded catalog-discovery wait so setup does not race Omarchy's asynchronous plugin rescan after a fresh validated checkout.
 - Made a rerun recover an existing validated but disabled One-Bit Bureau checkout without requiring manual cleanup or a second install command.
 - Clarified that executing the quick bootstrap is activation consent; the inspect-first and manual paths remain available for users who want to review the source before running it.
 
 ### Release verification
 
-- Replaced the public-lifecycle shortcut with the literal hosted command running inside a real pseudo-terminal, so a release cannot pass by invoking setup separately with `--yes`.
+- Replaced the public-lifecycle shortcut with the literal hosted command running inside a real pseudo-terminal, so a release cannot pass by invoking setup separately with `--yes`, and added a delayed-catalog regression for the handoff race.
 
 ## 1.1.0 — 2026-08-30
 

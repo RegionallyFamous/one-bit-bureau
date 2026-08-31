@@ -117,11 +117,24 @@ for branding_name in about.txt screensaver.txt; do
   [[ ! -L $branding_path ]] || fail "branding file must not be a symlink: $branding_path"
   [[ ! -e $branding_path || -f $branding_path ]] || fail "branding path is not a regular file: $branding_path"
 done
-plugin_list=$(omarchy plugin list --json) || fail "could not inspect installed plugins"
-jq -e 'type == "array"' <<<"$plugin_list" >/dev/null || fail "Omarchy returned an invalid plugin list"
+read_plugin_list() {
+  plugin_list=$(omarchy plugin list --json) || fail "could not inspect installed plugins"
+  jq -e 'type == "array"' <<<"$plugin_list" >/dev/null || fail "Omarchy returned an invalid plugin list"
+}
+
 if (( ADOPT_PLUGIN )); then
-  jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id and .enabled == false)' <<<"$plugin_list" >/dev/null || fail "the adopted plugin must be installed and disabled"
+  adopted_plugin_ready=0
+  for (( attempt = 0; attempt < 100; attempt++ )); do
+    read_plugin_list
+    if jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id and .enabled == false)' <<<"$plugin_list" >/dev/null; then
+      adopted_plugin_ready=1
+      break
+    fi
+    sleep 0.1
+  done
+  (( adopted_plugin_ready )) || fail "the adopted plugin must become visible to Omarchy as installed and disabled"
 else
+  read_plugin_list
   if jq -e --arg id "$PLUGIN_ID" 'any(.[]; .id == $id)' <<<"$plugin_list" >/dev/null; then
     fail "plugin $PLUGIN_ID is already registered"
   fi

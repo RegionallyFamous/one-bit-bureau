@@ -33,7 +33,22 @@ printf '%s\n' 'printf "%s\n" "$*" >>"$TEST_LOG"' >>"$BIN/omarchy"
 printf '%s\n' 'shell_config="$HOME/.config/omarchy/shell.json"' >>"$BIN/omarchy"
 printf '%s\n' 'theme_state="$HOME/.local/state/omarchy/current/theme.name"' >>"$BIN/omarchy"
 printf '%s\n' 'case "$1 $2" in' >>"$BIN/omarchy"
-printf '%s\n' '  "plugin list") [[ ${FAIL_PLUGIN_LIST:-} != 1 ]] || exit 1; printf "%s\n" "${PLUGIN_LIST_JSON:-[]}" ;;' >>"$BIN/omarchy"
+printf '%s\n' '  "plugin list")' >>"$BIN/omarchy"
+printf '%s\n' '    [[ ${FAIL_PLUGIN_LIST:-} != 1 ]] || exit 1' >>"$BIN/omarchy"
+printf '%s\n' '    if [[ -n ${PLUGIN_LIST_DELAY_COUNT:-} ]]; then' >>"$BIN/omarchy"
+printf '%s\n' '      delay_count=0' >>"$BIN/omarchy"
+printf '%s\n' '      [[ ! -f $PLUGIN_LIST_DELAY_COUNT ]] || delay_count=$(<"$PLUGIN_LIST_DELAY_COUNT")' >>"$BIN/omarchy"
+printf '%s\n' '      (( delay_count += 1 ))' >>"$BIN/omarchy"
+printf '%s\n' '      printf "%s\n" "$delay_count" >"$PLUGIN_LIST_DELAY_COUNT"' >>"$BIN/omarchy"
+printf '%s\n' '      if (( delay_count <= ${PLUGIN_LIST_DELAY_ATTEMPTS:-0} )); then' >>"$BIN/omarchy"
+printf '%s\n' '        printf "[]\n"' >>"$BIN/omarchy"
+printf '%s\n' '      else' >>"$BIN/omarchy"
+printf '%s\n' '        printf "%s\n" "${PLUGIN_LIST_JSON:-[]}"' >>"$BIN/omarchy"
+printf '%s\n' '      fi' >>"$BIN/omarchy"
+printf '%s\n' '    else' >>"$BIN/omarchy"
+printf '%s\n' '      printf "%s\n" "${PLUGIN_LIST_JSON:-[]}"' >>"$BIN/omarchy"
+printf '%s\n' '    fi' >>"$BIN/omarchy"
+printf '%s\n' '    ;;' >>"$BIN/omarchy"
 printf '%s\n' '  "plugin validate")' >>"$BIN/omarchy"
 printf '%s\n' '    target=$3' >>"$BIN/omarchy"
 printf '%s\n' '    [[ ! -e $target/.git ]]' >>"$BIN/omarchy"
@@ -313,7 +328,10 @@ export TEST_DESKTOP="$HOME_ADOPT_YES/Desktop"
 export TEST_LOG="$WORK/adopt-yes.log"
 export TEST_GIT_ORIGIN="https://github.com/RegionallyFamous/one-bit-bureau.git"
 export PLUGIN_LIST_JSON='[{"id":"io.github.regionallyfamous.one-bit-bureau","enabled":false}]'
+export PLUGIN_LIST_DELAY_COUNT="$WORK/adopt-plugin-list-count"
+export PLUGIN_LIST_DELAY_ATTEMPTS=2
 HOME="$HOME_ADOPT_YES" PATH="$BIN:$PATH" bash "$ADOPT_YES_TARGET/setup" --adopt-plugin --yes >/dev/null
+[[ $(<"$PLUGIN_LIST_DELAY_COUNT") == 3 ]]
 ADOPT_YES_THEME="$HOME_ADOPT_YES/.config/omarchy/themes/one-bit-bureau"
 ADOPT_YES_STATE="$HOME_ADOPT_YES/.local/state/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/install-state.json"
 [[ -L $ADOPT_YES_THEME ]]
@@ -328,7 +346,7 @@ fi
 export TEST_GIT_ORIGIN="https://github.com/RegionallyFamous/one-bit-bureau.git"
 HOME="$HOME_ADOPT_YES" PATH="$BIN:$PATH" bash "$ADOPT_YES_TARGET/uninstall" >/dev/null
 [[ ! -e $ADOPT_YES_TARGET && ! -e $ADOPT_YES_THEME && ! -e $ADOPT_YES_STATE ]]
-unset TEST_GIT_ORIGIN PLUGIN_LIST_JSON
+unset TEST_GIT_ORIGIN PLUGIN_LIST_JSON PLUGIN_LIST_DELAY_COUNT PLUGIN_LIST_DELAY_ATTEMPTS
 
 echo "== adopted public checkout uses native theme-source ownership when available"
 HOME_SOURCE="$WORK/home-source"
