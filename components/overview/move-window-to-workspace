@@ -4,8 +4,12 @@ set -euo pipefail
 
 address=${1:-}
 workspace_id=${2:-}
+expected_pid=${3:-}
+monitor_name=${4:-}
+expected_initial_class=${5:-}
+expected_initial_title=${6:-}
 
-if [[ ! $address =~ ^0x[0-9a-fA-F]+$ ]]; then
+if [[ ! $address =~ ^0x[0-9a-fA-F]{1,16}$ ]]; then
   echo "invalid window address" >&2
   exit 64
 fi
@@ -15,17 +19,117 @@ if [[ ! $workspace_id =~ ^[1-9][0-9]{0,2}$ ]] || (( workspace_id > 999 )); then
   exit 64
 fi
 
-if ! hyprctl -j clients | jq -e --arg address "${address,,}" \
-  'any(.[]; ((.address // "") | ascii_downcase) == $address)' >/dev/null; then
-  echo "window is no longer available" >&2
+if [[ ! $expected_pid =~ ^[1-9][0-9]{0,6}$ ]] || (( expected_pid > 4194304 )); then
+  echo "invalid window identity" >&2
+  exit 64
+fi
+
+if (( ${#monitor_name} < 1 || ${#monitor_name} > 128 )) || [[ ! $monitor_name =~ ^[A-Za-z0-9_.:-]+$ ]]; then
+  echo "invalid display identity" >&2
+  exit 64
+fi
+
+if (( ${#expected_initial_class} > 256 || ${#expected_initial_title} > 256 )) ||
+  [[ $expected_initial_class == *$'\n'* || $expected_initial_class == *$'\r'* || $expected_initial_class == *$'\t'* ||
+    $expected_initial_title == *$'\n'* || $expected_initial_title == *$'\r'* || $expected_initial_title == *$'\t'* ]] ||
+  [[ -z $expected_initial_class && -z $expected_initial_title ]]; then
+  echo "invalid window fingerprint" >&2
+  exit 64
+fi
+
+if ! monitor_snapshot=$(hyprctl -j monitors 2>/dev/null); then
+  echo "display state is unavailable" >&2
+  exit 69
+fi
+if ! jq -e --arg monitor "$monitor_name" \
+  'any(.[]; (.name // "") == $monitor)' <<<"$monitor_snapshot" >/dev/null; then
+  echo "display is no longer available" >&2
+  exit 66
+fi
+if ! monitor_id=$(jq -er --arg monitor "$monitor_name" '
+  first(.[] | select((.name // "") == $monitor) | .id) |
+  select(type == "number" and floor == . and . >= 0 and . <= 65535)
+' <<<"$monitor_snapshot"); then
+  echo "display state has no bounded numeric identity" >&2
+  exit 69
+fi
+
+if ! client_snapshot=$(hyprctl -j clients 2>/dev/null); then
+  echo "window state is unavailable" >&2
+  exit 69
+fi
+if ! jq -e --arg address "${address,,}" --argjson pid "$expected_pid" \
+  --arg initial_class "$expected_initial_class" --arg initial_title "$expected_initial_title" \
+  'any(.[];
+    ((.address // "") | ascii_downcase) == $address and
+    (.pid // 0) == $pid and
+    (.initialClass // "") == $initial_class and
+    (.initialTitle // "") == $initial_title
+  )' \
+  <<<"$client_snapshot" >/dev/null; then
+  echo "window identity changed or is no longer available" >&2
   exit 66
 fi
 
-if ! hyprctl -j workspaces | jq -e --argjson workspace "$workspace_id" \
-  'any(.[]; .id == $workspace and .id > 0)' >/dev/null; then
-  echo "workspace is no longer available" >&2
+if ! workspace_snapshot=$(hyprctl -j workspaces 2>/dev/null); then
+  echo "workspace state is unavailable" >&2
+  exit 69
+fi
+if ! jq -e --argjson workspace "$workspace_id" --arg monitor "$monitor_name" \
+  'any(.[]; .id == $workspace and .id > 0 and (.monitor // "") == $monitor)' \
+  <<<"$workspace_snapshot" >/dev/null; then
+  echo "workspace is no longer available on the selected display" >&2
   exit 66
 fi
 
-hyprctl dispatch "hl.dsp.window.move({ workspace = \"$workspace_id\", follow = false, window = \"address:$address\" })" >/dev/null 2>&1 ||
-  hyprctl dispatch movetoworkspacesilent "$workspace_id,address:$address" >/dev/null
+postcondition_met() {
+  if client_snapshot=$(hyprctl -j clients 2>/dev/null) &&
+    jq -e --arg address "${address,,}" --argjson pid "$expected_pid" \
+      --argjson workspace "$workspace_id" --arg monitor "$monitor_name" \
+      --argjson monitor_id "$monitor_id" \
+      --arg initial_class "$expected_initial_class" --arg initial_title "$expected_initial_title" \
+      'any(.[];
+        ((.address // "") | ascii_downcase) == $address and
+        (.pid // 0) == $pid and
+        (.initialClass // "") == $initial_class and
+        (.initialTitle // "") == $initial_title and
+        (.workspace.id // 0) == $workspace and
+        (((.monitor // -1) == $monitor_id) or ((.monitor // "") == $monitor))
+      )' <<<"$client_snapshot" >/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+lua_accepted=false
+if hyprctl dispatch "hl.dsp.window.move({ workspace = \"$workspace_id\", follow = false, window = \"address:$address\" })" >/dev/null 2>&1; then
+  lua_accepted=true
+  for (( attempt = 0; attempt < 5; attempt++ )); do
+    if postcondition_met; then
+      printf 'confirmed\tlua\t%s\t%s\t%s\n' "${address,,}" "$workspace_id" "$monitor_name"
+      exit 0
+    fi
+    sleep 0.05
+  done
+fi
+
+dispatcher=legacy
+if ! hyprctl dispatch movetoworkspacesilent "$workspace_id,address:$address" >/dev/null 2>&1; then
+  if [[ $lua_accepted == true ]]; then
+    dispatcher=lua
+  else
+    echo "both supported workspace dispatchers refused the move" >&2
+    exit 69
+  fi
+fi
+
+for (( attempt = 0; attempt < 20; attempt++ )); do
+  if postcondition_met; then
+    printf 'confirmed\t%s\t%s\t%s\t%s\n' "$dispatcher" "${address,,}" "$workspace_id" "$monitor_name"
+    exit 0
+  fi
+  sleep 0.05
+done
+
+printf 'pending\t%s\t%s\t%s\t%s\n' "$dispatcher" "${address,,}" "$workspace_id" "$monitor_name"
+exit 75

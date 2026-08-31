@@ -9,10 +9,12 @@ Item {
   property var barWidgetRegistry: null
   property var service: null
   readonly property var windowLedger: dock.windowLedger
+  readonly property var lastActionStatus: dock.lastActionStatus
 
   // Shared Inspector bridge. Experience owns the Inspector surface; the dock
   // owns app/window truth and action re-resolution.
   signal inspectorRequested(var context, var invokingScreen, point invokingPosition)
+  signal actionStatusReported(var status)
 
   function inspectorContextForApp(appId) {
     return dock.inspectorContextForApp(appId)
@@ -42,5 +44,6 @@ Item {
     onInspectorRequested: function(context, invokingScreen, invokingPosition) {
       root.inspectorRequested(context, invokingScreen, invokingPosition)
     }
+    onActionStatusReported: function(status) { root.actionStatusReported(status) }
   }
 }

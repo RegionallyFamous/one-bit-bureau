@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "org.gnome.Nautilus",
+      "startupWmClass": "org.gnome.Nautilus",
+      "aliases": ["nautilus"],
+      "execString": "nautilus --new-window"
+    },
+    {
+      "id": "org.kde.dolphin",
+      "startupWmClass": "dolphin",
+      "execString": "dolphin"
+    },
+    {
+      "id": "com.visualstudio.code",
+      "startupWmClass": "code",
+      "aliases": ["Code"],
+      "execString": "/usr/bin/code --unity-launch"
+    },
+    {
+      "id": "com.spotify.Client",
+      "startupWmClass": "spotify",
+      "aliases": ["com.spotify.Client"],
+      "execString": "flatpak run com.spotify.Client"
+    },
+    {
+      "id": "org.example.Mutable",
+      "startupWmClass": "BeforeClass",
+      "aliases": ["AfterClass"],
+      "execString": "/usr/bin/example-mutable"
+    },
+    {
+      "id": "org.example.AmbiguousOne",
+      "aliases": ["shared-class"],
+      "execString": "/usr/bin/ambiguous-one"
+    },
+    {
+      "id": "org.example.AmbiguousTwo",
+      "aliases": ["shared-class"],
+      "execString": "/usr/bin/ambiguous-two"
+    }
+  ],
+  "cases": [
+    {
+      "name": "native Wayland exact desktop id",
+      "family": "gtk-wayland",
+      "input": {"waylandAppId": "org.gnome.Nautilus"},
+      "expected": {"id": "org.gnome.Nautilus", "method": "exact-app-id", "ambiguous": false}
+    },
+    {
+      "name": "XWayland StartupWMClass",
+      "family": "qt-xwayland",
+      "input": {"xwaylandClass": "dolphin"},
+      "expected": {"id": "org.kde.dolphin", "method": "startup-wm-class", "ambiguous": false}
+    },
+    {
+      "name": "Electron StartupWMClass",
+      "family": "electron",
+      "input": {"className": "code"},
+      "expected": {"id": "com.visualstudio.code", "method": "startup-wm-class", "ambiguous": false}
+    },
+    {
+      "name": "Flatpak app id",
+      "family": "flatpak",
+      "input": {"appId": "com.spotify.Client"},
+      "expected": {"id": "com.spotify.Client", "method": "exact-app-id", "ambiguous": false}
+    },
+    {
+      "name": "bounded GTK alias",
+      "family": "gtk-alias",
+      "input": {"className": "nautilus"},
+      "expected": {"id": "org.gnome.Nautilus", "method": "bounded-alias", "ambiguous": false}
+    },
+    {
+      "name": "class changes after launch",
+      "family": "mutable-class",
+      "input": {"initialClass": "AfterClass"},
+      "expected": {"id": "org.example.Mutable", "method": "bounded-alias", "ambiguous": false}
+    },
+    {
+      "name": "process identity is last resort",
+      "family": "process-fallback",
+      "input": {"executable": "/usr/bin/dolphin"},
+      "expected": {"id": "org.kde.dolphin", "method": "process-executable", "ambiguous": false}
+    },
+    {
+      "name": "exact id wins over an ambiguous class",
+      "family": "priority",
+      "input": {"appId": "com.spotify.Client", "className": "shared-class"},
+      "expected": {"id": "com.spotify.Client", "method": "exact-app-id", "ambiguous": false}
+    },
+    {
+      "name": "ambiguous aliases fail closed",
+      "family": "ambiguity",
+      "input": {"className": "shared-class"},
+      "expected": {"id": "", "method": "bounded-alias-ambiguous", "ambiguous": true}
+    },
+    {
+      "name": "window titles are never identity",
+      "family": "title-mutation",
+      "input": {"title": "org.gnome.Nautilus"},
+      "expected": {"id": "", "method": "unresolved", "ambiguous": false}
+    }
+  ]
+}

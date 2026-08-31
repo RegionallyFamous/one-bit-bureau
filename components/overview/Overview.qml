@@ -138,9 +138,13 @@ Item {
     property int workspaceMenuCursorIndex: 0
     property point workspaceMenuPosition: Qt.point(0, 0)
     property string workspaceNotice: ""
+    property string workspaceMoveState: "idle"
+    property string workspaceBoardMonitorName: ""
     property string pendingMoveAddress: ""
     property string pendingMoveTitle: ""
+    property int pendingMovePid: 0
     property int pendingMoveWorkspaceId: 0
+    property string pendingMoveMonitorName: ""
     property int selectedIndex: 0
     property int hoveredIndex: -1
     property int previewIndex: -1
@@ -173,6 +177,7 @@ Item {
     property var sessionToplevels: []
     property var sessionAspectRatios: []
     readonly property var allToplevels: Hyprland.toplevels ? Hyprland.toplevels.values : []
+    readonly property var allMonitors: Hyprland.monitors ? Hyprland.monitors.values : []
     readonly property string focusedMonitorName: Hyprland.focusedMonitor
         ? String(Hyprland.focusedMonitor.name || "")
         : ""
@@ -223,14 +228,28 @@ Item {
     readonly property var ordinaryWorkspaces: {
         var revision = root.modelRevision;
         var values = Hyprland.workspaces ? Hyprland.workspaces.values : [];
-        return WorkspaceModel.ordinaryWorkspaces(values, root.allToplevels, root.workspaceForScreen(root.keyboardScreenName));
+        return WorkspaceModel.ordinaryWorkspaces(
+            values,
+            root.allToplevels,
+            root.workspaceForBoardMonitor(),
+            root.workspaceBoardMonitorName
+        );
+    }
+    readonly property var unsupportedWorkspaceSummary: {
+        var revision = root.modelRevision;
+        var values = Hyprland.workspaces ? Hyprland.workspaces.values : [];
+        return WorkspaceModel.unsupportedWorkspaceSummary(values, root.workspaceBoardMonitorName);
+    }
+    readonly property int workspaceBoardWindowCount: {
+        var revision = root.modelRevision;
+        return root.toplevelsOnScreen(root.workspaceBoardMonitorName).length;
     }
     readonly property var workspaceBoardEntries: [{
         id: 0,
         name: "all",
         label: "All workspaces",
-        count: root.allToplevels.length,
-        occupied: root.allToplevels.length > 0,
+        count: root.workspaceBoardWindowCount,
+        occupied: root.workspaceBoardWindowCount > 0,
         active: false
     }].concat(root.ordinaryWorkspaces)
     readonly property var workspaceMenuEntries: {
@@ -239,7 +258,7 @@ Item {
         var sourceWorkspaceId = WorkspaceModel.toplevelWorkspaceId(top);
         return [
             {action: "show", label: workspace ? "Show " + workspace.label : "Show workspace", enabled: workspace !== null},
-            {action: "move", label: top && workspace ? "Move selected window here" : "Move selected window here", enabled: top !== null && workspace !== null && sourceWorkspaceId !== workspace.id},
+            {action: "move", label: "Move selected window here on " + (root.workspaceBoardMonitorName || "this display"), enabled: top !== null && workspace !== null && sourceWorkspaceId !== workspace.id},
             {action: "inspect", label: "Get Info on selected window", enabled: top !== null}
         ];
     }
@@ -252,10 +271,13 @@ Item {
     }
 
     onOrdinaryWorkspacesChanged: {
-        if (root.workspaceScope === "workspace" && !root.workspaceById(root.selectedWorkspaceId))
+        if (root.workspaceScope === "workspace" && !root.workspaceById(root.selectedWorkspaceId)) {
+            var vanishedWorkspaceId = root.selectedWorkspaceId;
             root.setWorkspaceScope("all");
+            root.showWorkspaceNotice("Workspace " + vanishedWorkspaceId + " is no longer available on " + (root.workspaceBoardMonitorName || "this display") + "; showing all");
+        }
         if (!root.workspaceById(root.workspaceCursorId)) {
-            var focusedId = WorkspaceModel.workspaceIdFor(Hyprland.focusedWorkspace);
+            var focusedId = WorkspaceModel.workspaceIdFor(root.workspaceForBoardMonitor());
             root.workspaceCursorId = root.workspaceById(focusedId)
                 ? focusedId
                 : (root.ordinaryWorkspaces.length > 0 ? root.ordinaryWorkspaces[0].id : 0);
@@ -281,7 +303,17 @@ Item {
         root.filterText = "";
         root.workspaceScope = "all";
         root.selectedWorkspaceId = 0;
-        root.workspaceCursorId = WorkspaceModel.workspaceIdFor(Hyprland.focusedWorkspace);
+        if (!workspaceMoveProcess.running)
+            root.workspaceMoveState = "idle";
+        var requestedMonitor = root.overviewScreenPinned
+            ? root.overviewScreenName
+            : (root.focusedMonitorName || root.keyboardScreenName);
+        root.workspaceBoardMonitorName = WorkspaceModel.chooseMonitorScope(
+            root.allMonitors,
+            requestedMonitor,
+            root.focusedMonitorName
+        );
+        root.workspaceCursorId = WorkspaceModel.workspaceIdFor(root.workspaceForBoardMonitor());
         root.dismissNotifyShell = false;
         if (root.surfaceMounted) {
             root.opened = true;
@@ -293,7 +325,7 @@ Item {
         if (root.openingPending)
             return;
         if (!root.overviewScreenPinned)
-            root.overviewScreenName = root.keyboardScreenName;
+            root.overviewScreenName = root.workspaceBoardMonitorName || root.keyboardScreenName;
         overviewMotionAnimation.stop();
         root.motionTarget = 0;
         root.motionProgress = 0;
@@ -341,7 +373,7 @@ Item {
         if (!root.openingPending)
             return;
         if (!root.overviewScreenPinned)
-            root.overviewScreenName = root.focusedMonitorName || root.keyboardScreenName;
+            root.overviewScreenName = root.workspaceBoardMonitorName || root.focusedMonitorName || root.keyboardScreenName;
         root.surfaceMounted = true;
         Qt.callLater(function () {
             if (!root.surfaceMounted || !root.openingPending)
@@ -711,6 +743,8 @@ Item {
     function clearOverviewScreen() {
         root.overviewScreenPinned = false;
         root.overviewScreenName = "";
+        if (!root.surfaceMounted && !root.openingPending)
+            root.workspaceBoardMonitorName = "";
     }
 
     function scheduleHotCornerRearm() {
@@ -1022,6 +1056,30 @@ Item {
         return null;
     }
 
+    function windowForIdentity(identity) {
+        var expected = identity && typeof identity === "object" ? identity : {};
+        var top = root.windowForAddress(expected.address || "");
+        if (!top)
+            return null;
+        return WorkspaceModel.sameWindowIdentity(WorkspaceModel.windowIdentityFor(top), expected) ? top : null;
+    }
+
+    function inspectorIdentity(context) {
+        var facts = context && Array.isArray(context.facts) ? context.facts : [];
+        var result = {address: context ? String(context.id || "") : "", pid: 0, initialClass: "", initialTitle: ""};
+        for (var index = 0; index < facts.length; index++) {
+            var fact = facts[index] || {};
+            var factId = String(fact.id || "");
+            if (factId === "pid")
+                result.pid = WorkspaceModel.normalizedPid(fact.value);
+            else if (factId === "initial-class")
+                result.initialClass = WorkspaceModel.boundedWindowIdentityText(fact.value);
+            else if (factId === "initial-title")
+                result.initialTitle = WorkspaceModel.boundedWindowIdentityText(fact.value);
+        }
+        return result;
+    }
+
     function inspectorPayloadFor(top) {
         if (!top)
             return null;
@@ -1031,6 +1089,7 @@ Item {
         var monitor = top.monitor || null;
         var workspace = top.workspace || null;
         var workspaceId = WorkspaceModel.workspaceIdFor(workspace);
+        var identity = WorkspaceModel.windowIdentityFor(top);
         var actions = [
             {id: "focus", label: "Focus window", enabled: true},
             {id: "close", label: "Close window", enabled: WindowModel.waylandFor(top) !== null, destructive: true}
@@ -1055,6 +1114,9 @@ Item {
                 {id: "application", label: "Application", value: WindowModel.appIdFor(top) || "Unknown"},
                 {id: "workspace", label: "Workspace", value: String((workspace && (workspace.name || workspace.id)) || "—")},
                 {id: "monitor", label: "Display", value: String((monitor && monitor.name) || "Unknown")},
+                {id: "pid", label: "Process ID", value: identity.pid ? String(identity.pid) : "Unavailable"},
+                {id: "initial-class", label: "Initial class", value: identity.initialClass || "Unavailable"},
+                {id: "initial-title", label: "Initial title", value: identity.initialTitle || "Unavailable"},
                 {id: "address", label: "Window ID", value: address}
             ],
             actions: actions
@@ -1076,7 +1138,7 @@ Item {
     function performInspectorAction(actionId, context) {
         var action = String(actionId || "");
         var data = context && typeof context === "object" ? context : {};
-        var top = root.windowForAddress(data.address || data.id || "");
+        var top = root.windowForIdentity(root.inspectorIdentity(data));
         if (!top)
             return false;
         if (action === "focus" || action === "open") {
@@ -1107,30 +1169,58 @@ Item {
 
     function moveWindowToWorkspace(top, workspaceId) {
         if (!top) {
-            root.showWorkspaceNotice("No selected window to move");
+            root.workspaceMoveState = "refused";
+            root.showWorkspaceNotice("Move refused: no selected window is available");
             return false;
         }
         if (workspaceMoveProcess.running) {
-            root.showWorkspaceNotice("A window move is already in progress");
+            root.workspaceMoveState = "pending";
+            root.showWorkspaceNotice("Move pending: another window move is still being verified");
             return false;
         }
-        var request = WorkspaceModel.moveRequest(WindowModel.addressFor(top), workspaceId, root.ordinaryWorkspaces);
+        var selectedIdentity = WorkspaceModel.windowIdentityFor(top);
+        var selectedAddress = selectedIdentity.address;
+        var selectedPid = selectedIdentity.pid;
+        var liveTop = root.windowForIdentity(selectedIdentity);
+        if (!liveTop || liveTop !== top) {
+            root.workspaceMoveState = "refused";
+            root.showWorkspaceNotice("Move refused: window identity changed or is no longer available");
+            return false;
+        }
+        var destination = root.workspaceById(workspaceId);
+        var request = WorkspaceModel.moveRequest(
+            selectedAddress,
+            selectedPid,
+            destination ? destination.id : workspaceId,
+            root.ordinaryWorkspaces,
+            root.workspaceBoardMonitorName
+        );
         if (!request.ok) {
-            root.showWorkspaceNotice(request.error);
+            root.workspaceMoveState = "refused";
+            root.showWorkspaceNotice("Move refused: " + request.error);
             return false;
         }
-        if (WorkspaceModel.toplevelWorkspaceId(top) === request.workspaceId) {
-            root.showWorkspaceNotice("Window is already on Workspace " + request.workspaceId);
+        if (WorkspaceModel.toplevelWorkspaceId(liveTop) === request.workspaceId) {
+            root.workspaceMoveState = "refused";
+            root.showWorkspaceNotice("Move refused: window is already on Workspace " + request.workspaceId);
             return false;
         }
         root.pendingMoveAddress = request.address;
-        root.pendingMoveTitle = String(top.title || WindowModel.appIdFor(top) || "Window");
+        root.pendingMoveTitle = String(liveTop.title || WindowModel.appIdFor(liveTop) || "Window");
+        root.pendingMovePid = request.pid;
         root.pendingMoveWorkspaceId = request.workspaceId;
+        root.pendingMoveMonitorName = request.monitorName;
+        root.workspaceMoveState = "requested";
+        root.showWorkspaceNotice("Move requested: " + root.pendingMoveTitle + " → Workspace " + request.workspaceId + " on " + request.monitorName);
         workspaceMoveProcess.command = [
             "/bin/bash",
             root.pluginDir + "/move-window-to-workspace",
             request.address,
-            String(request.workspaceId)
+            String(request.workspaceId),
+            String(request.pid),
+            request.monitorName,
+            selectedIdentity.initialClass,
+            selectedIdentity.initialTitle
         ];
         workspaceMoveProcess.running = true;
         return true;
@@ -1213,6 +1303,53 @@ Item {
                 return monitor;
         }
         return null;
+    }
+
+    function workspaceForBoardMonitor() {
+        var monitor = root.monitorForScreen(root.workspaceBoardMonitorName);
+        return monitor && monitor.activeWorkspace ? monitor.activeWorkspace : null;
+    }
+
+    function unsupportedWorkspaceReason() {
+        var summary = root.unsupportedWorkspaceSummary;
+        if (!summary || summary.total < 1)
+            return "";
+        var reasons = [];
+        if (summary.named > 0)
+            reasons.push(summary.named + " named");
+        if (summary.special > 0)
+            reasons.push(summary.special + " special");
+        if (summary.outOfRange > 0)
+            reasons.push(summary.outOfRange + " outside 1–999");
+        if (summary.unassigned > 0)
+            reasons.push(summary.unassigned + " without a display");
+        return reasons.join(", ") + " workspaces are not supported by the board";
+    }
+
+    function reconcileWorkspaceBoardMonitor() {
+        if (!root.surfaceMounted && !root.openingPending)
+            return;
+        var previous = root.workspaceBoardMonitorName;
+        var next = WorkspaceModel.chooseMonitorScope(root.allMonitors, previous, root.focusedMonitorName);
+        if (next === previous)
+            return;
+        root.workspaceBoardMonitorName = next;
+        root.overviewScreenName = next;
+        root.overviewScreenPinned = false;
+        root.workspaceScope = "all";
+        root.selectedWorkspaceId = 0;
+        root.closeWorkspaceMenu();
+        root.workspaceCursorId = WorkspaceModel.workspaceIdFor(root.workspaceForBoardMonitor());
+        root.hoveredIndex = -1;
+        root.clearPreview();
+        root.modelRevision++;
+        root.selectedIndex = Math.max(0, root.filteredToplevels.indexOf(Hyprland.activeToplevel));
+        if (next)
+            root.showWorkspaceNotice(previous
+                ? "Display " + previous + " disconnected; board now follows " + next
+                : "Workspace board now follows " + next);
+        else
+            root.showWorkspaceNotice("No display is available; workspace moves are disabled");
     }
 
     function workspaceForScreen(screenName) {
@@ -1690,6 +1827,14 @@ Item {
         function onValuesChanged() { root.handleDisplayStateChanged(); }
     }
 
+    Connections {
+        target: Hyprland.monitors
+        function onValuesChanged() {
+            root.reconcileWorkspaceBoardMonitor();
+            root.handleDisplayStateChanged();
+        }
+    }
+
     Instantiator {
         model: Hyprland.toplevels
 
@@ -1739,20 +1884,36 @@ Item {
     Process {
         id: workspaceMoveProcess
         running: false
+        stdout: StdioCollector { id: workspaceMoveOutput }
         stderr: StdioCollector { id: workspaceMoveError }
         onExited: function(exitCode) {
             var title = root.pendingMoveTitle;
             var target = root.pendingMoveWorkspaceId;
+            var address = root.pendingMoveAddress;
+            var monitor = root.pendingMoveMonitorName;
+            var result = WorkspaceModel.parseMoveResult(workspaceMoveOutput.text);
             root.pendingMoveAddress = "";
             root.pendingMoveTitle = "";
+            root.pendingMovePid = 0;
             root.pendingMoveWorkspaceId = 0;
-            if (exitCode === 0) {
-                root.showWorkspaceNotice(title + " moved to Workspace " + target);
+            root.pendingMoveMonitorName = "";
+            var resultMatches = result.address === address
+                && result.workspaceId === target
+                && result.monitorName === monitor;
+            if (exitCode === 0 && result.state === "confirmed" && resultMatches) {
+                root.workspaceMoveState = "confirmed";
+                root.showWorkspaceNotice("Move confirmed: " + title + " → Workspace " + target + " on " + monitor);
+                root.refreshHyprlandState();
+                root.modelRevision++;
+            } else if (exitCode === 75 && result.state === "pending" && resultMatches) {
+                root.workspaceMoveState = "pending";
+                root.showWorkspaceNotice("Move pending: " + title + " → Workspace " + target + " on " + monitor + "; not yet confirmed");
                 root.refreshHyprlandState();
                 root.modelRevision++;
             } else {
+                root.workspaceMoveState = "refused";
                 var message = String(workspaceMoveError.text || "").trim();
-                root.showWorkspaceNotice(message || "Window could not be moved");
+                root.showWorkspaceNotice("Move refused: " + (message || "the dispatcher returned an unexpected result"));
             }
         }
     }
@@ -1802,6 +1963,24 @@ Item {
 
         function getReducedMotion(): string {
             return String(root.reducedMotion);
+        }
+        function getWorkspaceBoardMonitor(): string {
+            return root.workspaceBoardMonitorName;
+        }
+        function getWorkspaceMoveState(): string {
+            return root.workspaceMoveState;
+        }
+        function getWorkspaceNotice(): string {
+            return root.workspaceNotice;
+        }
+        function getOrdinaryWorkspaceIds(): string {
+            var ids = [];
+            for (var index = 0; index < root.ordinaryWorkspaces.length; index++)
+                ids.push(root.ordinaryWorkspaces[index].id);
+            return JSON.stringify(ids);
+        }
+        function getUnsupportedWorkspaceCount(): string {
+            return String(root.unsupportedWorkspaceSummary.total || 0);
         }
         function open(): string {
             // Must not be root.toggle(): that makes "open" a duplicate of
@@ -2233,8 +2412,10 @@ Item {
                         border.color: Color.menu.border
                         border.width: Math.max(1, Style.normalBorderWidth)
                         Accessible.role: Accessible.ToolBar
-                        Accessible.name: "Workspace board"
-                        Accessible.description: "Shows ordinary workspaces in numeric order. Control Left and Right choose a workspace. Control Enter shows it. Control Shift Enter moves the selected window."
+                        Accessible.name: "Workspace board for " + (root.workspaceBoardMonitorName || "unavailable display")
+                        Accessible.description: "Shows ordinary numeric workspaces 1 through 999 attached to "
+                            + (root.workspaceBoardMonitorName || "no display")
+                            + ". Named, special, unassigned, and out-of-range workspaces are not actionable. Control Left and Right choose a workspace. Control Enter shows it. Control Shift Enter moves the selected window."
 
                         RowLayout {
                             anchors.fill: parent
@@ -2243,25 +2424,29 @@ Item {
                             spacing: Style.spacing.md
 
                             ColumnLayout {
-                                Layout.preferredWidth: Style.space(72)
+                                Layout.preferredWidth: Style.space(152)
                                 spacing: 0
 
                                 Text {
-                                    text: "DESKS"
+                                    Layout.fillWidth: true
+                                    text: "DESKS / " + (root.workspaceBoardMonitorName || "NO DISPLAY")
                                     textFormat: Text.PlainText
                                     color: Color.menu.text
                                     font.family: Style.font.menuFamily
                                     font.pixelSize: Style.font.bodySmall
                                     font.bold: true
+                                    elide: Text.ElideRight
                                 }
 
                                 Text {
-                                    text: root.ordinaryWorkspaces.length + " OPEN"
+                                    Layout.fillWidth: true
+                                    text: root.ordinaryWorkspaces.length + " ORDINARY · 1–999"
                                     textFormat: Text.PlainText
                                     color: Color.menu.text
                                     opacity: 0.58
                                     font.family: Style.font.menuFamily
                                     font.pixelSize: Style.font.caption
+                                    elide: Text.ElideRight
                                 }
                             }
 
@@ -2308,10 +2493,13 @@ Item {
                                             Accessible.role: Accessible.Button
                                             Accessible.name: modelData.label
                                             Accessible.description: allTile
-                                                ? String(modelData.count) + " windows across all workspaces"
+                                                ? String(modelData.count) + (root.multiMonitorMode === "per-monitor"
+                                                    ? " windows on " + root.workspaceBoardMonitorName
+                                                    : " windows across all displays; workspace destinations stay on " + root.workspaceBoardMonitorName)
                                                 : (modelData.active ? "Active. " : "")
                                                     + (modelData.occupied ? String(modelData.count) + " windows. " : "Empty. ")
-                                                    + (scoped ? "Shown in the overview." : "")
+                                                    + (scoped ? "Shown in the overview. " : "")
+                                                    + "Attached to " + root.workspaceBoardMonitorName + "."
                                             Accessible.focusable: !allTile
                                             Accessible.focused: keyboardCursor
                                             Accessible.selectable: true
@@ -2376,17 +2564,18 @@ Item {
                             }
 
                             Text {
-                                Layout.maximumWidth: Style.space(220)
-                                visible: root.workspaceNotice.length > 0
-                                text: root.workspaceNotice
+                                Layout.maximumWidth: Style.space(280)
+                                visible: root.workspaceNotice.length > 0 || root.unsupportedWorkspaceSummary.total > 0
+                                text: root.workspaceNotice || root.unsupportedWorkspaceReason()
                                 textFormat: Text.PlainText
-                                color: Color.accent
+                                color: root.workspaceNotice ? Color.accent : Color.menu.text
+                                opacity: root.workspaceNotice ? 1 : 0.62
                                 font.family: Style.font.menuFamily
                                 font.pixelSize: Style.font.caption
                                 font.bold: true
                                 elide: Text.ElideRight
                                 Accessible.role: Accessible.StaticText
-                                Accessible.name: root.workspaceNotice
+                                Accessible.name: root.workspaceNotice || root.unsupportedWorkspaceReason()
                             }
                         }
                     }

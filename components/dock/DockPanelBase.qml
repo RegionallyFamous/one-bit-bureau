@@ -46,10 +46,21 @@ Item {
   property int windowStateRevision: 0
   property bool windowListOpen: false
   property point lastMenuPosition: Qt.point(0, 0)
+  property int actionStatusSerial: 0
+  property var lastActionStatus: ({
+    serial: 0,
+    action: "",
+    state: "idle",
+    appId: "",
+    address: "",
+    message: ""
+  })
+  property var actionObservation: null
 
   // Inspector integration stays narrow: the dock owns app/window truth and
   // asks its host to open the shared Inspector with a normalized context.
   signal inspectorRequested(var context, var invokingScreen, point invokingPosition)
+  signal actionStatusReported(var status)
   // Repeater model: stable id strings. Replaced only when the id set changes
   // (apps opened/closed); reorders and pin/running toggles never touch it, so
   // no delegate is torn down by dragging or state changes.
@@ -223,6 +234,22 @@ Item {
     function getWindowCount(appId: string): int {
       return root.windowLedgerFor(String(appId || "").replace(/\.desktop$/, "")).count
     }
+    function getLastActionStatus(): string { return JSON.stringify(root.lastActionStatus) }
+    function getLastActionState(): string { return String(root.lastActionStatus.state || "idle") }
+    function getLastActionKind(): string { return String(root.lastActionStatus.action || "") }
+    function getLastActionAppId(): string { return String(root.lastActionStatus.appId || "") }
+    function getIdentityForAddress(address: string): string {
+      var candidate = root.liveWindowForAddress(address)
+      return JSON.stringify(candidate ? identityController.resolveWindow(candidate) : ({
+        id: "", method: "missing-address", ambiguous: false, candidates: []
+      }))
+    }
+    function requestFocusForApp(appId: string): bool { return root.focusAppWindows(root.contextAppId({ appId: appId })) }
+    function requestCloseForApp(appId: string): bool { return root.closeWindow(root.contextAppId({ appId: appId })) }
+    function requestNewWindowForApp(appId: string): bool {
+      var id = root.contextAppId({ appId: appId })
+      return root.requestNewWindow(id, root.appNameFor(id))
+    }
     function getAutoHidden(): bool { return root.autoHidden }
     function getEdgeHovered(): bool { return root.edgeHovered }
     function getAltTabActive(): bool { return altTab.active }
@@ -387,6 +414,16 @@ Item {
     return ipc.mapped !== false
   }
 
+  function allLiveHyprlandWindows() {
+    var output = []
+    try {
+      var values = Hyprland.toplevels.values
+      for (var i = 0; i < values.length && output.length < 64; i++)
+        if (root.hyprlandWindowIsLive(values[i])) output.push(values[i])
+    } catch (error) {}
+    return output
+  }
+
   function currentWorkspaceDescriptor() {
     var workspace = Hyprland.focusedWorkspace
     return workspace ? {
@@ -398,6 +435,95 @@ Item {
   function activeWindowAddress() {
     var active = Hyprland.activeToplevel
     return WindowLedger.normalizeAddress(active && active.address)
+  }
+
+  function liveWindowForAddress(address, expectedAppId) {
+    var wantedAddress = WindowLedger.normalizeAddress(address)
+    var wantedApp = identityController.normalizeId(expectedAppId || "")
+    if (!wantedAddress) return null
+    var values = root.liveHyprlandWindows()
+    for (var i = 0; i < values.length; i++) {
+      var candidate = values[i]
+      if (WindowLedger.normalizeAddress(candidate && candidate.address) !== wantedAddress) continue
+      // Re-resolve immediately before every dispatch. An address can be reused
+      // after a close, so matching the address without stable identity is not
+      // sufficient when the caller knows which application it targeted.
+      if (wantedApp && root.dockIdForHyprlandWindow(candidate) !== wantedApp) return null
+      return candidate
+    }
+    return null
+  }
+
+  function allLedgerWindows() {
+    var output = []
+    var ledger = root.windowLedger || ({})
+    for (var appId in ledger) {
+      var windows = ledger[appId] && Array.isArray(ledger[appId].windows)
+        ? ledger[appId].windows : []
+      for (var i = 0; i < windows.length && output.length < 256; i++)
+        output.push(windows[i])
+      if (output.length >= 256) break
+    }
+    return output
+  }
+
+  function reportActionStatus(action, state, appId, address, message) {
+    root.actionStatusSerial++
+    root.lastActionStatus = {
+      serial: root.actionStatusSerial,
+      action: String(action || "").slice(0, 32),
+      state: String(state || "failed").slice(0, 16),
+      appId: identityController.normalizeId(appId || ""),
+      address: WindowLedger.normalizeAddress(address),
+      message: String(message || "").slice(0, 240)
+    }
+    root.actionStatusReported(root.lastActionStatus)
+    return root.lastActionStatus
+  }
+
+  function beginActionObservation(action, appId, address, beforeAddresses, requestedMessage) {
+    actionObservationTimer.stop()
+    var status = root.reportActionStatus(
+      action, "requested", appId, address, requestedMessage)
+    root.actionObservation = {
+      serial: status.serial,
+      action: status.action,
+      appId: status.appId,
+      address: status.address,
+      beforeAddresses: (beforeAddresses || []).slice(0, 64)
+    }
+    actionObservationTimer.restart()
+    root.observeActionPostcondition()
+  }
+
+  function observeActionPostcondition() {
+    var observation = root.actionObservation
+    if (!observation || observation.serial !== root.lastActionStatus.serial) return false
+    var windows = root.allLedgerWindows()
+    var observed = false
+    var message = ""
+    if (observation.action === "focus") {
+      observed = WindowLedger.focusObserved(
+        windows, root.activeWindowAddress(), observation.appId, observation.address)
+      message = "Window focus observed."
+    } else if (observation.action === "close") {
+      observed = WindowLedger.closeObserved(windows, observation.address, observation.appId)
+      message = "Window closure observed."
+    } else if (observation.action === "new-window") {
+      observed = WindowLedger.newWindowObserved(
+        observation.beforeAddresses, windows, observation.appId)
+      message = "New window observed."
+    } else if (observation.action === "open") {
+      observed = WindowLedger.newWindowObserved(
+        observation.beforeAddresses, windows, observation.appId)
+      message = "Application window observed."
+    }
+    if (!observed) return false
+    actionObservationTimer.stop()
+    root.actionObservation = null
+    root.reportActionStatus(
+      observation.action, "observed", observation.appId, observation.address, message)
+    return true
   }
 
   function emptyWindowLedger() {
@@ -431,6 +557,7 @@ Item {
         var size = root.array2(ipc.size)
         var address = WindowLedger.normalizeAddress(candidate.address)
         output.push({
+          appId: wanted,
           address: address,
           title: String(candidate.title || ""),
           active: address !== "" && address === root.activeWindowAddress(),
@@ -465,6 +592,7 @@ Item {
         var size = root.array2(ipc.size)
         var address = WindowLedger.normalizeAddress(candidate.address)
         grouped[id].push({
+          appId: id,
           address: address,
           title: String(candidate.title || ""),
           active: address !== "" && address === root.activeWindowAddress(),
@@ -496,6 +624,7 @@ Item {
     }
     root.windowLedger = next
     root.windowStateRevision++
+    root.observeActionPostcondition()
 
     if (root.previewAppId) {
       var previewLedger = root.windowLedgerFor(root.previewAppId)
@@ -509,19 +638,24 @@ Item {
   }
 
   function desktopIdForWindow(window) {
-    return DockModel.resolveDesktopIds([
-      window.appId,
-      window.desktopId,
-      window.className,
-      window.initialClass
-    ], root.appEntries, root.pinnedIds)
+    return identityController.resolveInput({
+      desktopId: window && window.desktopId,
+      appId: window && window.appId,
+      className: window && window.className,
+      initialClass: window && window.initialClass
+    }).id
   }
 
   function hyprlandWindowFor(window, excludedAddresses) {
     var targetId = String(window.appId || window.desktopId || window.className || window.initialClass || "").toLowerCase()
     var targetTitle = String(window.title || "")
-    var titleFallback = null
     var idFallback = null
+    var targetIdentity = identityController.resolveInput({
+      desktopId: window.desktopId,
+      appId: window.appId,
+      className: window.className,
+      initialClass: window.initialClass
+    }).id
     var excluded = Array.isArray(excludedAddresses) ? excludedAddresses : []
     try {
       var values = Hyprland.toplevels.values
@@ -540,15 +674,17 @@ Item {
         var idMatches = targetId !== "" && ids.indexOf(targetId) !== -1
         var titleMatches = targetTitle !== "" && String(candidate.title || "") === targetTitle
         if (idMatches && titleMatches) return candidate
-        if (titleMatches && !titleFallback) titleFallback = candidate
+        var candidateIdentity = identityController.resolveWindow(candidate).id
+        if (targetIdentity && candidateIdentity === targetIdentity) {
+          if (titleMatches) return candidate
+          if (!idFallback) idFallback = candidate
+        }
         if (idMatches && !idFallback) idFallback = candidate
       }
     } catch (error) {}
-    // Foreign-toplevel identity fields vary between Quickshell builds, but
-    // the compositor title is shared with Hyprland. Prefer that stable bridge
-    // before a class-only fallback; liveHyprlandWindows excludes already
-    // claimed addresses so equal-title siblings still map one-to-one.
-    return titleFallback || idFallback
+    // Never bridge on title alone. Titles are mutable content, not application
+    // identity, and equal-title windows from unrelated apps must remain apart.
+    return idFallback
   }
 
   function liveHyprlandWindows() {
@@ -591,11 +727,22 @@ Item {
   }
 
   function startNextFocusAttempt() {
-    if (!root.focusFallbackAddresses.length) return false
+    if (!root.focusFallbackAddresses.length) {
+      if (root.focusRequestAppId)
+        root.reportActionStatus("focus", "failed", root.focusRequestAppId, "",
+          "No current window could be resolved for focus.")
+      root.finishFocusRequest()
+      return false
+    }
     var addresses = root.focusFallbackAddresses.slice()
     var normalized = WindowLedger.normalizeAddress(addresses.shift())
     root.focusFallbackAddresses = addresses
     if (!normalized) return root.startNextFocusAttempt()
+
+    var candidate = root.liveWindowForAddress(normalized, root.focusRequestAppId)
+    if (!candidate) return root.startNextFocusAttempt()
+    var currentAppId = root.dockIdForHyprlandWindow(candidate)
+    if (!root.focusRequestAppId) root.focusRequestAppId = currentAppId
 
     // This Omarchy build uses Hyprland's Lua dispatcher syntax. The older
     // `workspace ...` / `focuswindow ...` strings are parsed as Lua and fail.
@@ -604,9 +751,21 @@ Item {
     var attempted = root.focusAttemptedAddresses.slice()
     attempted.push(normalized)
     root.focusAttemptedAddresses = attempted
+    root.beginActionObservation(
+      "focus", root.focusRequestAppId, normalized, [], "Focus requested.")
     focusWindowProcess.command = ["bash", root.focusHelperPath, normalized]
     focusWindowProcess.running = true
     return true
+  }
+
+  function finishFocusRequest() {
+    root.focusRequestAppId = ""
+    root.focusFallbackAddresses = []
+    root.focusAttemptedAddresses = []
+    var queued = root.queuedFocusRequest
+    root.queuedFocusRequest = null
+    if (queued)
+      Qt.callLater(function() { root.focusWindowAddresses(queued.appId, queued.addresses) })
   }
 
   function focusWindowAddresses(appId, addresses) {
@@ -629,25 +788,33 @@ Item {
     return root.startNextFocusAttempt()
   }
 
-  function focusWindowAddress(address) {
-    return root.focusWindowAddresses("", [address])
+  function focusWindowAddress(address, expectedAppId) {
+    return root.focusWindowAddresses(expectedAppId || "", [address])
   }
 
   function focusExistingWindow(hyprWindow) {
     if (!hyprWindow || !hyprWindow.address) return false
-    return root.focusWindowAddress(hyprWindow.address)
+    return root.focusWindowAddress(
+      hyprWindow.address, root.dockIdForHyprlandWindow(hyprWindow))
   }
 
   function focusAppWindows(appId) {
-    var ledger = root.windowLedgerFor(appId)
+    var canonical = root.contextAppId({ appId: appId })
+    if (!canonical) return false
+    var ledger = root.windowLedgerFor(canonical)
     if (!ledger.count) {
       // Hyprland and the foreign-toplevel protocol may update on adjacent
       // frames. Re-read once, but do not launch merely because resolution is
       // temporarily stale.
       root.rebuildWindowLedger()
-      ledger = root.windowLedgerFor(appId)
+      ledger = root.windowLedgerFor(canonical)
     }
-    return root.focusWindowAddresses(appId, WindowLedger.focusAddresses(ledger.windows))
+    if (!ledger.count) {
+      root.reportActionStatus("focus", "failed", canonical, "",
+        "No current window could be resolved for focus.")
+      return false
+    }
+    return root.focusWindowAddresses(canonical, WindowLedger.focusAddresses(ledger.windows))
   }
 
   onShellChanged: if (root.shell) root.refreshApps()
@@ -830,18 +997,53 @@ Item {
   }
 
   function handleClick(item) {
-    if (!item) return
-    if (item.running) {
+    if (!item) return false
+    var id = root.contextAppId({ appId: item.id })
+    if (!id) return false
+    if (item.running || root.appIsRunning(id)) {
       // Never fall back to launch for a known-running app. The compositor and
       // foreign-toplevel feeds can differ for a frame; a duplicate process is
       // worse than a focus request that safely does nothing and can be retried.
-      if (!root.focusAppWindows(item.id))
-        console.warn("regionallyfamous.one-bit-bureau.dock: running window state is not focusable yet for " + item.id)
-      return
+      var focused = root.focusAppWindows(id)
+      if (!focused)
+        console.warn("regionallyfamous.one-bit-bureau.dock: running window state is not focusable yet for " + id)
+      return focused
     }
-    var entry = DockModel.entryFor(item.id, root.appEntries)
-    if (root.shell && root.shell.appLibrary && typeof root.shell.appLibrary.launch === "function")
-      root.shell.appLibrary.launch(item.id, entry.name || item.name)
+    return root.requestLaunch(id, item.name, "open")
+  }
+
+  function appIsRunning(appId) {
+    var id = root.contextAppId({ appId: appId })
+    if (!id) return false
+    // Preserve positive truth from the previous authoritative snapshot while
+    // re-reading the current foreign-toplevel set. A transient empty bridge
+    // may delay an open, but it must never cause a duplicate launch.
+    if (root.runningIds.indexOf(id) !== -1) return true
+    return root.normalizeRunning().indexOf(id) !== -1
+  }
+
+  function requestLaunch(appId, name, action) {
+    var id = root.contextAppId({ appId: appId })
+    var kind = action === "new-window" ? "new-window" : "open"
+    if (!id) return false
+    root.rebuildWindowLedger()
+    var before = WindowLedger.focusAddresses(root.windowLedgerFor(id).windows)
+    var entry = DockModel.entryFor(id, root.appEntries)
+    var label = name || (entry && entry.name) || id
+    if (!root.shell || !root.shell.appLibrary
+        || typeof root.shell.appLibrary.launch !== "function") {
+      root.reportActionStatus(kind, "failed", id, "", "Application launch is unavailable.")
+      return false
+    }
+    root.beginActionObservation(
+      kind, id, "", before,
+      kind === "new-window" ? "New window requested." : "Open requested.")
+    root.shell.appLibrary.launch(id, label)
+    return true
+  }
+
+  function requestNewWindow(appId, name) {
+    return root.requestLaunch(appId, name, "new-window")
   }
 
   // ---- Alt+Tab app switcher -------------------------------------------------
@@ -851,13 +1053,7 @@ Item {
 
   function dockIdForHyprlandWindow(window) {
     try {
-      var ids = []
-      if (window.wayland && window.wayland.appId) ids.push(String(window.wayland.appId))
-      var ipc = window.lastIpcObject || {}
-      if (ipc.appId) ids.push(String(ipc.appId))
-      if (ipc["class"]) ids.push(String(ipc["class"]))
-      if (ipc.initialClass) ids.push(String(ipc.initialClass))
-      return DockModel.resolveDesktopIds(ids, root.appEntries, root.pinnedIds)
+      return identityController.resolveWindow(window).id
     } catch (error) {}
     return ""
   }
@@ -942,15 +1138,15 @@ Item {
   }
 
   function activateApp(id, name) {
-    if (root.runningIds.indexOf(id) !== -1) {
-      if (!root.focusAppWindows(id))
-        console.warn("regionallyfamous.one-bit-bureau.dock: app switch target is not focusable yet for " + id)
-      return
+    var canonical = root.contextAppId({ appId: id })
+    if (!canonical) return false
+    if (root.appIsRunning(canonical)) {
+      var focused = root.focusAppWindows(canonical)
+      if (!focused)
+        console.warn("regionallyfamous.one-bit-bureau.dock: app switch target is not focusable yet for " + canonical)
+      return focused
     }
-    var entry = DockModel.entryFor(id, root.appEntries)
-    var label = name || (entry && entry.name) || id
-    if (root.shell && root.shell.appLibrary && typeof root.shell.appLibrary.launch === "function")
-      root.shell.appLibrary.launch(id, label)
+    return root.requestLaunch(canonical, name, "open")
   }
 
   Process {
@@ -960,15 +1156,28 @@ Item {
         Qt.callLater(root.startNextFocusAttempt)
         return
       }
-      if (exitCode !== 0 && root.focusRequestAppId)
+      if (exitCode !== 0 && root.focusRequestAppId) {
         console.warn("regionallyfamous.one-bit-bureau.dock: all focus candidates became stale for " + root.focusRequestAppId)
-      root.focusRequestAppId = ""
-      root.focusFallbackAddresses = []
-      root.focusAttemptedAddresses = []
-      var queued = root.queuedFocusRequest
-      root.queuedFocusRequest = null
-      if (queued)
-        Qt.callLater(function() { root.focusWindowAddresses(queued.appId, queued.addresses) })
+        actionObservationTimer.stop()
+        root.actionObservation = null
+        root.reportActionStatus("focus", "failed", root.focusRequestAppId, "",
+          "All focus candidates became stale before dispatch completed.")
+      }
+      root.finishFocusRequest()
+    }
+  }
+
+  Timer {
+    id: actionObservationTimer
+    interval: 1400
+    repeat: false
+    onTriggered: {
+      var observation = root.actionObservation
+      if (!observation || observation.serial !== root.lastActionStatus.serial) return
+      root.actionObservation = null
+      root.reportActionStatus(
+        observation.action, "requested", observation.appId, observation.address,
+        "Action requested; confirmation was not observed.")
     }
   }
 
@@ -1066,9 +1275,16 @@ Item {
 
   function contextAppId(context) {
     var value = context || {}
-    var raw = String(value.appId || value.desktopId || value.id || "").replace(/\.desktop$/, "").slice(0, 256)
+    var raw = identityController.normalizeId(value.appId || value.desktopId || value.id || "")
     if (!raw) return ""
-    var resolved = DockModel.resolveDesktopId(raw, root.appEntries)
+    var resolved = identityController.resolveInput({
+      desktopId: value.desktopId || raw,
+      appId: value.appId || "",
+      className: value.className || "",
+      initialClass: value.initialClass || "",
+      processName: value.processName || "",
+      executable: value.executable || ""
+    }).id
     if (root.delegateById[resolved] || root.runningIds.indexOf(resolved) !== -1 || root.pinnedIds.indexOf(resolved) !== -1)
       return resolved
     for (var i = 0; i < root.appEntries.length; i++) {
@@ -1087,12 +1303,10 @@ Item {
     if (!id) return false
     var item = root.inspectorContextForApp(id)
     if (action === "open" || action === "activate" || action === "dock.activate") {
-      root.handleClick({ id: id, name: item.name, running: item.running })
-      return true
+      return root.handleClick({ id: id, name: item.name, running: item.running })
     }
     if (action === "new-window" || action === "newWindow" || action === "dock.new-window") {
-      root.handleClick({ id: id, name: item.name, running: false })
-      return true
+      return root.requestNewWindow(id, item.name)
     }
     if (action === "show-windows" || action === "showWindows" || action === "dock.show-windows")
       return root.openWindowListForApp(id)
@@ -1150,7 +1364,7 @@ Item {
     }
     if (!item) return
     if (action === "togglePin") root.pinnedIds = DockModel.togglePinned(root.pinnedIds, item.id)
-    else if (action === "newWindow") handleClick({ id: item.id, name: item.name, running: false })
+    else if (action === "newWindow") root.requestNewWindow(item.id, item.name)
     else if (action === "close") closeWindow(item.id)
     else if (action === "inspect") root.requestInspector(item)
     else if (action === "showWindows") root.openWindowList(item, root.lastMenuPosition, dockMenu.returnFocusItem)
@@ -1182,41 +1396,36 @@ Item {
     return true
   }
 
-  function closeWindowData(data) {
+  function closeWindowData(data, expectedAppId) {
     if (!data) return false
     var address = WindowLedger.normalizeAddress(data.address)
-    try {
-      var values = root.liveHyprlandWindows()
-      for (var i = 0; i < values.length; i++) {
-        var candidate = values[i]
-        if (WindowLedger.normalizeAddress(candidate.address) !== address) continue
-        var wayland = candidate.wayland
-        if (wayland && typeof wayland.close === "function") {
-          wayland.close()
-          return true
-        }
-      }
-    } catch (error) {}
-    // A list row may still hold the valid foreign-toplevel object while the
-    // Hyprland wrapper is between collection updates.
-    if (data.waylandToplevel && typeof data.waylandToplevel.close === "function") {
-      data.waylandToplevel.close()
+    var appId = root.contextAppId({ appId: expectedAppId || data.appId || "" })
+    if (!address || !appId) return false
+    var candidate = root.liveWindowForAddress(address, appId)
+    if (!candidate) {
+      root.reportActionStatus("close", "failed", appId, address,
+        "The selected window became stale before close could be requested.")
+      return false
+    }
+    var wayland = candidate.wayland
+    if (wayland && typeof wayland.close === "function") {
+      root.beginActionObservation("close", appId, address, [], "Close requested.")
+      wayland.close()
       return true
     }
+    root.reportActionStatus("close", "failed", appId, address,
+      "The current window does not expose a close action.")
     return false
   }
 
   function closeWindow(id) {
-    var ledger = root.windowLedgerFor(id)
-    if (ledger.windows.length && root.closeWindowData(ledger.windows[0])) return true
-    try {
-      var values = ToplevelManager.toplevels.values
-      for (var i = values.length - 1; i >= 0; i--) {
-        var window = values[i]
-        var windowId = root.desktopIdForWindow(window)
-        if (windowId === id && typeof window.close === "function") { window.close(); return true }
-      }
-    } catch (error) {}
+    var appId = root.contextAppId({ appId: id })
+    if (!appId) return false
+    root.rebuildWindowLedger()
+    var ledger = root.windowLedgerFor(appId)
+    if (ledger.windows.length) return root.closeWindowData(ledger.windows[0], appId)
+    root.reportActionStatus("close", "failed", appId, "",
+      "No current window could be resolved for close.")
     return false
   }
 
@@ -1445,7 +1654,7 @@ Item {
   function activatePreviewWindow(data) {
     if (!data || !data.address) return
     root.hidePreview()
-    root.focusWindowAddress(data.address)
+    root.focusWindowAddress(data.address, data.appId || root.previewAppId)
   }
 
   function loadCustomIcons(content) {
@@ -1690,7 +1899,10 @@ Item {
 
   Connections {
     target: Hyprland.toplevels
-    function onValuesChanged() { root.refreshItems() }
+    function onValuesChanged() {
+      identityController.refreshProcesses(root.allLiveHyprlandWindows())
+      root.refreshItems()
+    }
   }
 
   Instantiator {
@@ -1724,6 +1936,7 @@ Item {
   Component.onCompleted: {
     root.checkDockConflict()
     root.refreshApps()
+    identityController.refreshProcesses(root.allLiveHyprlandWindows())
     root.refreshItems()
     // The alt-tab HUD opens/closes on keypresses; Hyprland's default layer
     // fade would add a visible fade-in. Disable compositor animation for
@@ -1740,6 +1953,7 @@ Item {
     settingsRenameProcess.running = false
     layerRuleProcess.running = false
     focusWindowProcess.running = false
+    actionObservationTimer.stop()
   }
 
   Process {
@@ -2008,11 +2222,20 @@ Item {
     onOpenedChanged: if (!opened) root.menuOpen = false
   }
 
+  ApplicationIdentityController {
+    id: identityController
+    manifest: root.manifest
+    runHelperPath: root.runHelperPath
+    appEntries: root.appEntries
+    preferredIds: root.pinnedIds
+    onIdentityChanged: Qt.callLater(root.refreshItems)
+  }
+
   WindowListPanel {
     id: windowListPanel
     screen: root.dockScreen
     onActivated: function(windowData) { root.focusWindowAddresses(windowListPanel.appId, [windowData.address]) }
-    onCloseRequested: function(windowData) { root.closeWindowData(windowData) }
+    onCloseRequested: function(windowData) { root.closeWindowData(windowData, windowListPanel.appId) }
     onOpenedChanged: root.windowListOpen = opened
   }
 

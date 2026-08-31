@@ -28,9 +28,12 @@ test("focus uses per-app MRU candidates and never launches a known-running app",
   assert.match(panelBase, /WindowLedger\.touchMru/)
   assert.match(panelBase, /WindowLedger\.orderWindows/)
   assert.match(panelBase, /function focusWindowAddresses\(appId, addresses\)/)
-  assert.match(panelBase, /if \(item\.running\) \{[\s\S]*?focusAppWindows\(item\.id\)[\s\S]*?return/)
-  assert.match(panelBase, /if \(root\.runningIds\.indexOf\(id\) !== -1\) \{[\s\S]*?focusAppWindows\(id\)[\s\S]*?return/)
+  assert.match(panelBase, /if \(item\.running \|\| root\.appIsRunning\(id\)\) \{[\s\S]*?focusAppWindows\(id\)[\s\S]*?return true/)
+  assert.match(panelBase, /if \(root\.appIsRunning\(canonical\)\) \{[\s\S]*?focusAppWindows\(canonical\)[\s\S]*?return true/)
   assert.match(panelBase, /exitCode !== 0 && root\.focusFallbackAddresses\.length/)
+  assert.match(panelBase, /function liveWindowForAddress\(address, expectedAppId\)/)
+  assert.match(panelBase, /root\.liveWindowForAddress\(normalized, root\.focusRequestAppId\)/)
+  assert.match(panelBase, /item\.running \|\| root\.appIsRunning\(id\)/)
 })
 
 test("window list is explicit, keyboard accessible, and capture-free", () => {
@@ -56,4 +59,26 @@ test("Get Info routes to the shared Inspector through a narrow dock contract", (
   assert.match(dockPanel, /readonly property var windowLedger:\s*dock\.windowLedger/)
   assert.match(dockPanel, /signal inspectorRequested/)
   assert.match(dockPanel, /function performInspectorAction\(actionId, context\)/)
+})
+
+test("window actions expose truthful requested, observed, and failed status", () => {
+  assert.match(panelBase, /signal actionStatusReported\(var status\)/)
+  assert.match(panelBase, /function beginActionObservation\(/)
+  assert.match(panelBase, /WindowLedger\.focusObserved/)
+  assert.match(panelBase, /WindowLedger\.closeObserved/)
+  assert.match(panelBase, /WindowLedger\.newWindowObserved/)
+  assert.match(panelBase, /"requested"/)
+  assert.match(panelBase, /"observed"/)
+  assert.match(panelBase, /"failed"/)
+  assert.match(panelBase, /function getLastActionStatus\(\): string/)
+  assert.match(dockPanel, /readonly property var lastActionStatus:\s*dock\.lastActionStatus/)
+  assert.match(dockPanel, /signal actionStatusReported\(var status\)/)
+})
+
+test("close and new-window dispatch re-resolve identity and never use stale row handles", () => {
+  assert.match(panelBase, /function closeWindowData\(data, expectedAppId\)/)
+  assert.match(panelBase, /root\.liveWindowForAddress\(address, appId\)/)
+  assert.doesNotMatch(panelBase, /data\.waylandToplevel\.close/)
+  assert.match(panelBase, /function requestNewWindow\(appId, name\)/)
+  assert.match(panelBase, /return root\.requestNewWindow\(id, item\.name\)/)
 })

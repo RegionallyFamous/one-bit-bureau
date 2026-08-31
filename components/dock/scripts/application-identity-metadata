@@ -1,0 +1,260 @@
+#!/usr/bin/python3
+
+"""Bounded metadata bridge for One-Bit Bureau application identity.
+
+`desktop-index` reads specification-defined identity fields that Quickshell's
+DesktopEntry API does not expose. `process` reads narrow /proc identity for a
+bounded set of live Hyprland address/PID pairs. Neither mode executes desktop
+entry contents or trusts window titles.
+"""
+
+from __future__ import annotations
+
+import configparser
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import sys
+
+
+MAX_ENTRIES = 4096
+MAX_SCANNED_FILES = 8192
+MAX_DESKTOP_BYTES = 256 * 1024
+MAX_OUTPUT_BYTES = 1024 * 1024
+MAX_ID_CHARS = 160
+MAX_VALUE_CHARS = 512
+MAX_ALIASES = 16
+MAX_PROCESSES = 64
+MAX_PID = 4_194_304
+ADDRESS_PID_RE = re.compile(r"^(0x[0-9a-fA-F]{1,32})=([1-9][0-9]{0,7})$")
+
+
+def bounded(value: object, limit: int = MAX_VALUE_CHARS) -> str:
+    text = str(value or "").strip().replace("\x00", "")
+    return text if len(text) <= limit else ""
+
+
+def emit(payload: object) -> None:
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    if len(encoded) > MAX_OUTPUT_BYTES:
+        raise ValueError("identity metadata output exceeds 1 MiB")
+    sys.stdout.buffer.write(encoded + b"\n")
+
+
+def application_dirs() -> list[Path]:
+    data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local/share")
+    data_dirs = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    ordered = [Path(data_home) / "applications"]
+    ordered.extend(Path(item) / "applications" for item in data_dirs.split(":") if item)
+    output: list[Path] = []
+    for path in ordered:
+        if path not in output:
+            output.append(path)
+    return output
+
+
+def desktop_id(root: Path, path: Path) -> str:
+    try:
+        relative = path.relative_to(root).as_posix()
+    except ValueError:
+        return ""
+    if not relative.endswith(".desktop"):
+        return ""
+    value = relative[:-8].replace("/", "-")
+    return value if 0 < len(value) <= MAX_ID_CHARS else ""
+
+
+def argv_identity_tokens(argv: list[str]) -> list[str]:
+    output: list[str] = []
+    index = 0
+    while index < len(argv) and (
+        re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", argv[index])
+        or argv[index] in {"env", "/usr/bin/env", "uwsm-app", "--"}
+    ):
+        index += 1
+    if index >= len(argv):
+        return output
+    executable = Path(argv[index]).name
+    if executable:
+        output.append(executable[:MAX_ID_CHARS])
+    if executable == "flatpak":
+        index += 1
+        while index < len(argv) and argv[index] != "run":
+            index += 1
+        if index < len(argv):
+            index += 1
+        while index < len(argv) and argv[index].startswith("-"):
+            index += 1
+        if index < len(argv):
+            output.append(argv[index][:MAX_ID_CHARS])
+    elif executable == "snap":
+        index += 1
+        if index < len(argv) and argv[index] == "run":
+            index += 1
+        if index < len(argv):
+            output.append(argv[index][:MAX_ID_CHARS])
+    return list(dict.fromkeys(output))[:8]
+
+
+def exec_tokens(exec_string: str) -> list[str]:
+    try:
+        argv = shlex.split(exec_string, posix=True)
+    except ValueError:
+        return []
+    return argv_identity_tokens(argv)
+
+
+def read_desktop_file(root: Path, path: Path) -> tuple[str, dict[str, object]] | None:
+    try:
+        stat = path.stat()
+        if not path.is_file() or stat.st_size > MAX_DESKTOP_BYTES:
+            return None
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    parser = configparser.ConfigParser(interpolation=None, strict=False)
+    parser.optionxform = str
+    try:
+        parser.read_string(text)
+    except configparser.Error:
+        return None
+    if not parser.has_section("Desktop Entry"):
+        return None
+    section = parser["Desktop Entry"]
+    if section.get("Type", "Application") != "Application":
+        return None
+    identity = desktop_id(root, path)
+    if not identity:
+        return None
+
+    aliases: list[str] = []
+    for field in ("X-GNOME-WMClass", "X-KDE-WMClass", "X-Flatpak"):
+        value = bounded(section.get(field, ""), MAX_ID_CHARS)
+        if value and value not in aliases:
+            aliases.append(value)
+    startup = bounded(section.get("StartupWMClass", ""), MAX_ID_CHARS)
+    exec_string = bounded(section.get("Exec", ""), MAX_VALUE_CHARS)
+    return identity, {
+        "startupWmClass": startup,
+        "aliases": aliases[:MAX_ALIASES],
+        "execString": exec_string,
+        "processNames": exec_tokens(exec_string),
+    }
+
+
+def desktop_index() -> int:
+    entries: dict[str, object] = {}
+    scanned = 0
+    # Exact compact-JSON byte accounting avoids building an oversized index
+    # and then discarding all useful metadata at emit time.
+    output_bytes = len(b'{"version":1,"entries":{}}')
+    for root in application_dirs():
+        if not root.is_dir():
+            continue
+        for current, directories, files in os.walk(root):
+            directories.sort()
+            files.sort()
+            for filename in files:
+                if not filename.endswith(".desktop"):
+                    continue
+                scanned += 1
+                if scanned > MAX_SCANNED_FILES:
+                    break
+                parsed = read_desktop_file(root, Path(current) / filename)
+                if not parsed:
+                    continue
+                identity, metadata = parsed
+                # XDG precedence is user-first. First definition wins.
+                if identity not in entries:
+                    encoded_key = json.dumps(identity, ensure_ascii=False, separators=(",", ":")).encode()
+                    encoded_value = json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode()
+                    record_bytes = len(encoded_key) + 1 + len(encoded_value) + (1 if entries else 0)
+                    if output_bytes + record_bytes + 1 > MAX_OUTPUT_BYTES:
+                        break
+                    entries[identity] = metadata
+                    output_bytes += record_bytes
+                if len(entries) >= MAX_ENTRIES:
+                    break
+            if scanned > MAX_SCANNED_FILES or len(entries) >= MAX_ENTRIES:
+                break
+        if scanned > MAX_SCANNED_FILES or len(entries) >= MAX_ENTRIES:
+            break
+    emit({"version": 1, "entries": entries})
+    return 0
+
+
+def read_bytes(path: Path, limit: int) -> bytes:
+    try:
+        with path.open("rb") as stream:
+            return stream.read(limit + 1)[:limit]
+    except OSError:
+        return b""
+
+
+def process_record(proc_root: Path, pid: int) -> dict[str, object]:
+    base = proc_root / str(pid)
+    executable = ""
+    try:
+        executable = bounded(os.readlink(base / "exe"), MAX_VALUE_CHARS)
+    except OSError:
+        pass
+    comm = bounded(read_bytes(base / "comm", MAX_ID_CHARS).decode(errors="replace"), MAX_ID_CHARS)
+    cmdline_raw = read_bytes(base / "cmdline", 4096)
+    argv = [bounded(part.decode(errors="replace"), MAX_VALUE_CHARS) for part in cmdline_raw.split(b"\x00")]
+    argv = [item for item in argv if item][:16]
+    identity_names = argv_identity_tokens(argv)
+    start_time = ""
+    stat_text = read_bytes(base / "stat", 4096).decode(errors="replace")
+    # /proc/<pid>/stat field 2 may contain spaces inside parentheses. Fields
+    # after the final ')' begin at state (field 3); starttime is offset 19.
+    close = stat_text.rfind(")")
+    if close >= 0:
+        fields = stat_text[close + 1 :].strip().split()
+        if len(fields) > 19 and fields[19].isdigit():
+            start_time = fields[19]
+    return {
+        "pid": pid,
+        "startTime": start_time,
+        "executable": executable,
+        "processName": comm or (Path(executable).name if executable else ""),
+        "argv": argv,
+        "identityNames": identity_names,
+    }
+
+
+def process_index(arguments: list[str]) -> int:
+    if len(arguments) > MAX_PROCESSES:
+        raise ValueError("at most 64 process identities may be requested")
+    proc_root = Path(os.environ.get("ONE_BIT_BUREAU_PROC_ROOT", "/proc"))
+    output: dict[str, object] = {}
+    for argument in arguments:
+        match = ADDRESS_PID_RE.fullmatch(argument)
+        if not match:
+            raise ValueError("process identity arguments must be 0xADDRESS=PID")
+        address = match.group(1).lower()
+        pid = int(match.group(2))
+        if pid > MAX_PID:
+            raise ValueError("pid exceeds supported ceiling")
+        output[address] = process_record(proc_root, pid)
+    emit({"version": 1, "processes": output})
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        raise ValueError("usage: application-identity-metadata desktop-index|process")
+    if sys.argv[1] == "desktop-index" and len(sys.argv) == 2:
+        return desktop_index()
+    if sys.argv[1] == "process":
+        return process_index(sys.argv[2:])
+    raise ValueError("unknown identity metadata mode")
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except ValueError as error:
+        print(f"application-identity-metadata: {error}", file=sys.stderr)
+        raise SystemExit(2)

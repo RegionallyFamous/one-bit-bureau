@@ -44,13 +44,29 @@ TestCase {
     }
 
     function test_moveRequestRequiresAddressAndExistingWorkspace() {
-        var entries = [{id: 1}, {id: 4}];
-        var valid = WorkspaceModel.moveRequest("0xABC123", 4, entries);
+        var entries = [{id: 1, monitorName: "DP-1"}, {id: 4, monitorName: "DP-1"}];
+        var valid = WorkspaceModel.moveRequest("0xABC123", 4242, 4, entries, "DP-1");
         verify(valid.ok);
         compare(valid.address, "0xabc123");
         compare(valid.workspaceId, 4);
-        verify(!WorkspaceModel.moveRequest("not-an-address", 4, entries).ok);
-        verify(!WorkspaceModel.moveRequest("0xabc123", 3, entries).ok);
-        verify(!WorkspaceModel.moveRequest("0xabc123", -99, entries).ok);
+        compare(valid.monitorName, "DP-1");
+        verify(!WorkspaceModel.moveRequest("not-an-address", 4242, 4, entries, "DP-1").ok);
+        verify(!WorkspaceModel.moveRequest("0xabc123", 4242, 3, entries, "DP-1").ok);
+        verify(!WorkspaceModel.moveRequest("0xabc123", 4242, -99, entries, "DP-1").ok);
+    }
+
+    function test_scopesWorkspacesToInvokingMonitor() {
+        var dp = {name: "DP-1"};
+        var hdmi = {name: "HDMI-A-1"};
+        var workspaces = [
+            {id: 1, name: "1", monitor: dp, active: true},
+            {id: 2, name: "2", monitor: dp},
+            {id: 8, name: "8", monitor: hdmi, active: true}
+        ];
+        var entries = WorkspaceModel.ordinaryWorkspaces(workspaces, [], workspaces[0], "DP-1");
+        compare(entries.length, 2);
+        compare(entries[0].id, 1);
+        compare(entries[1].id, 2);
+        compare(entries[0].monitorName, "DP-1");
     }
 }

@@ -78,3 +78,37 @@ test("accessible descriptions report activity, count, and workspace split", () =
   )
   assert.equal(ledger.accessibleDescription({ pinned: false, running: false }), "Application")
 })
+
+test("focus postconditions require the active address to retain the expected identity", () => {
+  const windows = [
+    { appId: "firefox", address: "0xaaa" },
+    { appId: "terminal", address: "0xbbb" }
+  ]
+  assert.equal(ledger.focusObserved(windows, "0xaaa", "firefox", "0xaaa"), true)
+  assert.equal(ledger.focusObserved(windows, "0xaaa", "terminal", "0xaaa"), false)
+  assert.equal(ledger.focusObserved(windows, "0xaaa", "firefox", "0xbbb"), false)
+  assert.equal(ledger.focusObserved(windows, "0xstale", "firefox", "0xstale"), false)
+})
+
+test("close postconditions accept disappearance or address reuse by another app", () => {
+  assert.equal(ledger.closeObserved([], "0xaaa", "firefox"), true)
+  assert.equal(
+    ledger.closeObserved([{ appId: "terminal", address: "0xaaa" }], "0xaaa", "firefox"),
+    true
+  )
+  assert.equal(
+    ledger.closeObserved([{ appId: "firefox", address: "0xaaa" }], "0xaaa", "firefox"),
+    false
+  )
+})
+
+test("new-window postconditions require a new address for the expected app", () => {
+  const windows = [
+    { appId: "firefox", address: "0xaaa" },
+    { appId: "firefox", address: "0xbbb" },
+    { appId: "terminal", address: "0xccc" }
+  ]
+  assert.equal(ledger.newWindowObserved(["0xaaa"], windows, "firefox"), true)
+  assert.equal(ledger.newWindowObserved(["0xaaa", "0xbbb"], windows, "firefox"), false)
+  assert.equal(ledger.newWindowObserved(["0xaaa"], [windows[0], windows[2]], "firefox"), false)
+})

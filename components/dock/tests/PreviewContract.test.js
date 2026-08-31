@@ -81,11 +81,11 @@ test("unmapped compositor remnants cannot survive as ghost dock applications", (
 
 test("live Wayland windows map one-to-one onto Hyprland ledger records", () => {
   assert.match(panelBase, /function hyprlandWindowFor\(window, excludedAddresses\)/)
-  assert.match(panelBase, /var titleFallback = null/)
   assert.match(panelBase, /var idFallback = null/)
   assert.match(panelBase, /excluded\.indexOf\(address\) !== -1/)
   assert.match(panelBase, /if \(idMatches && titleMatches\) return candidate/)
-  assert.match(panelBase, /return titleFallback \|\| idFallback/)
+  assert.match(panelBase, /Never bridge on title alone/)
+  assert.match(panelBase, /return idFallback/)
   assert.match(panelBase, /root\.hyprlandWindowFor\(values\[i\], seenAddresses\)/)
 })
 

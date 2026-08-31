@@ -135,6 +135,44 @@ function focusAddresses(windows) {
     return output
 }
 
+function windowAtAddress(windows, address) {
+    var wanted = normalizeAddress(address)
+    if (!wanted) return null
+    for (var i = 0; i < (windows || []).length; i++)
+        if (normalizeAddress(windows[i] && windows[i].address) === wanted) return windows[i]
+    return null
+}
+
+function focusObserved(windows, activeAddress, appId, expectedAddress) {
+    var activeNormalized = normalizeAddress(activeAddress)
+    var expected = normalizeAddress(expectedAddress)
+    if (expected && activeNormalized !== expected) return false
+    var active = windowAtAddress(windows, activeAddress)
+    return Boolean(active) && (!appId || String(active.appId || "") === String(appId))
+}
+
+function closeObserved(windows, address, appId) {
+    var current = windowAtAddress(windows, address)
+    // A missing address or an address reused by a different application both
+    // prove that the originally requested window is gone.
+    return !current || (appId && String(current.appId || "") !== String(appId))
+}
+
+function newWindowObserved(beforeAddresses, windows, appId) {
+    var before = []
+    ;(beforeAddresses || []).forEach(function(value) {
+        var address = normalizeAddress(value)
+        if (address && before.indexOf(address) === -1) before.push(address)
+    })
+    for (var i = 0; i < (windows || []).length; i++) {
+        var windowData = windows[i] || {}
+        var address = normalizeAddress(windowData.address)
+        if (address && before.indexOf(address) === -1
+                && (!appId || String(windowData.appId || "") === String(appId))) return true
+    }
+    return false
+}
+
 function plural(count, singular, pluralValue) {
     return count + " " + (count === 1 ? singular : pluralValue)
 }
@@ -169,6 +207,10 @@ if (typeof module !== "undefined" && module.exports) {
         orderWindows: orderWindows,
         summarizeWindows: summarizeWindows,
         focusAddresses: focusAddresses,
+        windowAtAddress: windowAtAddress,
+        focusObserved: focusObserved,
+        closeObserved: closeObserved,
+        newWindowObserved: newWindowObserved,
         accessibleDescription: accessibleDescription
     }
 }
