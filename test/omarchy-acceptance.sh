@@ -127,8 +127,10 @@ hypr_option_is() {
       (.int | tostring) == $wanted
     elif .float != null then
       (.float | tonumber) == ($wanted | tonumber)
-    elif .custom != null then
-      [.custom | scan("-?[0-9]+(?:[.][0-9]+)?")] as $values
+    elif .bool != null then
+      .bool == (($wanted | tonumber) != 0)
+    elif .css != null or .custom != null then
+      [(.css // .custom) | scan("-?[0-9]+(?:[.][0-9]+)?")] as $values
       | ($values | length) > 0 and all($values[]; (tonumber) == ($wanted | tonumber))
     else
       false
