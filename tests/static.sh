@@ -20,20 +20,133 @@ sha256() {
 }
 
 "$OMARCHY_ROOT/bin/omarchy-plugin-validate" "$ROOT"
-bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/update" "$ROOT/one-bit-bureau" "$ROOT/test/omarchy-acceptance.sh" "$ROOT/shortlink/src/install.sh" "$ROOT/shortlink/test/install-test.sh"
+bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/update" "$ROOT/one-bit-bureau" "$ROOT/test/omarchy-acceptance.sh" "$ROOT/shortlink/src/install.sh" "$ROOT/shortlink/test/install-test.sh" "$ROOT/scripts/one-bit-bureau-doctor"
 bash "$ROOT/tests/install-roundtrip.sh"
 bash "$ROOT/tests/update-ownership.sh"
 bash "$ROOT/tests/coordinator-motion.sh"
+bash "$ROOT/tests/diagnostics-app-chrome.sh"
 bash "$ROOT/shortlink/test/install-test.sh"
 bash -n "$ROOT/components/overview/activate-window" "$ROOT/components/overview/move-window-to-workspace" "$ROOT/components/dock/scripts/one-bit-bureau-icon" "$ROOT/components/dock/scripts/focus-window"
 for dock_helper in "$ROOT/components/dock/scripts/one-bit-bureau-state" "$ROOT/components/dock/scripts/one-bit-bureau-run" "$ROOT/test/stubborn-state-helper.py"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$dock_helper"
 done
-for helper in "$ROOT/components/desktop/bin/common.py" "$ROOT/components/desktop/bin/desktop_policy.py" "$ROOT/components/desktop/bin/desktop-index" "$ROOT/components/desktop/bin/add-to-desktop" "$ROOT/components/desktop/bin/desktop-operation"; do
+for helper in "$ROOT/components/desktop/bin/common.py" "$ROOT/components/desktop/bin/desktop_policy.py" "$ROOT/components/desktop/bin/desktop-index" "$ROOT/components/desktop/bin/add-to-desktop" "$ROOT/components/desktop/bin/desktop-operation" "$ROOT/components/desktop/bin/desktop-quick-look"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$helper"
 done
+python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$ROOT/scripts/one-bit-bureau-app-chrome.py"
 python3 -m unittest discover -s "$ROOT/components/desktop/tests" -p 'test_*.py'
 python3 -m unittest discover -s "$ROOT/tests" -p 'test_*.py'
+jq -e '
+  .version == 1 and
+  (.entries | type == "array" and length >= 6) and
+  (.cases | type == "array" and length >= 10) and
+  ([.cases[].name] | length == (unique | length)) and
+  ([.cases[].family] | unique | length >= 8) and
+  all(.cases[]; (.input | type == "object") and (.expected.id | type == "string") and (.expected.method | type == "string") and (.expected.ambiguous | type == "boolean"))
+' "$ROOT/test/application-identity-fixtures.json" >/dev/null
+node - "$ROOT" "$ROOT/test/application-identity-fixtures.json" <<'NODE'
+const fs = require("node:fs")
+const vm = require("node:vm")
+
+const root = process.argv[2]
+const fixturePath = process.argv[3]
+const sourcePath = `${root}/components/dock/ApplicationIdentity.js`
+const source = fs.readFileSync(sourcePath, "utf8").replace(/^\.pragma library\s*/, "")
+const context = { module: { exports: {} }, console }
+vm.runInNewContext(source, context, { filename: sourcePath })
+const resolver = context.module.exports
+const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"))
+
+for (const testCase of fixture.cases) {
+  const actual = resolver.resolve(testCase.input, fixture.entries, [])
+  for (const key of ["id", "method", "ambiguous"]) {
+    if (actual[key] !== testCase.expected[key]) {
+      throw new Error(`${testCase.name}: expected ${key}=${JSON.stringify(testCase.expected[key])}, got ${JSON.stringify(actual[key])}`)
+    }
+  }
+}
+NODE
+python3 - "$ROOT" <<'PY'
+import hashlib
+import pathlib
+import struct
+import sys
+
+root = pathlib.Path(sys.argv[1])
+backgrounds = sorted((root / "themes/one-bit-bureau/backgrounds").glob("*.png"))
+if [path.name for path in backgrounds] != [
+    "one-bit-bureau-cleared-shift.png",
+    "one-bit-bureau.png",
+]:
+    raise SystemExit("the release must contain exactly the two named wallpaper-family members")
+
+hashes = set()
+for path in backgrounds:
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        raise SystemExit(f"{path.name}: not a bounded PNG wallpaper")
+    width, height = struct.unpack(">II", data[16:24])
+    if (width, height) != (3840, 2160):
+        raise SystemExit(f"{path.name}: expected 3840x2160, got {width}x{height}")
+    hashes.add(hashlib.sha256(data).hexdigest())
+if len(hashes) != len(backgrounds):
+    raise SystemExit("the second wallpaper must not duplicate the first")
+
+proof = root / "docs/wallpaper-cleared-shift-crop-proof.png"
+if not proof.is_file() or proof.stat().st_size < 1024:
+    raise SystemExit("the second wallpaper needs a real crop-safety proof")
+PY
+python3 - "$ROOT" <<'PY'
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+service = (root / "components/desktop/Service.qml").read_text(encoding="utf-8")
+bar = (root / "components/active-window/BarWidget.qml").read_text(encoding="utf-8")
+desk_start = service.find("  function deskMenuEntries() {")
+desk_end = service.find("\n  function publishRouteState", desk_start)
+desk_menu = service[desk_start:desk_end]
+if desk_start < 0 or desk_end < 0:
+    raise SystemExit("the stable Desk menu model is missing")
+
+desk_rows = [
+    'action: "folder", label: "New Folder"',
+    'action: "quick-look", label: "Quick Look"',
+    'action: "inspect", label: "Get Info"',
+    'action: "rename", label: "Rename"',
+    'action: "tidy", label: "Tidy Desk"',
+    'action: "arrange-heading", label: "Arrange By", enabled: false',
+    'action: "arrange-name", label: "  Name"',
+    'action: "arrange-kind", label: "  Kind"',
+    'action: "arrange-modified", label: "  Modified"',
+    'action: "undo-layout", label: "Undo Desk Layout"',
+    'action: "trash-selected", label: "Move to Trash"',
+]
+offsets = [desk_menu.find(row) for row in desk_rows]
+if any(offset < 0 for offset in offsets) or offsets != sorted(offsets):
+    raise SystemExit("the Desk menu stable row order or disabled heading contract changed")
+for contract in (
+    "height: 44",
+    "String(modelData.reason || \"Unavailable command\")",
+    "function getDeskMenuCurrentAction(): string",
+    "function getSelectedId(): string",
+    "function getVisualIndex(itemId: string, screenName: string): int",
+    "function getSelectionCount(): int",
+    "event.key === Qt.Key_Space && event.modifiers === Qt.NoModifier",
+    "event.key === Qt.Key_F2",
+    "event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)",
+    "function undoDeskLayout()",
+):
+    if contract not in service:
+        raise SystemExit(f"desktop interaction contract missing: {contract}")
+for contract in (
+    'Accessible.name: "Open Desk menu"',
+    '"regionallyfamous.one-bit-bureau.desktop", "toggleDeskMenu", root.widgetScreenName',
+    "implicitHeight: barSize",
+):
+    if contract not in bar:
+        raise SystemExit(f"top-bar Desk contract missing: {contract}")
+PY
 for artwork_helper in "$ROOT/artwork/render-bitmap-workbench.py" "$ROOT/artwork/render-crop-proof.py" "$ROOT/artwork/render-app-icons.py" "$ROOT/artwork/render-branding.py"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$artwork_helper"
 done

@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.2.0 — 2026-08-31
+
+### Product changes
+
+- Added a permanent top-bar **Desk** menu plus equivalent pointer and keyboard routes for Quick Look, inline no-overwrite Rename, marquee and Select All, deterministic Arrange By Name/Kind/Modified, Tidy Up, exact layout Undo, New Folder, and Open Desktop Folder.
+- Made disabled XDG Desktop configuration an explicit supported state. One-Bit Bureau no longer recreates `~/Desktop` when the XDG user-directory setting uses the home path to mean disabled.
+- Added deterministic virtual Trash and mounted-volume desktop objects with real empty/full and Open/Unmount/Eject capability states; unsupported actions stay visible with a reason.
+- Added reserved file operations with stable operation IDs, per-item progress, visible cooperative cancellation, dead-worker recovery, and truthful completed/partial/failed/cancelled receipts. External file drops remain Copy-only.
+- Added deterministic application identity resolution through exact desktop/app ID, `StartupWMClass`, bounded unique aliases, then unique process/executable metadata. Focus, close, and launch re-resolve identity and observe the corresponding compositor postcondition before reporting success.
+- Scoped the Workspace Board to its invoking/focused monitor, explained named/special/out-of-range exclusions, revalidated exact window and destination identity, and added bounded confirmed/pending/refused move results with current-to-legacy dispatcher fallback.
+- Added the calmer Bitmap Workbench **Cleared Shift** wallpaper companion, with exact two-color reduction and verified 16:9, 16:10, 21:9, 32:9, and 4:3 crops.
+- Added `one-bit-bureau doctor`, read-only by default, for installation, discovery, theme ownership, Desktop configuration, shell IPC, helper, icon, and app-chrome diagnostics.
+- Added an off-by-default GTK3-only app-chrome preview. It installs only a user theme, records byte/hash ownership, refuses unsafe teardown, preserves later edits, and leaves GTK4/libadwaita, Qt, browser profiles, packages, and system files unchanged.
+- Preserved explicit XDG Desktop disablement during setup as well as runtime, so installing One-Bit Bureau no longer recreates `~/Desktop` when the user-directory configuration maps Desktop to the home directory.
+- Reset the five-click wallpaper shortcut whenever an object workflow begins, preventing unrelated empty-space focus clicks from accumulating into an unexpected wallpaper picker.
+- Added a feasibility-gated future system lab covering Light Table, Folded Rooms, Scan Desk, Cinema Handoff, Reading Rail, display recovery, capture-to-desktop, accessibility, hardware, audio, media, gaming, and remote-work ideas without replacing core Omarchy or Hyprland.
+
+### Release verification
+
+- Expanded deterministic desktop, dock identity, workspace, install/rollback, diagnostic, and QML source-contract suites for the new 1.2 boundaries.
+- Expanded the disposable Omarchy acceptance plan for Desk-menu parity, disabled Desktop state, Trash and volume capabilities, Quick Look, rename/collision/cancel, layout Undo, live copy progress/cancellation/partial results, identity postconditions, monitor-scoped workspaces, the second wallpaper, and GTK3 preview rollback.
+- Replaced the public gallery and root marketplace preview with reviewed 1280×800 captures from the clean real-application release scene.
+
 ## 1.1.2 — 2026-08-30
 
 ### Product changes

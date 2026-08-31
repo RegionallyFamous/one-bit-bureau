@@ -59,7 +59,7 @@ class PluginSourceContractTest(unittest.TestCase):
         self.assertIn("regionallyfamous.one-bit-bureau.dock", dock)
         self.assertIn("regionallyfamous.one-bit-bureau.overview", overview)
 
-    def test_active_window_widget_disappears_without_a_window(self) -> None:
+    def test_active_window_widget_keeps_the_desk_menu_without_a_window(self) -> None:
         source = (ROOT / "components/active-window/BarWidget.qml").read_text(
             encoding="utf-8"
         )
@@ -67,7 +67,13 @@ class PluginSourceContractTest(unittest.TestCase):
             "readonly property bool hasActiveWindow: !!(waylandToplevel || hyprlandToplevel)",
             source,
         )
-        self.assertIn("visible: hasActiveWindow && displayLabel", source)
+        self.assertIn("visible: true", source)
+        self.assertIn(
+            'readonly property string barLabel: hasActiveWindow && displayLabel',
+            source,
+        )
+        self.assertIn('? "Desk · " + displayLabel : "Desk"', source)
+        self.assertIn('Accessible.name: "Open Desk menu"', source)
 
     def test_reduced_motion_is_an_inline_live_plugin_setting(self) -> None:
         manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
@@ -217,6 +223,35 @@ class PluginSourceContractTest(unittest.TestCase):
         self.assertNotIn("o.bind", runtime)
         self.assertNotIn("bindings.lua", runtime)
         self.assertNotIn("input.lua", runtime)
+
+    def test_acceptance_workspace_moves_keep_the_full_live_identity_contract(self) -> None:
+        source = (ROOT / "test/omarchy-acceptance.sh").read_text(encoding="utf-8")
+        helper_call = 'bash "$PLUGIN_DIR/components/overview/move-window-to-workspace"'
+        self.assertEqual(source.count(helper_call), 1)
+        self.assertIn(
+            'ledger_move_record=$(move_window_with_live_identity "${ledger_addresses[1]}" 2)',
+            source,
+        )
+
+    def test_acceptance_covers_every_safe_native_theme_override_scene(self) -> None:
+        source = (ROOT / "test/omarchy-acceptance.sh").read_text(encoding="utf-8")
+        for contract in (
+            "the Bureau bar reflows vertically",
+            "switching away restores the prior Hyprland geometry exactly",
+            "tiled, floating, fullscreen, active, and inactive window geometry",
+            "the themed Apps search paints a terminal result",
+            "the One-Bit Bureau wallpaper picker opens",
+            "the One-Bit Bureau OSD paints its progress",
+            "the One-Bit Bureau dock tooltip paints",
+            "the One-Bit Bureau lock preview paints its idle prompt",
+            "the One-Bit Bureau polkit prompt asks for authentication",
+        ):
+            self.assertIn(contract, source)
+        self.assertIn("failed authentication mutates PAM state", source)
+        self.assertIn(
+            'move_window_with_live_identity "$release_address" 2 >/dev/null',
+            source,
+        )
 
     def test_public_lifecycle_uses_exact_plugin_and_theme_sources(self) -> None:
         setup = (ROOT / "setup").read_text(encoding="utf-8")

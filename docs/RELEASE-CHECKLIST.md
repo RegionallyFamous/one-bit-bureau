@@ -26,7 +26,7 @@
 
 ## Disposable Omarchy runtime behavior
 
-- Verify the desktop service with an empty folder, many files, a long filename, a trusted launcher, an untrusted launcher, Trash, drag/drop, and two displays.
+- Verify the desktop service with an empty folder, many files, a long filename, a trusted launcher, an untrusted launcher, Trash, and drag/drop. Verify two displays when the release guest exposes two real outputs; otherwise record the unavailable capability without simulating hotplug.
 - Verify one click selects, a second click does not accidentally open, double-click and Return open, and clicking empty ground clears selection.
 - Verify Control/Shift multi-selection, group dragging, exact route slips, folder and Trash destinations, invalid-target reasons, Escape cancellation, partial/error receipts, Control+Z, and Undo refusal after destination mutation or source collision.
 - Open the shared Inspector from a desktop object, dock app, and overview window. Verify stable Identity/Facts/Actions regions, visible disabled reasons, stale/missing targets, destructive confirmation, focus restoration, Escape, accessibility, and reduced motion.
@@ -37,11 +37,11 @@
 - Open two windows under one app identity across two workspaces. Verify 1/2/3+ marks, active and workspace-split text, most-recent-window focus, the titled Window Ledger, explicit Activate/Close, stale-address fallback, and no accidental duplicate launch.
 - Verify all 36 fresh-install app-icon associations resolve to their cataloged authored roles in the dock, drag ghost, preview fallback, app switcher, and icon manager. Add an uncommon app with a resolvable native icon and confirm its automatic fallback is grayscale on every surface; add an app with an unresolvable native icon and confirm the authored Application mark appears instead of a blank. Then confirm explicit Native mode restores the original color and custom files plus manual pack choices render as supplied, all without network access.
 - Verify dock and desktop menus preserve their row order while unavailable commands remain visible and dimmed.
-- Verify overview hot corner, summon/hide IPC, keyboard navigation, search, preview, close-window action, workspace changes, and two displays.
+- Verify overview hot corner, summon/hide IPC, keyboard navigation, search, preview, close-window action, and workspace changes. Verify output ownership on every real display the release guest exposes.
 - Verify the overview workspace rail's stable ordinary-workspace ordering, occupancy, Control+Left/Right selection, Control+Enter scope, Control+Shift+Enter move, context parity, stale destination error, and that the overview remains open while the card re-homes.
 - Verify overview selection inverts only the ownership rail, the preview body remains stable, and the active window retains its separate double-rule marker.
 - Verify active-app title truncation, an iconless app, an application with a changing title, vertical bar layout, and settings persistence.
-- Verify stock Quick Look, launcher, clipboard, emoji menu, notifications, OSD, lock screen, and theme switching still work.
+- Verify stock Quick Look, Apps search, clipboard, emoji menu, notifications, OSD, lock preview, safe polkit idle/cancel, and theme switching still work. Failed lock or polkit authentication belongs to Omarchy's host-global auth suite because it mutates PAM state and can strand the disposable plugin guest.
 - Disable One-Bit Bureau and confirm the stock bar and shell remain usable without restarting the machine; normal Alt+Tab must remain functional.
 - With a desktop object, overview, and optional app-switcher focused in turn, verify native `Super + Arrow`, `Super + Tab`, `Super + Shift + Tab`, `Super + G`, `Super + O`, `Super + L`, and `Super + Grave` behavior still reaches Omarchy.
 - Verify About/screensaver branding, both bundled fonts in `omarchy font list`, the unlock picker preview, and exact restoration of pre-install branding after removal.
@@ -55,14 +55,14 @@
 - Capture the overview, dock menu, icon manager in keyboard-focus and manual-association states, dock preview, app switcher, launcher, menu selected/disabled state, selected real photograph, unsupported-image fallback, notification, terminal ANSI palette, lock screen, and unlock picker.
 - Capture the Inspector for a desktop object, dock application, and window; a two-item route slip; successful receipt and Undo; a rejected route; a cross-workspace Window Ledger; and the workspace board before and after a move.
 - Record a short clip covering dock reveal/hide, app switching, and overview open/close.
-- Keep the wallpaper-only `preview.png` honest as a theme-picker wallpaper preview; publish real runtime captures separately and label them as runtime evidence.
+- Keep `themes/one-bit-bureau/preview.png` honest as a wallpaper-only theme-picker preview. Keep the repository-root `preview.png` byte-identical to a reviewed real runtime capture for the plugin marketplace, and publish the rest of the labeled runtime evidence under `docs/screenshots/`.
 - Record the public repository URL, release commit, Omarchy build, viewport geometry/scaling, lifecycle commands, and artifact hashes alongside the captures. A manually staged checkout, SVG proof, wallpaper crop, or `preview.png` is not lifecycle or runtime evidence.
 
 ## Release blockers
 
 - Any overlap between desktop items and the top bar or dock.
 - Dock or overview input regions that block unrelated windows when visually hidden.
-- A stale `preview.png`, or describing its wallpaper-only image as a runtime desktop capture.
+- A stale `themes/one-bit-bureau/preview.png`, describing that wallpaper-only image as runtime evidence, or a repository-root `preview.png` that is not an exact reviewed runtime capture.
 - A helper process that continues after the shell/plugin closes.
 - Any keyboard trap, actionable secondary-surface control without a visible focus state and meaningful accessible name, or motion that continues after reduced motion is enabled.
 - Any public lifecycle run that does not start from the GitHub URL, cannot align plugin and owned-theme commits, or fails to restore the recorded baseline on removal.

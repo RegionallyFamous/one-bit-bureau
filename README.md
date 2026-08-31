@@ -6,7 +6,7 @@ One-Bit Bureau adds a real file desktop, a bottom dock, a shared Inspector, a wi
 
 [Install](#install) · [What you get](#what-you-get) · [Everyday use](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Everyday-Use) · [Wiki](https://github.com/RegionallyFamous/one-bit-bureau/wiki)
 
-![One-Bit Bureau desktop with real files, a grayscale photo preview, top bar, bottom dock, and Bitmap Workbench background](docs/screenshots/runtime-desktop.png)
+![One-Bit Bureau running real Web, Files, and Writer applications with the matching dock and Bitmap Workbench desktop](preview.png)
 
 ## Install
 
@@ -36,7 +36,7 @@ If you already use another desktop-icons, dock, overview, or active-window plugi
 
 <table>
   <tr>
-    <td colspan="2"><img src="docs/screenshots/runtime-apps.png" alt="One-Bit Bureau with Web, Writer, Files, desktop files, and matching dock icons"><br><sub>A working desktop with real apps, files, and matching one-bit icons</sub></td>
+    <td colspan="2"><img src="docs/screenshots/runtime-desktop.png" alt="A clean One-Bit Bureau desktop with four intentional objects and five matching dock icons"><br><sub>A calm, useful desktop—not a staged pile of junk files</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/runtime-inspector-desktop.png" alt="One-Bit Bureau Inspector showing information and actions for a desktop object"><br><sub>Get Info in the shared Inspector</sub></td>
