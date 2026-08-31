@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.2 — 2026-08-30
+
+### Product changes
+
+- Made the memorable installer repair a prior interrupted attempt by validating the existing canonical checkout, rescanning it into Omarchy's catalog, disabling it when necessary, updating it, and then completing theme and plugin activation.
+- Added an end-user recovery note to the README for the “installed and disabled” error; rerunning the same command is the complete repair path.
+
+### Release verification
+
+- Added mocked disabled and prematurely enabled recovery regressions, and changed the disposable public lifecycle to run the literal hosted command from a preexisting interrupted-install checkout.
+
 ## 1.1.1 — 2026-08-30
 
 ### Product changes

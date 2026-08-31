@@ -18,6 +18,8 @@ bash <(curl -fsSL https://bureau.regionallyfamous.com/install)
 
 The installer fetches the plugin through Omarchy’s normal Git validation, then installs and activates the matching plugin, theme, fonts, and branding in the same run. Running the quick-install command is consent to activate unsandboxed plugin code from the canonical repository.
 
+If an earlier attempt stopped after saying the plugin could be enabled later—or reports that it must be installed and disabled—run the same command again. It safely recognizes, disables if necessary, updates, and completes a clean canonical checkout without manual removal.
+
 Want to inspect it first?
 
 ```bash

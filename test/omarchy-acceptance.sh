@@ -1216,10 +1216,13 @@ screenshot "success-one-bit-bureau-17-local-fixture-removed"
 mkdir -p "$BUREAU_CONFIG"
 printf 'preserve One-Bit Bureau user state\n' >"$BUREAU_CONFIG/lifecycle-user-data.txt"
 public_lifecycle_active=true
+omarchy plugin add "$PUBLIC_REPO_URL" --yes
+wait_until "the interrupted public install leaves a disabled checkout" 15 \
+  bash -c "omarchy plugin list --json | jq -e --arg id '$PLUGIN_ID' 'any(.[]; .id == \$id and .enabled == false)'"
 printf 'y\n' | script -qefc "bash -lc 'bash <(curl -fsSL $PUBLIC_INSTALL_URL)'" "$PUBLIC_INSTALL_LOG"
 grep -Fq "continuing now with the matching theme, fonts, branding, and activation" "$PUBLIC_INSTALL_LOG" ||
   fail "the public bootstrap does not explain and continue past Omarchy's temporary disabled state"
-pass "the literal public bootstrap continues past Omarchy's temporary disabled state"
+pass "the literal public bootstrap recovers Omarchy's temporary disabled checkout"
 [[ -d $PLUGIN_DIR/.git ]] || fail "the public plugin install is Git-managed"
 public_acceptance_hash=$(sha256sum "$PLUGIN_DIR/test/omarchy-acceptance.sh" | awk '{print $1}')
 [[ $public_acceptance_hash == "$fixture_acceptance_hash" ]] ||
