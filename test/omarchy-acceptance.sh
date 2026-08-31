@@ -24,12 +24,14 @@ QA_APP_ID="one-bit-bureau-qa-unmatched"
 QA_DESKTOP_ENTRY="$HOME/.local/share/applications/$QA_APP_ID.desktop"
 QA_NATIVE_ICON="$HOME/.local/share/icons/hicolor/64x64/apps/$QA_APP_ID.png"
 PUBLIC_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
+PUBLIC_INSTALL_URL="https://bureau.regionallyfamous.com/install"
 THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
 THEME_SOURCE_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/theme-sources"
 ORIGINAL_THEME=$(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)
 ORIGINAL_BAR_POSITION=$(jq -r '.bar.position // "top"' "$HOME/.config/omarchy/shell.json" 2>/dev/null || echo top)
 ORIGINAL_BAR_TRANSPARENT=$(jq -r '.bar.transparent // false' "$HOME/.config/omarchy/shell.json" 2>/dev/null || echo false)
 SHOWCASE_ROOT=$(mktemp -d /tmp/one-bit-bureau-showcase.XXXXXX)
+PUBLIC_INSTALL_LOG="$SHOWCASE_ROOT/public-install.typescript"
 SHOWCASE_DESKTOP_STASH="$SHOWCASE_ROOT/original-desktop"
 SHOWCASE_DESKTOP_RETIRED="$SHOWCASE_ROOT/showcase-desktop"
 SHOWCASE_FILES="$SHOWCASE_ROOT/Bureau"
@@ -1208,22 +1210,22 @@ wait_until "the local fixture checkout is absent" 15 public_plugin_absent
 pass "the local fixture install is fully cleaned before public lifecycle testing"
 screenshot "success-one-bit-bureau-17-local-fixture-removed"
 
-# Exact public lifecycle. This intentionally uses GitHub rather than the
-# staged fixture. Comparing the test file's digest makes the run fail until
-# public main contains the exact acceptance code being executed.
+# Exact public lifecycle. This intentionally runs the literal hosted bootstrap
+# through a real pseudo-terminal. Comparing the test file's digest makes the
+# run fail until public main contains the exact acceptance code being executed.
 mkdir -p "$BUREAU_CONFIG"
 printf 'preserve One-Bit Bureau user state\n' >"$BUREAU_CONFIG/lifecycle-user-data.txt"
 public_lifecycle_active=true
-omarchy plugin add "$PUBLIC_REPO_URL" --yes
+printf 'y\n' | script -qefc "bash -lc 'bash <(curl -fsSL $PUBLIC_INSTALL_URL)'" "$PUBLIC_INSTALL_LOG"
+grep -Fq "continuing now with the matching theme, fonts, branding, and activation" "$PUBLIC_INSTALL_LOG" ||
+  fail "the public bootstrap does not explain and continue past Omarchy's temporary disabled state"
+pass "the literal public bootstrap continues past Omarchy's temporary disabled state"
 [[ -d $PLUGIN_DIR/.git ]] || fail "the public plugin install is Git-managed"
-wait_until "the public plugin is installed disabled for review" 15 \
-  bash -c "omarchy plugin list --json | jq -e --arg id '$PLUGIN_ID' 'any(.[]; .id == \$id and .enabled == false)'"
 public_acceptance_hash=$(sha256sum "$PLUGIN_DIR/test/omarchy-acceptance.sh" | awk '{print $1}')
 [[ $public_acceptance_hash == "$fixture_acceptance_hash" ]] ||
   fail "public main contains the exact acceptance test under execution"
 pass "public main contains the exact acceptance test under execution"
 
-bash "$PLUGIN_DIR/setup" --adopt-plugin --yes
 wait_until "the public One-Bit Bureau plugin activates" 30 \
   bash -c "omarchy plugin list --json | jq -e --arg id '$PLUGIN_ID' 'any(.[]; .id == \$id and .enabled == true)'"
 wait_until "the public One-Bit Bureau dock mounts" 20 layer_on_screen one-bit-bureau-dock

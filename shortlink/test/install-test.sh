@@ -37,7 +37,16 @@ HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/install.sh" --yes
 
 : >"$MOCK_LOG"
 HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/install.sh"
-[[ $(<"$MOCK_LOG") == "setup:--adopt-plugin" ]]
+[[ $(<"$MOCK_LOG") == "setup:--adopt-plugin --yes" ]]
+
+recovery_output=$(HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/install.sh")
+[[ $recovery_output == *"continuing now with the matching theme"* ]]
+
+if HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/install.sh" --bogus >"$WORK/unknown.out" 2>&1; then
+  echo "installer accepted an unknown option" >&2
+  exit 1
+fi
+[[ $(<"$WORK/unknown.out") == *"unknown option: --bogus"* ]]
 
 mkdir -p "$(dirname -- "$STATE_FILE")"
 printf '{}\n' >"$STATE_FILE"
@@ -49,6 +58,7 @@ already_installed=$(HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/ins
 help=$(bash "$ROOT/src/install.sh" --help)
 [[ $help == *"bureau.regionallyfamous.com/install"* ]]
 [[ $help == *"validated Git plugin flow"* ]]
+[[ $help == *"Running this bootstrap is consent"* ]]
 
 if HOME="$WORK/no-omarchy" PATH="$WORK/empty-bin" /bin/bash "$ROOT/src/install.sh" >"$WORK/missing.out" 2>&1; then
   echo "installer accepted a host without Omarchy" >&2

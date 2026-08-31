@@ -62,7 +62,7 @@ function landingPage(): string {
       <p class="lede">One memorable address installs the complete vintage Macintosh-inspired Omarchy plugin and theme package.</p>
       <h2>Quick install</h2>
       <code>${quickInstall}</code>
-      <p class="fine">The tiny bootstrap uses Omarchy’s validated Git installer and keeps the existing trust prompt. Inspect it first with <code>curl -fsSL ${ORIGIN}/install</code></p>
+      <p class="fine">The tiny bootstrap uses Omarchy’s validated Git installer, then activates the complete package in the same run. Running it is consent to activate unsandboxed plugin code from the canonical repository. Inspect it first with <code>curl -fsSL ${ORIGIN}/install</code></p>
       <h2>Audit-first install</h2>
       <code>${manualInstall}</code>
       <nav aria-label="Project links">

@@ -16,7 +16,7 @@ One-Bit Bureau requires a current Omarchy Quattro installation.
 bash <(curl -fsSL https://bureau.regionallyfamous.com/install)
 ```
 
-The installer fetches the plugin through Omarchy’s normal Git validation, tells you exactly what it will change, and asks before activating unsandboxed plugin code.
+The installer fetches the plugin through Omarchy’s normal Git validation, then installs and activates the matching plugin, theme, fonts, and branding in the same run. Running the quick-install command is consent to activate unsandboxed plugin code from the canonical repository.
 
 Want to inspect it first?
 

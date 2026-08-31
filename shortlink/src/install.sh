@@ -15,20 +15,32 @@ fail() {
 
 usage() {
   cat <<'EOF'
-Usage: bash <(curl -fsSL https://bureau.regionallyfamous.com/install) [--yes]
+Usage: bash <(curl -fsSL https://bureau.regionallyfamous.com/install)
 
 Installs One-Bit Bureau through Omarchy's validated Git plugin flow, then runs
-the matching setup from that checkout. The default flow asks before activating
-unsandboxed plugin code. Pass --yes only after reviewing the source.
+the matching setup from that checkout. Running this bootstrap is consent to
+activate the unsandboxed plugin code fetched from the canonical repository.
 
 Source: https://github.com/RegionallyFamous/one-bit-bureau
 EOF
 }
 
-if (( $# > 0 )) && [[ $1 == "-h" || $1 == "--help" ]]; then
-  usage
-  exit 0
-fi
+while (( $# > 0 )); do
+  case "$1" in
+  --yes | -y)
+    # Accepted for compatibility with the original bootstrap. The quick-install
+    # command itself is now the explicit activation consent.
+    shift
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    fail "unknown option: $1"
+    ;;
+  esac
+done
 
 (( EUID != 0 )) || fail "run this as your normal Omarchy user, not root"
 command -v omarchy >/dev/null || fail "Omarchy is required; install it first from https://omarchy.org"
@@ -47,4 +59,5 @@ else
 fi
 
 [[ -f $PLUGIN_TARGET/setup && ! -L $PLUGIN_TARGET/setup ]] || fail "Omarchy did not install a safe setup script"
-bash "$PLUGIN_TARGET/setup" --adopt-plugin "$@"
+echo "Omarchy leaves new plugins disabled by design; continuing now with the matching theme, fonts, branding, and activation..."
+bash "$PLUGIN_TARGET/setup" --adopt-plugin --yes

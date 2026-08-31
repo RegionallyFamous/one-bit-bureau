@@ -27,7 +27,7 @@ describe("One-Bit Bureau installer Worker", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(body).toContain("#!/bin/bash");
     expect(body).toContain("omarchy plugin add \"$REPO_URL\" --yes");
-    expect(body).toContain("--adopt-plugin \"$@\"");
+    expect(body).toContain("--adopt-plugin --yes");
   });
 
   it("returns headers without a body for HEAD", async () => {
