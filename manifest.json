@@ -5,7 +5,7 @@
   "version": "1.2.0",
   "author": "RegionallyFamous",
   "license": "MIT",
-  "description": "Transform Omarchy into One-Bit Bureau: a complete one-bit Macintosh-inspired desktop with real files, a dock, Quick Look, window overview, original icons, retro fonts, and theme.",
+  "description": "Give Omarchy the full one-bit Macintosh treatment—a real file desktop, dock, window overview, original icons, retro fonts, theme, and branding, all in one install.",
   "icon": "components/overview/assets/icon.png",
   "kinds": [
     "service",
