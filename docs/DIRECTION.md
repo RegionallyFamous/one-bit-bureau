@@ -20,7 +20,7 @@ This edition applies the original Macintosh interface method rather than reprodu
 
 ## Surface system
 
-- The desktop ground is an original ImageGen-authored one-bit machine workbench: paper stacks, organizing trays, cables, toothed leaves, and abstract mechanisms frame a calm central work field. The leftmost object lane and bottom-center shelf zone remain deliberately quiet.
+- The desktop ground is an original ImageGen-authored one-bit machine workbench family. The hero uses paper stacks, organizing trays, cables, toothed leaves, and abstract mechanisms around a calm central field. Cleared Shift removes most equipment for an even quieter daily canvas. Both protect the left object lane and bottom-center shelf zone.
 - Paper windows, dialogs, menus, notifications, and the top rail sit clearly above the desktop ground. All shell surfaces are opaque, square, and integer-aligned.
 - Generic folder, document, archive, link, launcher-fallback, and Trash objects use expressive raster mini-illustrations reduced from original ImageGen sources. Safe local raster image files use grayscale desktop thumbnails without changing the source bytes; unsupported or unsafe image inputs use the authored one-bit picture fallback. Every launcher-visible fresh-install application maps to one of 32 authored roles. An uncommon application keeps a resolvable native icon in grayscale; when that native icon cannot be resolved, the authored Application mark prevents a blank. Explicit Native mode restores the original icon in color.
 - The overview is a contact sheet of stable paper preview bodies. Keyboard selection inverts only the title rail; the actually active window receives a double outer rule.
@@ -40,7 +40,7 @@ One-Bit Bureau supplies original About, screensaver, and unlock artwork. Setup b
 
 ## Wallpaper law
 
-Bitmap Workbench 01 is a 3840x2160 two-color raster reduction of a preserved ImageGen master. It uses carbon and warm paper only; ordered marks and hard nearest-neighbor enlargement keep the illustrated pixel construction visible at desktop scale. Large forms live primarily in the upper-right, lower-right, and lower-left perimeter while the central 50% remains a low-noise application field.
+Bitmap Workbench 01 and Cleared Shift are 3840x2160 two-color raster reductions of preserved ImageGen masters. They use carbon and warm paper only; ordered marks and hard nearest-neighbor enlargement keep the illustrated pixel construction visible at desktop scale. The hero carries the dense establishing composition. Cleared Shift keeps only three clipped equipment fragments so the central application field remains exceptionally quiet while every supported cover crop retains a recognizable family mark.
 
 The artwork contains no Apple marks, copied desktop tiles, historical devices, text, logos, fake UI, gradients, or smooth gray effects. The untouched generation master and prompt are retained under `artwork/imagegen/`; the theme picker preview is wallpaper-only and is never described as runtime evidence.
 
@@ -73,7 +73,7 @@ The artwork contains no Apple marks, copied desktop tiles, historical devices, t
 - Enter and Escape in the trust dialog always cancel.
 - Unavailable plugin-menu actions remain visible and dimmed in stable positions.
 - Desktop labels remain legible over every supported wallpaper crop.
-- The wallpaper's icon lane, central field, and dock zone remain usable under 16:9, 16:10, 21:9, and 4:3 cover crops, with no moire or edge shimmer at 100%, 125%, or 200% scaling.
+- Each wallpaper's icon lane, central field, and dock zone remain usable under 16:9, 16:10, 21:9, 32:9, and 4:3 cover crops, with no moire or edge shimmer at 100%, 125%, or 200% scaling.
 - Disabling the plugin restores the stock shell without deleting desktop files or compatibility state.
 - Setup leaves the selected system font unchanged, and removal restores owned branding without overwriting a later user edit.
 - `one-bit-bureau motion reduce` removes nonessential transitions from every One-Bit Bureau surface, `one-bit-bureau motion status` reports `reduced`, and `one-bit-bureau motion full` restores the brief default transitions.

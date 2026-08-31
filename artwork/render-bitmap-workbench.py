@@ -9,10 +9,12 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "artwork" / "imagegen"
 WALLPAPER_SOURCE = SOURCE_DIR / "bitmap-workbench-wallpaper-source.png"
+CLEARED_SHIFT_SOURCE = SOURCE_DIR / "bitmap-workbench-cleared-shift-source.png"
 ATLAS_SOURCE = SOURCE_DIR / "bitmap-desktop-object-atlas-source.png"
 IMAGE_FALLBACK_SOURCE = SOURCE_DIR / "bitmap-image-fallback-source.png"
 THEME_DIR = ROOT / "themes" / "one-bit-bureau"
 BACKGROUND = THEME_DIR / "backgrounds" / "one-bit-bureau.png"
+CLEARED_SHIFT_BACKGROUND = THEME_DIR / "backgrounds" / "one-bit-bureau-cleared-shift.png"
 PREVIEW = THEME_DIR / "preview.png"
 ASSET_DIR = ROOT / "components" / "desktop" / "assets"
 
@@ -31,9 +33,9 @@ def run(*args: str) -> None:
     subprocess.run(["magick", *args], check=True)
 
 
-def render_wallpaper() -> None:
+def render_wallpaper(source: Path, output: Path) -> None:
     run(
-        str(WALLPAPER_SOURCE),
+        str(source),
         "-colorspace",
         "Gray",
         "-threshold",
@@ -46,8 +48,13 @@ def render_wallpaper() -> None:
         "point",
         "-resize",
         "3840x2160!",
-        str(BACKGROUND),
+        str(output),
     )
+
+
+def render_wallpapers() -> None:
+    render_wallpaper(WALLPAPER_SOURCE, BACKGROUND)
+    render_wallpaper(CLEARED_SHIFT_SOURCE, CLEARED_SHIFT_BACKGROUND)
     run(
         str(BACKGROUND),
         "-filter",
@@ -119,10 +126,15 @@ def render_objects() -> None:
 def main() -> None:
     if not all(
         source.is_file()
-        for source in (WALLPAPER_SOURCE, ATLAS_SOURCE, IMAGE_FALLBACK_SOURCE)
+        for source in (
+            WALLPAPER_SOURCE,
+            CLEARED_SHIFT_SOURCE,
+            ATLAS_SOURCE,
+            IMAGE_FALLBACK_SOURCE,
+        )
     ):
         raise SystemExit("Bitmap Workbench ImageGen sources are missing")
-    render_wallpaper()
+    render_wallpapers()
     render_objects()
     subprocess.run([sys.executable, str(ROOT / "artwork" / "render-crop-proof.py")], check=True)
 
