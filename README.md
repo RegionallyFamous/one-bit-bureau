@@ -10,13 +10,37 @@ One-Bit Bureau adds a real file desktop, a bottom dock, a shared Inspector, a wi
 
 ## Install
 
-One-Bit Bureau is built for a current Omarchy Quattro installation.
+One-Bit Bureau is built for a current Omarchy Quattro installation. Its release is immutable on GitHub: the command below downloads the release record and archive, requires the immutability flag, checks the archive against GitHub's published SHA-256 digest, and only then runs the bundled installer.
 
 ```bash
-bash <(curl -fsSL https://bureau.regionallyfamous.com/install)
+bash <<'ONE_BIT_BUREAU_INSTALL'
+set -Eeuo pipefail
+release_tag="v1.2.1"
+release_asset="one-bit-bureau-${release_tag}.tar.gz"
+release_dir=$(mktemp -d)
+trap 'rm -rf -- "$release_dir"' EXIT
+
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --retry 3 --max-time 30 --max-filesize 1048576 \
+  -H 'Accept: application/vnd.github+json' \
+  -H 'X-GitHub-Api-Version: 2026-03-10' \
+  "https://api.github.com/repos/RegionallyFamous/one-bit-bureau/releases/tags/$release_tag" \
+  --output "$release_dir/release.json"
+jq -e --arg tag "$release_tag" '.immutable == true and .tag_name == $tag' "$release_dir/release.json" >/dev/null
+release_url=$(jq -er --arg name "$release_asset" '.assets[] | select(.name == $name) | .browser_download_url' "$release_dir/release.json")
+release_sha256=$(jq -er --arg name "$release_asset" '.assets[] | select(.name == $name) | .digest | select(startswith("sha256:")) | ltrimstr("sha256:")' "$release_dir/release.json")
+[[ $release_sha256 =~ ^[a-f0-9]{64}$ ]]
+
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --retry 3 --max-time 300 --max-filesize 268435456 \
+  "$release_url" --output "$release_dir/$release_asset"
+actual_sha256=$(sha256sum "$release_dir/$release_asset" | awk '{print $1}')
+[[ $actual_sha256 == "$release_sha256" ]]
+mkdir "$release_dir/payload"
+tar --no-same-owner --no-same-permissions -xzf "$release_dir/$release_asset" -C "$release_dir/payload"
+bash "$release_dir/payload/one-bit-bureau-$release_tag/install"
+ONE_BIT_BUREAU_INSTALL
 ```
 
-The installer adds and activates the plugin, theme, fonts, and One-Bit Bureau branding together. It keeps Omarchy's shell, tiling, launcher, controls, notifications, Quick Look, and normal `Super` navigation.
+The verified installer stages the exact tagged Git commit, validates it with Omarchy, then adds and activates the plugin, theme, fonts, and One-Bit Bureau branding together. If setup fails, its ownership record drives rollback of every completed step. It keeps Omarchy's shell, tiling, launcher, controls, notifications, Quick Look, and normal `Super` navigation.
 
 If you already use another desktop-icons, dock, overview, or active-window plugin, disable it first so the two interfaces do not overlap. See [Installation and Trust](https://github.com/RegionallyFamous/one-bit-bureau/wiki/Installation-and-Trust) before installing if you want the full compatibility and security details.
 

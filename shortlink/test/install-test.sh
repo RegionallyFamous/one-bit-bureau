@@ -1,38 +1,28 @@
 #!/bin/bash
 
-set -euo pipefail
+set -Eeuo pipefail
 
-ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf -- "$WORK"' EXIT
 
-MOCK_BIN="$WORK/bin"
-TEST_HOME="$WORK/home"
-MOCK_LOG="$WORK/calls.log"
-PLUGIN_STATE_FILE="$WORK/plugin-state"
 PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
-PLUGIN_TARGET="$TEST_HOME/.config/omarchy/plugins/$PLUGIN_ID"
-STATE_FILE="$TEST_HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
-mkdir -p "$MOCK_BIN" "$TEST_HOME"
+TAG="v1.2.1"
+VERSION="1.2.1"
+MOCK_BIN="$WORK/bin"
+MOCK_LOG="$WORK/calls.log"
+mkdir -p "$MOCK_BIN"
 
 cat >"$MOCK_BIN/omarchy" <<'MOCK'
 #!/bin/bash
 set -euo pipefail
 printf 'omarchy:%s\n' "$*" >>"$MOCK_LOG"
-if [[ $* == "plugin list --json" ]]; then
-  printf '[{"id":"io.github.regionallyfamous.one-bit-bureau","enabled":%s}]\n' "$(<"$PLUGIN_STATE_FILE")"
-elif [[ $* == "plugin disable io.github.regionallyfamous.one-bit-bureau" ]]; then
-  printf 'false\n' >"$PLUGIN_STATE_FILE"
-elif [[ $* == "plugin add https://github.com/RegionallyFamous/one-bit-bureau.git --yes" ]]; then
-  plugin_target="$HOME/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau"
-  mkdir -p "$plugin_target/.git"
-  cat >"$plugin_target/setup" <<'SETUP'
-#!/bin/bash
-set -euo pipefail
-printf 'setup:%s\n' "$*" >>"$MOCK_LOG"
-SETUP
-  chmod +x "$plugin_target/setup"
-fi
+case "$*" in
+  "plugin validate "*) exit 0 ;;
+  "plugin list --json") printf '[{"id":"io.github.regionallyfamous.one-bit-bureau","enabled":false}]\n' ;;
+  "plugin disable "* | "plugin remove "*) exit 0 ;;
+  *) exit 1 ;;
+esac
 MOCK
 chmod +x "$MOCK_BIN/omarchy"
 
@@ -43,58 +33,85 @@ printf 'omarchy-shell:%s\n' "$*" >>"$MOCK_LOG"
 MOCK
 chmod +x "$MOCK_BIN/omarchy-shell"
 
-cat >"$MOCK_BIN/git" <<'MOCK'
+make_package() {
+  local package_dir="$1" setup_status="$2"
+  local source_repo="$package_dir/source"
+  local bundle_name="one-bit-bureau-$TAG.bundle"
+  mkdir -p "$source_repo" "$package_dir/payload"
+  git -C "$source_repo" init -q
+  git -C "$source_repo" config user.name "One-Bit Bureau Tests"
+  git -C "$source_repo" config user.email "tests@example.invalid"
+  cat >"$source_repo/manifest.json" <<JSON
+{"schemaVersion":1,"id":"$PLUGIN_ID","name":"One-Bit Bureau","version":"$VERSION","author":"RegionallyFamous","license":"MIT","description":"Verified installer fixture","kinds":["service"],"entryPoints":{"service":"Service.qml"}}
+JSON
+  printf 'import QtQuick\nItem {}\n' >"$source_repo/Service.qml"
+  cat >"$source_repo/setup" <<SETUP
 #!/bin/bash
 set -euo pipefail
-if [[ $* == *"config --get remote.origin.url"* ]]; then
-  printf 'https://github.com/RegionallyFamous/one-bit-bureau.git\n'
-elif [[ $* == *"status --porcelain"* ]]; then
-  exit 0
-else
+printf 'setup:%s\n' "\$*" >>"\$MOCK_LOG"
+exit $setup_status
+SETUP
+  git -C "$source_repo" add .
+  git -C "$source_repo" commit -qm "fixture"
+  git -C "$source_repo" tag -a "$TAG" -m "$TAG"
+  commit=$(git -C "$source_repo" rev-list -n 1 "$TAG")
+  git -C "$source_repo" bundle create "$package_dir/payload/$bundle_name" "refs/tags/$TAG"
+  bundle_sha=$(sha256sum "$package_dir/payload/$bundle_name" | awk '{print $1}')
+  cp "$ROOT/release/install" "$package_dir/payload/install"
+  jq -n \
+    --arg tag "$TAG" \
+    --arg version "$VERSION" \
+    --arg commit "$commit" \
+    --arg bundleName "$bundle_name" \
+    --arg bundleSha "$bundle_sha" \
+    '{schemaVersion:1,product:"One-Bit Bureau",repository:"RegionallyFamous/one-bit-bureau",tag:$tag,version:$version,commit:$commit,bundle:{name:$bundleName,sha256:$bundleSha}}' \
+    >"$package_dir/payload/RELEASE.json"
+}
+
+echo "== verified release installer stages and adopts the exact bundled commit"
+SUCCESS="$WORK/success"
+make_package "$SUCCESS" 0
+SUCCESS_HOME="$WORK/success-home"
+mkdir -p "$SUCCESS_HOME"
+: >"$MOCK_LOG"
+export MOCK_LOG
+HOME="$SUCCESS_HOME" PATH="$MOCK_BIN:$PATH" bash "$SUCCESS/payload/install" >"$WORK/success.log"
+SUCCESS_TARGET="$SUCCESS_HOME/.config/omarchy/plugins/$PLUGIN_ID"
+[[ -d $SUCCESS_TARGET/.git ]]
+expected_commit=$(jq -r '.commit' "$SUCCESS/payload/RELEASE.json")
+[[ $(git -C "$SUCCESS_TARGET" rev-parse HEAD) == "$expected_commit" ]]
+[[ $(git -C "$SUCCESS_TARGET" config --get remote.origin.url) == "https://github.com/RegionallyFamous/one-bit-bureau.git" ]]
+grep -Fq "setup:--adopt-plugin --verified-release $expected_commit --yes" "$MOCK_LOG"
+grep -Fq "Verified One-Bit Bureau $TAG bundle: sha256:" "$WORK/success.log"
+
+echo "== tampering is rejected before Omarchy or the target changes"
+TAMPER="$WORK/tamper"
+make_package "$TAMPER" 0
+printf 'tamper\n' >>"$TAMPER/payload/one-bit-bureau-$TAG.bundle"
+TAMPER_HOME="$WORK/tamper-home"
+mkdir -p "$TAMPER_HOME"
+: >"$MOCK_LOG"
+if HOME="$TAMPER_HOME" PATH="$MOCK_BIN:$PATH" bash "$TAMPER/payload/install" >"$WORK/tamper.log" 2>&1; then
+  echo "verified installer accepted a tampered bundle" >&2
   exit 1
 fi
-MOCK
-chmod +x "$MOCK_BIN/git"
-
-export MOCK_LOG PLUGIN_STATE_FILE
-printf 'false\n' >"$PLUGIN_STATE_FILE"
-HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/install.sh" --yes
-[[ $(<"$MOCK_LOG") == $'omarchy:plugin add https://github.com/RegionallyFamous/one-bit-bureau.git --yes\nsetup:--adopt-plugin --yes' ]]
-
-: >"$MOCK_LOG"
-HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/install.sh"
-[[ $(<"$MOCK_LOG") == $'omarchy-shell:shell rescanPlugins\nomarchy:plugin list --json\nomarchy:plugin update io.github.regionallyfamous.one-bit-bureau --yes\nomarchy-shell:shell rescanPlugins\nsetup:--adopt-plugin --yes' ]]
-
-printf 'true\n' >"$PLUGIN_STATE_FILE"
-: >"$MOCK_LOG"
-recovery_output=$(HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/install.sh")
-[[ $(<"$MOCK_LOG") == $'omarchy-shell:shell rescanPlugins\nomarchy:plugin list --json\nomarchy:plugin disable io.github.regionallyfamous.one-bit-bureau\nomarchy:plugin list --json\nomarchy:plugin update io.github.regionallyfamous.one-bit-bureau --yes\nomarchy-shell:shell rescanPlugins\nsetup:--adopt-plugin --yes' ]]
-[[ $recovery_output == *"Recovering the validated plugin checkout"* ]]
-[[ $recovery_output == *"continuing now with the matching theme"* ]]
-
-if HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/install.sh" --bogus >"$WORK/unknown.out" 2>&1; then
-  echo "installer accepted an unknown option" >&2
-  exit 1
-fi
-[[ $(<"$WORK/unknown.out") == *"unknown option: --bogus"* ]]
-
-mkdir -p "$(dirname -- "$STATE_FILE")"
-printf '{}\n' >"$STATE_FILE"
-: >"$MOCK_LOG"
-already_installed=$(HOME="$TEST_HOME" PATH="$MOCK_BIN:$PATH" bash "$ROOT/src/install.sh")
-[[ $already_installed == *"already installed"* ]]
+[[ ! -e $TAMPER_HOME/.config/omarchy/plugins/$PLUGIN_ID ]]
 [[ ! -s $MOCK_LOG ]]
+grep -Fq "Git bundle SHA-256 does not match" "$WORK/tamper.log"
 
-help=$(bash "$ROOT/src/install.sh" --help)
-[[ $help == *"bureau.regionallyfamous.com/install"* ]]
-[[ $help == *"validated Git plugin flow"* ]]
-[[ $help == *"Running this bootstrap is consent"* ]]
-
-if HOME="$WORK/no-omarchy" PATH="$WORK/empty-bin" /bin/bash "$ROOT/src/install.sh" >"$WORK/missing.out" 2>&1; then
-  echo "installer accepted a host without Omarchy" >&2
+echo "== setup failure removes the checkout created by the transaction"
+FAILURE="$WORK/failure"
+make_package "$FAILURE" 23
+FAILURE_HOME="$WORK/failure-home"
+mkdir -p "$FAILURE_HOME"
+: >"$MOCK_LOG"
+if HOME="$FAILURE_HOME" PATH="$MOCK_BIN:$PATH" bash "$FAILURE/payload/install" >"$WORK/failure.log" 2>&1; then
+  echo "verified installer survived a setup failure" >&2
   exit 1
 fi
-[[ $(<"$WORK/missing.out") == *"Omarchy is required"* ]]
+[[ ! -e $FAILURE_HOME/.config/omarchy/plugins/$PLUGIN_ID ]]
+grep -Fq "Rollback: removing the verified plugin checkout" "$WORK/failure.log"
+grep -Fq "installation rolled back after an error" "$WORK/failure.log"
 
-bash -n "$ROOT/src/install.sh"
-echo "One-Bit Bureau short installer tests passed."
+bash -n "$ROOT/release/install" "$ROOT/scripts/build-release-artifact"
+echo "One-Bit Bureau verified release installer tests passed."

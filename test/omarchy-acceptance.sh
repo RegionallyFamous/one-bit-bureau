@@ -24,7 +24,8 @@ QA_APP_ID="one-bit-bureau-qa-unmatched"
 QA_DESKTOP_ENTRY="$HOME/.local/share/applications/$QA_APP_ID.desktop"
 QA_NATIVE_ICON="$HOME/.local/share/icons/hicolor/64x64/apps/$QA_APP_ID.png"
 PUBLIC_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
-PUBLIC_INSTALL_URL="https://bureau.regionallyfamous.com/install"
+PUBLIC_RELEASE_TAG="v$(jq -er '.version' "$FIXTURE/manifest.json")"
+PUBLIC_RELEASE_API="https://api.github.com/repos/RegionallyFamous/one-bit-bureau/releases/tags/$PUBLIC_RELEASE_TAG"
 THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
 THEME_SOURCE_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/theme-sources"
 GTK3_SETTINGS="${XDG_CONFIG_HOME:-$HOME/.config}/gtk-3.0/settings.ini"
@@ -2113,19 +2114,49 @@ wait_until "the local fixture checkout is absent" 15 public_plugin_absent
 pass "the local fixture install is fully cleaned before public lifecycle testing"
 screenshot "success-one-bit-bureau-17-local-fixture-removed"
 
-# Exact public lifecycle. This intentionally runs the literal hosted bootstrap
-# through a real pseudo-terminal. Comparing the test file's digest makes the
-# run fail until public main contains the exact acceptance code being executed.
+# Exact public lifecycle. Download and verify the immutable release before any
+# release code executes. Comparing the test file's digest makes the run fail
+# until the immutable public commit contains the exact acceptance code running.
 mkdir -p "$BUREAU_CONFIG"
 printf 'preserve One-Bit Bureau user state\n' >"$BUREAU_CONFIG/lifecycle-user-data.txt"
 public_lifecycle_active=true
-omarchy plugin add "$PUBLIC_REPO_URL" --yes
+PUBLIC_RELEASE_DIR="$SHOWCASE_ROOT/public-release"
+PUBLIC_RELEASE_PAYLOAD="$PUBLIC_RELEASE_DIR/payload"
+PUBLIC_RELEASE_JSON="$PUBLIC_RELEASE_DIR/release.json"
+PUBLIC_RELEASE_ASSET="one-bit-bureau-$PUBLIC_RELEASE_TAG.tar.gz"
+mkdir -p "$PUBLIC_RELEASE_DIR" "$PUBLIC_RELEASE_PAYLOAD"
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --retry 3 --max-time 30 --max-filesize 1048576 \
+  -H 'Accept: application/vnd.github+json' \
+  -H 'X-GitHub-Api-Version: 2026-03-10' \
+  "$PUBLIC_RELEASE_API" --output "$PUBLIC_RELEASE_JSON"
+jq -e --arg tag "$PUBLIC_RELEASE_TAG" '.immutable == true and .tag_name == $tag' "$PUBLIC_RELEASE_JSON" >/dev/null ||
+  fail "the public release is not immutable"
+public_release_url=$(jq -er --arg name "$PUBLIC_RELEASE_ASSET" '.assets[] | select(.name == $name) | .browser_download_url' "$PUBLIC_RELEASE_JSON")
+public_release_sha256=$(jq -er --arg name "$PUBLIC_RELEASE_ASSET" '.assets[] | select(.name == $name) | .digest | select(startswith("sha256:")) | ltrimstr("sha256:")' "$PUBLIC_RELEASE_JSON")
+[[ $public_release_sha256 =~ ^[a-f0-9]{64}$ ]] || fail "the immutable release has no SHA-256 asset digest"
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --retry 3 --max-time 300 --max-filesize 268435456 \
+  "$public_release_url" --output "$PUBLIC_RELEASE_DIR/$PUBLIC_RELEASE_ASSET"
+[[ $(sha256sum "$PUBLIC_RELEASE_DIR/$PUBLIC_RELEASE_ASSET" | awk '{print $1}') == "$public_release_sha256" ]] ||
+  fail "the public release archive does not match its immutable digest"
+tar --no-same-owner --no-same-permissions -xzf "$PUBLIC_RELEASE_DIR/$PUBLIC_RELEASE_ASSET" -C "$PUBLIC_RELEASE_PAYLOAD"
+PUBLIC_RELEASE_ROOT="$PUBLIC_RELEASE_PAYLOAD/one-bit-bureau-$PUBLIC_RELEASE_TAG"
+PUBLIC_RELEASE_METADATA="$PUBLIC_RELEASE_ROOT/RELEASE.json"
+PUBLIC_RELEASE_COMMIT=$(jq -er '.commit' "$PUBLIC_RELEASE_METADATA")
+PUBLIC_RELEASE_BUNDLE="$PUBLIC_RELEASE_ROOT/$(jq -er '.bundle.name' "$PUBLIC_RELEASE_METADATA")"
+mkdir -p "$PLUGIN_DIR"
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" -c core.hooksPath=/dev/null fetch -q --no-tags -- "$PUBLIC_RELEASE_BUNDLE" "refs/tags/$PUBLIC_RELEASE_TAG:refs/tags/$PUBLIC_RELEASE_TAG"
+git -C "$PLUGIN_DIR" -c core.hooksPath=/dev/null checkout -q --detach "$PUBLIC_RELEASE_COMMIT"
+git -C "$PLUGIN_DIR" remote add origin "$PUBLIC_REPO_URL"
+omarchy-shell shell rescanPlugins >/dev/null
 wait_until "the interrupted public install leaves a disabled checkout" 15 \
   bash -c "omarchy plugin list --json | jq -e --arg id '$PLUGIN_ID' 'any(.[]; .id == \$id and .enabled == false)'"
-printf 'y\n' | script -qefc "bash -lc 'bash <(curl -fsSL $PUBLIC_INSTALL_URL)'" "$PUBLIC_INSTALL_LOG"
-grep -Fq "continuing now with the matching theme, fonts, branding, and activation" "$PUBLIC_INSTALL_LOG" ||
-  fail "the public bootstrap does not explain and continue past Omarchy's temporary disabled state"
-pass "the literal public bootstrap recovers Omarchy's temporary disabled checkout"
+script -qefc "bash '$PUBLIC_RELEASE_ROOT/install'" "$PUBLIC_INSTALL_LOG"
+grep -Fq "Verified One-Bit Bureau $PUBLIC_RELEASE_TAG bundle: sha256:" "$PUBLIC_INSTALL_LOG" ||
+  fail "the public installer does not report its verified bundle digest"
+grep -Fq "Adopting the existing exact verified checkout at $PUBLIC_RELEASE_COMMIT" "$PUBLIC_INSTALL_LOG" ||
+  fail "the public installer does not recover the exact disabled checkout"
+pass "the immutable public installer verifies and recovers an exact disabled checkout"
 [[ -d $PLUGIN_DIR/.git ]] || fail "the public plugin install is Git-managed"
 public_acceptance_hash=$(sha256sum "$PLUGIN_DIR/test/omarchy-acceptance.sh" | awk '{print $1}')
 [[ $public_acceptance_hash == "$fixture_acceptance_hash" ]] ||
@@ -2139,16 +2170,8 @@ wait_until "the public One-Bit Bureau dock mounts" 20 layer_on_screen one-bit-bu
 PUBLIC_THEME_MODE=$(jq -er '.installed.themeInstallMode' "$STATE_FILE")
 PUBLIC_SOURCE_ID=$(jq -er '.installed.themeSourceId' "$STATE_FILE")
 [[ -L $THEME_TARGET ]] || fail "public setup installs the theme as an owned symlink"
-expected_public_theme_mode="plugin-link"
-if [[ -n ${OMARCHY_PATH:-} ]] &&
-  [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-inspect ]] &&
-  [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-install ]] &&
-  [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-update ]] &&
-  [[ -x $OMARCHY_PATH/bin/omarchy-theme-source-detach ]]; then
-  expected_public_theme_mode="source"
-fi
-[[ $PUBLIC_THEME_MODE == "$expected_public_theme_mode" ]] ||
-  fail "public setup selected $PUBLIC_THEME_MODE instead of the supported $expected_public_theme_mode mode"
+[[ $PUBLIC_THEME_MODE == "plugin-link" ]] ||
+  fail "verified public setup selected $PUBLIC_THEME_MODE instead of commit-bound plugin-link mode"
 if [[ $PUBLIC_THEME_MODE == "source" ]]; then
   PUBLIC_SOURCE_PATH="$THEME_SOURCES_DIR/$PUBLIC_SOURCE_ID"
   [[ -d $PUBLIC_SOURCE_PATH/.git && ! -L $PUBLIC_SOURCE_PATH ]] ||

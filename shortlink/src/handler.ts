@@ -1,7 +1,32 @@
 const ORIGIN = "https://bureau.regionallyfamous.com";
 const SOURCE_URL = "https://github.com/RegionallyFamous/one-bit-bureau";
 const RELEASE_URL = `${SOURCE_URL}/releases/latest`;
-const QUICK_INSTALL = `bash <(curl -fsSL ${ORIGIN}/install)`;
+const RELEASE_TAG = "v1.2.1";
+const VERIFIED_INSTALL = `bash <<'ONE_BIT_BUREAU_INSTALL'
+set -Eeuo pipefail
+release_tag="${RELEASE_TAG}"
+release_asset="one-bit-bureau-\${release_tag}.tar.gz"
+release_dir=\$(mktemp -d)
+trap 'rm -rf -- "\$release_dir"' EXIT
+
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --retry 3 --max-time 30 --max-filesize 1048576 \\
+  -H 'Accept: application/vnd.github+json' \\
+  -H 'X-GitHub-Api-Version: 2026-03-10' \\
+  "https://api.github.com/repos/RegionallyFamous/one-bit-bureau/releases/tags/\$release_tag" \\
+  --output "\$release_dir/release.json"
+jq -e --arg tag "\$release_tag" '.immutable == true and .tag_name == \$tag' "\$release_dir/release.json" >/dev/null
+release_url=\$(jq -er --arg name "\$release_asset" '.assets[] | select(.name == \$name) | .browser_download_url' "\$release_dir/release.json")
+release_sha256=\$(jq -er --arg name "\$release_asset" '.assets[] | select(.name == \$name) | .digest | select(startswith("sha256:")) | ltrimstr("sha256:")' "\$release_dir/release.json")
+[[ \$release_sha256 =~ ^[a-f0-9]{64}\$ ]]
+
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --silent --show-error --retry 3 --max-time 300 --max-filesize 268435456 \\
+  "\$release_url" --output "\$release_dir/\$release_asset"
+actual_sha256=\$(sha256sum "\$release_dir/\$release_asset" | awk '{print \$1}')
+[[ \$actual_sha256 == "\$release_sha256" ]]
+mkdir "\$release_dir/payload"
+tar --no-same-owner --no-same-permissions -xzf "\$release_dir/\$release_asset" -C "\$release_dir/payload"
+bash "\$release_dir/payload/one-bit-bureau-\$release_tag/install"
+ONE_BIT_BUREAU_INSTALL`;
 const COMMON_HEADERS: Record<string, string> = {
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
@@ -22,10 +47,7 @@ function htmlEscape(value: string): string {
 }
 
 function landingPage(): string {
-  const quickInstall = htmlEscape(QUICK_INSTALL);
-  const manualInstall = htmlEscape(
-    `omarchy plugin add ${SOURCE_URL}.git --yes && bash "$HOME/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/setup" --adopt-plugin`
-  );
+  const verifiedInstall = htmlEscape(VERIFIED_INSTALL);
 
   return `<!doctype html>
 <html lang="en">
@@ -37,16 +59,16 @@ function landingPage(): string {
     :root { color-scheme: light; font-family: "Courier New", monospace; background: #b9b9b9; color: #111; }
     * { box-sizing: border-box; }
     body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background-color: #b9b9b9; background-image: repeating-conic-gradient(#aaa 0 25%, #c8c8c8 0 50%); background-size: 4px 4px; }
-    main { width: min(760px, 100%); border: 3px solid #111; background: #fff; box-shadow: 10px 10px 0 #111; }
+    main { width: min(920px, 100%); border: 3px solid #111; background: #fff; box-shadow: 10px 10px 0 #111; }
     header { min-height: 38px; display: grid; grid-template-columns: 38px 1fr 38px; align-items: center; border-bottom: 3px solid #111; background: repeating-linear-gradient(0deg, #fff 0 2px, #111 2px 4px); }
     header span { grid-column: 2; justify-self: center; padding: 3px 12px; border: 2px solid #111; background: #fff; font-weight: 700; }
     header::before { content: ""; width: 16px; height: 16px; margin-left: 10px; border: 2px solid #111; background: #fff; }
     section { padding: clamp(24px, 6vw, 54px); }
     .mark { width: 72px; height: 72px; float: left; margin: 0 22px 12px 0; display: grid; place-items: center; border: 3px solid #111; border-radius: 50%; font-size: 42px; font-weight: 900; }
     h1 { margin: 0 0 10px; font-size: clamp(30px, 7vw, 56px); line-height: .9; letter-spacing: -4px; }
-    .lede { max-width: 58ch; margin: 0 0 34px; font-weight: 700; line-height: 1.45; }
+    .lede { max-width: 62ch; margin: 0 0 34px; font-weight: 700; line-height: 1.45; }
     h2 { clear: both; margin: 28px 0 8px; font-size: 16px; text-transform: uppercase; }
-    code { display: block; overflow-x: auto; padding: 16px; border: 2px solid #111; background: #f1f1f1; color: #111; font: 700 14px/1.5 "Courier New", monospace; white-space: nowrap; }
+    code { display: block; overflow-x: auto; padding: 16px; border: 2px solid #111; background: #f1f1f1; color: #111; font: 700 13px/1.5 "Courier New", monospace; white-space: pre; }
     p { line-height: 1.5; }
     a { color: #111; font-weight: 700; text-decoration-thickness: 2px; }
     nav { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 28px; padding-top: 18px; border-top: 2px solid #111; }
@@ -59,16 +81,14 @@ function landingPage(): string {
     <section>
       <div class="mark" aria-hidden="true">B</div>
       <h1>Your desk is ready.</h1>
-      <p class="lede">One memorable address installs the complete vintage Macintosh-inspired Omarchy plugin and theme package.</p>
-      <h2>Quick install</h2>
-      <code>${quickInstall}</code>
-      <p class="fine">The tiny bootstrap uses Omarchy’s validated Git installer, then activates the complete package in the same run. Running it is consent to activate unsandboxed plugin code from the canonical repository. Inspect it first with <code>curl -fsSL ${ORIGIN}/install</code></p>
-      <h2>Audit-first install</h2>
-      <code>${manualInstall}</code>
+      <p class="lede">A complete vintage Macintosh-inspired Omarchy plugin and theme package, delivered as an immutable, digest-verified release.</p>
+      <h2>Verified install</h2>
+      <code>${verifiedInstall}</code>
+      <p class="fine">This downloads the GitHub release record and archive first, requires an immutable release, checks GitHub’s published SHA-256 digest, and only then runs the local installer. Nothing downloaded is piped directly into a shell.</p>
       <nav aria-label="Project links">
         <a href="/source">Source</a>
         <a href="/release">Latest release</a>
-        <a href="/install">Installer script</a>
+        <a href="${SOURCE_URL}/blob/main/release/install">Installer source</a>
       </nav>
     </section>
   </main>
@@ -95,7 +115,7 @@ function redirect(request: Request, location: string): Response {
   });
 }
 
-export function handleRequest(request: Request, installScriptSource: string): Response {
+export function handleRequest(request: Request): Response {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return response(request, "Method Not Allowed\n", 405, {
       Allow: "GET, HEAD",
@@ -115,14 +135,15 @@ export function handleRequest(request: Request, installScriptSource: string): Re
   }
 
   if (pathname === "/install" || pathname === "/i") {
-    const installScript = installScriptSource.endsWith("\n")
-      ? installScriptSource
-      : `${installScriptSource}\n`;
-    return response(request, installScript, 200, {
-      "Cache-Control": "public, max-age=300",
-      "Content-Disposition": "inline; filename=one-bit-bureau-install",
-      "Content-Type": "text/x-shellscript; charset=utf-8"
-    });
+    return response(
+      request,
+      `The remote shell bootstrap has been retired.\n\nVisit ${ORIGIN}/ and use the digest-verified immutable release installer.\n`,
+      410,
+      {
+        "Cache-Control": "no-store",
+        "Content-Type": "text/plain; charset=utf-8"
+      }
+    );
   }
 
   if (pathname === "/source") {

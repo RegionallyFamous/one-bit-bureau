@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.1 — 2026-09-01
+
+### Security and installation
+
+- Replaced the mutable remote-shell bootstrap with an immutable GitHub Release archive containing a commit-pinned Git bundle and local installer.
+- The canonical install now downloads release metadata and the archive first, requires GitHub's release immutability flag, verifies the published SHA-256 asset digest, then executes only the verified local installer.
+- Added exact tag, commit, manifest, origin, and bundle checks plus transactional rollback coverage for tampering and setup failure.
+- Retired the former `/install` and `/i` shell endpoints with `410 Gone`; the memorable site now displays only the download-then-verify flow.
+
+### Release verification
+
+- Added release artifact construction, verified installer lifecycle tests, tamper rejection, rollback proof, and Worker regressions that reject any return of the former remote-shell path.
+
 ## 1.2.0 — 2026-08-31
 
 ### Product changes
@@ -38,7 +51,7 @@
 
 ### Product changes
 
-- Fixed the memorable `bash <(curl -fsSL https://bureau.regionallyfamous.com/install)` command so Omarchy's intentional initial disabled-plugin state is followed immediately by theme, font, branding, and plugin activation in the same run.
+- Fixed the now-retired first-party bootstrap so Omarchy's intentional initial disabled-plugin state was followed immediately by theme, font, branding, and plugin activation in the same run.
 - Added a bounded catalog-discovery wait so setup does not race Omarchy's asynchronous plugin rescan after a fresh validated checkout.
 - Made a rerun recover an existing validated but disabled One-Bit Bureau checkout without requiring manual cleanup or a second install command.
 - Clarified that executing the quick bootstrap is activation consent; the inspect-first and manual paths remain available for users who want to review the source before running it.

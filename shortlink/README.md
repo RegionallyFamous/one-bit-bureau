@@ -4,8 +4,8 @@
 
 ## Public routes
 
-- `/` serves a static, script-free installation card.
-- `/install` and `/i` serve the exact text of [`src/install.sh`](src/install.sh).
+- `/` serves a static, script-free installation card with the immutable-release download and SHA-256 verification flow.
+- `/install` and `/i` return `410 Gone`; the former mutable remote-shell bootstrap is intentionally retired.
 - `/source` redirects to the canonical RegionallyFamous GitHub repository.
 - `/release` redirects to the latest canonical GitHub release.
 
@@ -27,4 +27,4 @@ npm test
 npm run deploy
 ```
 
-Wrangler owns the `bureau.regionallyfamous.com` Custom Domain declared in `wrangler.jsonc`, including its Cloudflare DNS record and certificate. A deploy must be followed by live checks of the landing page, installer bytes, canonical redirects, response headers, and shell syntax.
+Wrangler owns the `bureau.regionallyfamous.com` Custom Domain declared in `wrangler.jsonc`, including its Cloudflare DNS record and certificate. A deploy must be followed by live checks of the landing page, retired installer routes, canonical redirects, response headers, and rendered verification command.

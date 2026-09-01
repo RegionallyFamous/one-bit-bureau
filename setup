@@ -9,6 +9,7 @@ EXPECTED_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
 LOCAL_INSTALL=0
 ADOPT_PLUGIN=0
 ASSUME_YES=0
+VERIFIED_RELEASE_COMMIT=""
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STATE_DIR="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID"
 STATE_FILE="$STATE_DIR/install-state.json"
@@ -53,7 +54,7 @@ fail() {
 }
 
 usage() {
-  echo "Usage: bash setup [--local | --adopt-plugin] [--yes]"
+  echo "Usage: bash setup [--local | --adopt-plugin] [--verified-release COMMIT] [--yes]"
 }
 
 while (( $# > 0 )); do
@@ -65,6 +66,11 @@ while (( $# > 0 )); do
     --adopt-plugin)
       ADOPT_PLUGIN=1
       shift
+      ;;
+    --verified-release)
+      [[ $# -ge 2 ]] || fail "--verified-release requires a full commit"
+      VERIFIED_RELEASE_COMMIT="$2"
+      shift 2
       ;;
     --yes | -y)
       ASSUME_YES=1
@@ -80,6 +86,8 @@ while (( $# > 0 )); do
   esac
 done
 (( ! LOCAL_INSTALL || ! ADOPT_PLUGIN )) || fail "--local and --adopt-plugin are mutually exclusive"
+[[ -z $VERIFIED_RELEASE_COMMIT || $VERIFIED_RELEASE_COMMIT =~ ^[a-f0-9]{40}$ ]] || fail "--verified-release requires a full lowercase commit"
+[[ -z $VERIFIED_RELEASE_COMMIT || $ADOPT_PLUGIN == 1 ]] || fail "--verified-release requires --adopt-plugin"
 
 command -v omarchy >/dev/null || fail "Omarchy is required"
 command -v jq >/dev/null || fail "jq is required"
@@ -159,12 +167,16 @@ conflicts=$(jq -r '[
 [[ -z $conflicts ]] || fail "disable conflicting standalone plugins before setup: $conflicts"
 
 verify_adopted_plugin() {
-  local installed_manifest origin
+  local installed_manifest origin installed_commit
   installed_manifest="$PLUGIN_TARGET/manifest.json"
   origin=$(git -C "$PLUGIN_TARGET" config --get remote.origin.url 2>/dev/null || true)
   [[ $origin == "$EXPECTED_REPO_URL" ]] || fail "adopted plugin origin must be $EXPECTED_REPO_URL"
   [[ -z $(git -C "$PLUGIN_TARGET" status --porcelain) ]] || fail "adopted plugin checkout has local changes"
   jq -e --arg id "$PLUGIN_ID" --arg name "$PRODUCT_NAME" '.id == $id and .name == $name' "$installed_manifest" >/dev/null || fail "installed plugin identity does not match this release"
+  if [[ -n $VERIFIED_RELEASE_COMMIT ]]; then
+    installed_commit=$(git -C "$PLUGIN_TARGET" rev-parse HEAD)
+    [[ $installed_commit == "$VERIFIED_RELEASE_COMMIT" ]] || fail "adopted plugin does not match the verified release commit"
+  fi
 }
 
 remove_declined_adoption() {
@@ -566,6 +578,11 @@ install_remote_theme() {
     repo_url="$REMOTE_REPO_URL"
   fi
   [[ $repo_url == "$EXPECTED_REPO_URL" ]] || fail "theme setup requires the canonical origin $EXPECTED_REPO_URL"
+  if [[ -n $VERIFIED_RELEASE_COMMIT ]]; then
+    [[ $PLUGIN_COMMIT == "$VERIFIED_RELEASE_COMMIT" ]] || fail "verified plugin commit changed during setup"
+    install_plugin_linked_theme
+    return
+  fi
   if ! theme_source_commands_available; then
     install_plugin_linked_theme
     return

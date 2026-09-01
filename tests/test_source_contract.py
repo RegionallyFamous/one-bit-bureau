@@ -239,7 +239,7 @@ class PluginSourceContractTest(unittest.TestCase):
             "the Bureau bar reflows vertically",
             "switching away restores the prior Hyprland geometry exactly",
             "tiled, floating, fullscreen, active, and inactive window geometry",
-            "the themed Apps search paints a terminal result",
+            "the themed Apps search stays open while typing",
             "the One-Bit Bureau wallpaper picker opens",
             "the One-Bit Bureau OSD paints its progress",
             "the One-Bit Bureau dock tooltip paints",

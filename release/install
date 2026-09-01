@@ -1,0 +1,158 @@
+#!/bin/bash
+
+set -Eeuo pipefail
+
+readonly PRODUCT_NAME="One-Bit Bureau"
+readonly PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
+readonly REPOSITORY="RegionallyFamous/one-bit-bureau"
+readonly REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
+readonly RELEASE_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+readonly METADATA_PATH="$RELEASE_DIR/RELEASE.json"
+readonly PLUGINS_DIR="$HOME/.config/omarchy/plugins"
+readonly PLUGIN_TARGET="$PLUGINS_DIR/$PLUGIN_ID"
+readonly STATE_FILE="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
+
+STAGE_DIR=""
+TARGET_CREATED=0
+
+fail() {
+  echo "one-bit-bureau verified installer: $*" >&2
+  return 1
+}
+
+hash_file() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+remove_created_target() {
+  (( TARGET_CREATED )) || return 0
+  [[ -e $PLUGIN_TARGET || -L $PLUGIN_TARGET ]] || return 0
+
+  echo "Rollback: removing the verified plugin checkout created by this transaction." >&2
+  if [[ -f $STATE_FILE && ! -L $STATE_FILE && -f $PLUGIN_TARGET/uninstall && ! -L $PLUGIN_TARGET/uninstall ]]; then
+    bash "$PLUGIN_TARGET/uninstall" >/dev/null 2>&1 || true
+  fi
+  if [[ -e $PLUGIN_TARGET || -L $PLUGIN_TARGET ]]; then
+    omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
+    omarchy plugin remove "$PLUGIN_ID" --yes >/dev/null 2>&1 || true
+  fi
+  if [[ -e $PLUGIN_TARGET || -L $PLUGIN_TARGET ]]; then
+    rm -rf -- "$PLUGIN_TARGET"
+  fi
+}
+
+finish() {
+  local status=$?
+  trap - EXIT INT TERM
+  set +e
+  if (( status != 0 )); then
+    remove_created_target
+    echo "One-Bit Bureau installation rolled back after an error." >&2
+  fi
+  if [[ -n $STAGE_DIR && $STAGE_DIR == "$PLUGINS_DIR"/.one-bit-bureau-release.* && -e $STAGE_DIR ]]; then
+    rm -rf -- "$STAGE_DIR"
+  fi
+  exit "$status"
+}
+
+trap finish EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+(( EUID != 0 )) || fail "run this as your normal Omarchy user, not root"
+command -v omarchy >/dev/null || fail "Omarchy is required"
+command -v omarchy-shell >/dev/null || fail "omarchy-shell is required"
+command -v git >/dev/null || fail "Git is required"
+command -v jq >/dev/null || fail "jq is required"
+[[ -f $METADATA_PATH && ! -L $METADATA_PATH ]] || fail "verified release metadata is missing or unsafe"
+
+metadata=$(jq -ce --arg product "$PRODUCT_NAME" --arg repo "$REPOSITORY" '
+  select(
+    .schemaVersion == 1 and
+    .product == $product and
+    .repository == $repo and
+    (.tag | type == "string" and test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) and
+    (.version | type == "string") and
+    (("v" + .version) == .tag) and
+    (.commit | type == "string" and test("^[a-f0-9]{40}$")) and
+    (.bundle.name | type == "string" and test("^one-bit-bureau-v[0-9]+\\.[0-9]+\\.[0-9]+\\.bundle$")) and
+    (.bundle.sha256 | type == "string" and test("^[a-f0-9]{64}$"))
+  )
+' "$METADATA_PATH") || fail "verified release metadata is invalid"
+
+release_tag=$(jq -r '.tag' <<<"$metadata")
+release_version=$(jq -r '.version' <<<"$metadata")
+release_commit=$(jq -r '.commit' <<<"$metadata")
+bundle_name=$(jq -r '.bundle.name' <<<"$metadata")
+bundle_sha256=$(jq -r '.bundle.sha256' <<<"$metadata")
+bundle_path="$RELEASE_DIR/$bundle_name"
+[[ -f $bundle_path && ! -L $bundle_path ]] || fail "verified Git bundle is missing or unsafe"
+(( $(stat -c %s "$bundle_path" 2>/dev/null || stat -f %z "$bundle_path") <= 268435456 )) || fail "verified Git bundle exceeds 256 MiB"
+
+actual_bundle_sha256=$(hash_file "$bundle_path")
+[[ $actual_bundle_sha256 == "$bundle_sha256" ]] || fail "Git bundle SHA-256 does not match RELEASE.json"
+echo "Verified $PRODUCT_NAME $release_tag bundle: sha256:$actual_bundle_sha256"
+
+if [[ -f $STATE_FILE && ! -L $STATE_FILE ]]; then
+  echo "$PRODUCT_NAME is already installed. Run: one-bit-bureau update"
+  exit 0
+fi
+
+mkdir -p "$PLUGINS_DIR"
+if [[ -e $PLUGIN_TARGET || -L $PLUGIN_TARGET ]]; then
+  [[ -d $PLUGIN_TARGET/.git && ! -L $PLUGIN_TARGET ]] || fail "an unrecognized plugin path already exists at $PLUGIN_TARGET"
+  [[ -z $(git -C "$PLUGIN_TARGET" status --porcelain) ]] || fail "the existing plugin checkout has local changes"
+  existing_origin=$(git -C "$PLUGIN_TARGET" config --get remote.origin.url 2>/dev/null || true)
+  existing_commit=$(git -C "$PLUGIN_TARGET" rev-parse HEAD 2>/dev/null || true)
+  [[ $existing_origin == "$REPO_URL" && $existing_commit == "$release_commit" ]] ||
+    fail "the existing disabled checkout is not the exact verified release; remove it before retrying"
+  echo "Adopting the existing exact verified checkout at $release_commit."
+else
+  STAGE_DIR=$(mktemp -d "$PLUGINS_DIR/.one-bit-bureau-release.XXXXXX")
+  git -C "$STAGE_DIR" init -q
+  git -C "$STAGE_DIR" -c core.hooksPath=/dev/null fetch -q --no-tags -- "$bundle_path" "refs/tags/$release_tag:refs/tags/$release_tag"
+  bundled_commit=$(git -C "$STAGE_DIR" rev-list -n 1 "refs/tags/$release_tag" 2>/dev/null || true)
+  [[ $bundled_commit == "$release_commit" ]] || fail "Git bundle tag does not resolve to the recorded commit"
+  git -C "$STAGE_DIR" -c core.hooksPath=/dev/null checkout -q --detach "$release_commit"
+  [[ -z $(git -C "$STAGE_DIR" status --porcelain) ]] || fail "verified checkout is not clean"
+  jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg version "$release_version" '
+    .id == $id and .name == $product and .version == $version
+  ' "$STAGE_DIR/manifest.json" >/dev/null || fail "verified checkout manifest does not match the release"
+  git -C "$STAGE_DIR" remote add origin "$REPO_URL"
+  omarchy plugin validate "$STAGE_DIR"
+  mv "$STAGE_DIR" "$PLUGIN_TARGET"
+  STAGE_DIR=""
+  TARGET_CREATED=1
+  echo "Staged exact commit $release_commit from the verified release bundle."
+fi
+
+omarchy-shell shell rescanPlugins >/dev/null
+plugin_state=""
+for (( attempt = 0; attempt < 100; attempt++ )); do
+  plugin_list=$(omarchy plugin list --json) || fail "could not inspect installed plugins"
+  jq -e 'type == "array"' <<<"$plugin_list" >/dev/null || fail "Omarchy returned an invalid plugin list"
+  plugin_state=$(jq -r --arg id "$PLUGIN_ID" '
+    map(select(.id == $id))[0] // null |
+    if . == null then ""
+    elif .enabled == true then "true"
+    elif .enabled == false then "false"
+    else "invalid"
+    end
+  ' <<<"$plugin_list")
+  case "$plugin_state" in
+    false) break ;;
+    true) omarchy plugin disable "$PLUGIN_ID" >/dev/null ;;
+    "") ;;
+    *) fail "Omarchy returned an invalid enabled state for the verified plugin" ;;
+  esac
+  sleep 0.1
+done
+[[ $plugin_state == "false" ]] || fail "the verified plugin did not become available as installed and disabled"
+
+bash "$PLUGIN_TARGET/setup" --adopt-plugin --verified-release "$release_commit" --yes
+TARGET_CREATED=0
+echo "Installed $PRODUCT_NAME $release_version from immutable release $release_tag ($release_commit)."

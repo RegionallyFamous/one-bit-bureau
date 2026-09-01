@@ -1,0 +1,60 @@
+#!/bin/bash
+
+set -Eeuo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+TAG="${1:-}"
+OUTPUT_DIR="${2:-$ROOT/dist}"
+
+fail() {
+  echo "build-release-artifact: $*" >&2
+  exit 1
+}
+
+[[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "usage: scripts/build-release-artifact vX.Y.Z [output-directory]"
+command -v git >/dev/null || fail "Git is required"
+command -v jq >/dev/null || fail "jq is required"
+[[ -z $(git -C "$ROOT" status --porcelain) ]] || fail "the repository must be clean"
+
+version=${TAG#v}
+manifest_version=$(jq -er '.version' "$ROOT/manifest.json") || fail "manifest version is missing"
+[[ $manifest_version == "$version" ]] || fail "manifest version $manifest_version does not match $TAG"
+commit=$(git -C "$ROOT" rev-list -n 1 "refs/tags/$TAG" 2>/dev/null || true)
+[[ -n $commit ]] || fail "tag $TAG does not exist"
+[[ $commit == $(git -C "$ROOT" rev-parse HEAD) ]] || fail "tag $TAG does not point at HEAD"
+
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+package_name="one-bit-bureau-$TAG"
+bundle_name="$package_name.bundle"
+package_dir="$work/$package_name"
+mkdir -p "$package_dir" "$OUTPUT_DIR"
+
+git -C "$ROOT" bundle create "$package_dir/$bundle_name" "refs/tags/$TAG"
+bundle_sha256=$(sha256sum "$package_dir/$bundle_name" | awk '{print $1}')
+cp "$ROOT/release/install" "$package_dir/install"
+chmod 755 "$package_dir/install"
+jq -n \
+  --arg product "One-Bit Bureau" \
+  --arg repository "RegionallyFamous/one-bit-bureau" \
+  --arg tag "$TAG" \
+  --arg version "$version" \
+  --arg commit "$commit" \
+  --arg bundleName "$bundle_name" \
+  --arg bundleSha256 "$bundle_sha256" \
+  '{
+    schemaVersion: 1,
+    product: $product,
+    repository: $repository,
+    tag: $tag,
+    version: $version,
+    commit: $commit,
+    bundle: {name: $bundleName, sha256: $bundleSha256}
+  }' >"$package_dir/RELEASE.json"
+
+archive="$OUTPUT_DIR/$package_name.tar.gz"
+tar -C "$work" -czf "$archive" "$package_name"
+archive_sha256=$(sha256sum "$archive" | awk '{print $1}')
+printf '%s  %s\n' "$archive_sha256" "$(basename "$archive")" >"$OUTPUT_DIR/SHA256SUMS"
+printf '%s\n' "$archive"
+printf 'sha256:%s\n' "$archive_sha256"

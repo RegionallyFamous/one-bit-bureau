@@ -20,7 +20,7 @@ sha256() {
 }
 
 "$OMARCHY_ROOT/bin/omarchy-plugin-validate" "$ROOT"
-bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/update" "$ROOT/one-bit-bureau" "$ROOT/test/omarchy-acceptance.sh" "$ROOT/shortlink/src/install.sh" "$ROOT/shortlink/test/install-test.sh" "$ROOT/scripts/one-bit-bureau-doctor"
+bash -n "$ROOT/setup" "$ROOT/uninstall" "$ROOT/update" "$ROOT/one-bit-bureau" "$ROOT/test/omarchy-acceptance.sh" "$ROOT/release/install" "$ROOT/scripts/build-release-artifact" "$ROOT/shortlink/test/install-test.sh" "$ROOT/scripts/one-bit-bureau-doctor"
 bash "$ROOT/tests/install-roundtrip.sh"
 bash "$ROOT/tests/update-ownership.sh"
 bash "$ROOT/tests/coordinator-motion.sh"
