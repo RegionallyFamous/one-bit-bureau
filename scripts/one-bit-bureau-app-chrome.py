@@ -1,22 +1,27 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Own the narrow, reversible One-Bit Bureau GTK3 preview only."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import os
 import re
-import shutil
-import stat
 import sys
-import tempfile
 from pathlib import Path
+from typing import NamedTuple
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+import one_bit_bureau_secure_io as secure  # noqa: E402
 
 
 PLUGIN_ID = "io.github.regionallyfamous.one-bit-bureau"
 THEME_NAME = "One-Bit-Bureau-GTK3"
+STATE_NAME = "app-chrome-state.json"
+BACKUP_NAME = "app-chrome-settings.ini"
+SETTINGS_NAME = "settings.ini"
+STATE_LIMIT = 16 * 1024
 MAX_BYTES = 1024 * 1024
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -25,65 +30,301 @@ class ChromeError(RuntimeError):
     pass
 
 
-def regular_file(path: Path, *, absent_ok: bool = False) -> bool:
-    if not path.exists() and not path.is_symlink():
-        return False if absent_ok else (_ for _ in ()).throw(ChromeError(f"missing {path}"))
-    if path.is_symlink() or not path.is_file():
-        raise ChromeError(f"unsafe non-regular file: {path}")
-    if path.stat().st_size > MAX_BYTES:
-        raise ChromeError(f"file exceeds {MAX_BYTES} bytes: {path}")
-    return True
+class LoadedState(NamedTuple):
+    value: dict[str, object]
+    record_hash: str
 
 
-def sha256_file(path: Path) -> str:
-    regular_file(path)
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(65536), b""):
-            digest.update(block)
-    return digest.hexdigest()
+def paths(plugin_dir: Path) -> dict[str, Path]:
+    home = Path(os.environ["HOME"])
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
+    data_home = Path(os.environ.get("XDG_DATA_HOME", home / ".local/share"))
+    state_dir = home / ".local/state/omarchy/plugins" / PLUGIN_ID
+    return {
+        "settings": config_home / "gtk-3.0/settings.ini",
+        "theme": data_home / "themes" / THEME_NAME,
+        "state": state_dir / STATE_NAME,
+        "backup": state_dir / "backups" / BACKUP_NAME,
+        "index_template": plugin_dir / "app-chrome/index.theme",
+        "template": plugin_dir / "app-chrome/gtk-3.0/gtk.css",
+    }
 
 
-def tree_hash(path: Path) -> str:
-    if path.is_symlink() or not path.is_dir():
-        raise ChromeError(f"unsafe theme directory: {path}")
-    entries: list[tuple[str, str]] = []
-    for child in sorted(path.rglob("*")):
-        if child.is_symlink():
-            raise ChromeError(f"unsafe theme entry: {child}")
-        if child.is_dir():
-            continue
-        if not child.is_file():
-            raise ChromeError(f"unsafe theme entry: {child}")
-        entries.append((str(child.relative_to(path)), sha256_file(child)))
-    return hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
-
-
-def atomic_write(path: Path, payload: bytes, mode: int = 0o600) -> None:
-    parent = path.parent
-    if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
-        raise ChromeError(f"unsafe parent directory: {parent}")
-    parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=parent)
+def _config_gtk_directory(*, create: bool) -> int:
+    location = paths(Path("/unused"))
+    config_fd = secure.open_user_directory(
+        location["settings"].parent.parent,
+        create=create,
+    )
     try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(temporary, mode)
-        os.replace(temporary, path)
+        return secure.open_child_directory(
+            config_fd,
+            "gtk-3.0",
+            create=create,
+            private=True,
+        )
     finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+        os.close(config_fd)
 
 
-def safe_remove_tree(path: Path) -> None:
-    if path.is_symlink() or not path.is_dir():
-        raise ChromeError(f"unsafe theme directory: {path}")
-    for child in path.rglob("*"):
-        if child.is_symlink() or (not child.is_dir() and not child.is_file()):
-            raise ChromeError(f"refusing to remove symlinked theme entry: {child}")
-    shutil.rmtree(path)
+def _themes_directory(*, create: bool) -> int:
+    location = paths(Path("/unused"))
+    return secure.open_user_directory(
+        location["theme"].parent,
+        create=create,
+    )
+
+
+def _state_directory(*, create: bool) -> int:
+    return secure.open_install_state_directory(create=create)
+
+
+def _backup_directory(state_fd: int, *, create: bool) -> int:
+    return secure.open_child_directory(
+        state_fd,
+        "backups",
+        create=create,
+        private=True,
+    )
+
+
+def _read_plugin_templates(plugin_dir: Path) -> tuple[bytes, bytes]:
+    plugin_fd = secure.open_owned_directory(plugin_dir)
+    try:
+        app_chrome_fd = secure.open_child_directory(
+            plugin_fd,
+            "app-chrome",
+            create=False,
+        )
+    finally:
+        os.close(plugin_fd)
+    try:
+        index = secure.read_bytes_at(
+            app_chrome_fd,
+            "index.theme",
+            MAX_BYTES,
+            label="GTK theme metadata template",
+        )
+        gtk_fd = secure.open_child_directory(
+            app_chrome_fd,
+            "gtk-3.0",
+            create=False,
+        )
+    finally:
+        os.close(app_chrome_fd)
+    try:
+        css = secure.read_bytes_at(
+            gtk_fd,
+            "gtk.css",
+            MAX_BYTES,
+            label="GTK theme CSS template",
+        )
+    finally:
+        os.close(gtk_fd)
+    assert index is not None and css is not None
+    if len(index) + len(css) > MAX_BYTES:
+        raise ChromeError("GTK template tree exceeds its total-byte ceiling")
+    return index, css
+
+
+def _read_settings(*, missing_ok: bool) -> bytes | None:
+    try:
+        directory_fd = _config_gtk_directory(create=False)
+    except FileNotFoundError:
+        if missing_ok:
+            return None
+        raise ChromeError("GTK settings directory is missing") from None
+    try:
+        return secure.read_bytes_at(
+            directory_fd,
+            SETTINGS_NAME,
+            MAX_BYTES,
+            missing_ok=missing_ok,
+            label="GTK settings",
+        )
+    finally:
+        os.close(directory_fd)
+
+
+def _write_settings(
+    payload: bytes,
+    *,
+    expected_hash: str | None = None,
+    require_absent: bool = False,
+) -> str:
+    directory_fd = _config_gtk_directory(create=True)
+    try:
+        return secure.atomic_write_at(
+            directory_fd,
+            SETTINGS_NAME,
+            payload,
+            mode=0o600,
+            byte_limit=MAX_BYTES,
+            expected_hash=expected_hash,
+            require_absent=require_absent,
+            label="GTK settings",
+        )
+    finally:
+        os.close(directory_fd)
+
+
+def _remove_settings(expected_hash: str) -> bool:
+    try:
+        directory_fd = _config_gtk_directory(create=False)
+    except FileNotFoundError:
+        return False
+    try:
+        return secure.remove_file_at(
+            directory_fd,
+            SETTINGS_NAME,
+            MAX_BYTES,
+            expected_hash=expected_hash,
+            missing_ok=True,
+            label="GTK settings",
+        )
+    finally:
+        os.close(directory_fd)
+
+
+def _read_backup(*, missing_ok: bool) -> bytes | None:
+    try:
+        state_fd = _state_directory(create=False)
+    except FileNotFoundError:
+        if missing_ok:
+            return None
+        raise ChromeError("app-chrome state directory is missing") from None
+    try:
+        try:
+            backup_fd = _backup_directory(state_fd, create=False)
+        except FileNotFoundError:
+            if missing_ok:
+                return None
+            raise ChromeError("app-chrome backup directory is missing") from None
+    finally:
+        os.close(state_fd)
+    try:
+        return secure.read_bytes_at(
+            backup_fd,
+            BACKUP_NAME,
+            MAX_BYTES,
+            missing_ok=missing_ok,
+            label="GTK settings backup",
+        )
+    finally:
+        os.close(backup_fd)
+
+
+def _write_backup(payload: bytes) -> str:
+    state_fd = _state_directory(create=True)
+    try:
+        backup_fd = _backup_directory(state_fd, create=True)
+    finally:
+        os.close(state_fd)
+    try:
+        return secure.atomic_write_at(
+            backup_fd,
+            BACKUP_NAME,
+            payload,
+            mode=0o600,
+            byte_limit=MAX_BYTES,
+            require_absent=True,
+            label="GTK settings backup",
+        )
+    finally:
+        os.close(backup_fd)
+
+
+def _remove_backup(expected_hash: str) -> bool:
+    try:
+        state_fd = _state_directory(create=False)
+    except FileNotFoundError:
+        return False
+    try:
+        try:
+            backup_fd = _backup_directory(state_fd, create=False)
+        except FileNotFoundError:
+            return False
+    finally:
+        os.close(state_fd)
+    try:
+        return secure.remove_file_at(
+            backup_fd,
+            BACKUP_NAME,
+            MAX_BYTES,
+            expected_hash=expected_hash,
+            missing_ok=True,
+            label="GTK settings backup",
+        )
+    finally:
+        os.close(backup_fd)
+
+
+def load_state(_state_path: Path | None = None) -> LoadedState | None:
+    try:
+        state_fd = _state_directory(create=False)
+    except FileNotFoundError:
+        return None
+    try:
+        payload = secure.read_bytes_at(
+            state_fd,
+            STATE_NAME,
+            STATE_LIMIT,
+            missing_ok=True,
+            label="app-chrome ownership record",
+        )
+    finally:
+        os.close(state_fd)
+    if payload is None:
+        return None
+    value = secure.parse_json(payload, label="app-chrome ownership record")
+    if not isinstance(value, dict):
+        raise ChromeError("invalid app-chrome ownership record")
+    required = {
+        "schemaVersion": 1,
+        "mechanism": "gtk3-user-theme",
+        "themeName": THEME_NAME,
+    }
+    if any(value.get(key) != expected for key, expected in required.items()):
+        raise ChromeError("invalid app-chrome ownership record")
+    for key in ("settingsPath", "themePath", "settingsInstalledHash", "themeInstalledHash"):
+        if not isinstance(value.get(key), str) or not value[key]:
+            raise ChromeError("invalid app-chrome ownership record")
+    if not isinstance(value.get("previousSettingsHash"), str):
+        raise ChromeError("invalid app-chrome ownership record")
+    if not isinstance(value.get("previousSettingsPresent"), bool):
+        raise ChromeError("invalid app-chrome ownership record")
+    return LoadedState(value=value, record_hash=secure.hash_bytes(payload))
+
+
+def write_state(_state_path: Path | None, state: dict[str, object]) -> str:
+    payload = secure.encode_json(state, STATE_LIMIT)
+    state_fd = _state_directory(create=True)
+    try:
+        return secure.atomic_write_at(
+            state_fd,
+            STATE_NAME,
+            payload,
+            mode=0o600,
+            byte_limit=STATE_LIMIT,
+            require_absent=True,
+            label="app-chrome ownership record",
+        )
+    finally:
+        os.close(state_fd)
+
+
+def _remove_state(expected_hash: str) -> bool:
+    state_fd = _state_directory(create=False)
+    try:
+        return secure.remove_file_at(
+            state_fd,
+            STATE_NAME,
+            STATE_LIMIT,
+            expected_hash=expected_hash,
+            label="app-chrome ownership record",
+        )
+    finally:
+        os.close(state_fd)
 
 
 def settings_with_theme(original: bytes) -> bytes:
@@ -100,18 +341,25 @@ def settings_with_theme(original: bytes) -> bytes:
             break
     if settings_start is None:
         suffix = b"" if not original or original.endswith(b"\n") else b"\n"
-        return original + suffix + b"[Settings]\ngtk-theme-name=One-Bit-Bureau-GTK3\n"
-    for index in range(settings_start + 1, settings_end):
-        stripped = lines[index].strip()
-        if stripped.startswith("#") or stripped.startswith(";") or "=" not in stripped:
-            continue
-        key, _value = stripped.split("=", 1)
-        if key.strip().lower() == "gtk-theme-name":
-            newline = "\n" if lines[index].endswith("\n") else ""
-            lines[index] = f"gtk-theme-name={THEME_NAME}{newline}"
-            return "".join(lines).encode()
-    lines.insert(settings_end, f"gtk-theme-name={THEME_NAME}\n")
-    return "".join(lines).encode()
+        result = original + suffix + b"[Settings]\ngtk-theme-name=One-Bit-Bureau-GTK3\n"
+    else:
+        result = b""
+        for index in range(settings_start + 1, settings_end):
+            stripped = lines[index].strip()
+            if stripped.startswith(("#", ";")) or "=" not in stripped:
+                continue
+            key, _value = stripped.split("=", 1)
+            if key.strip().lower() == "gtk-theme-name":
+                newline = "\n" if lines[index].endswith("\n") else ""
+                lines[index] = f"gtk-theme-name={THEME_NAME}{newline}"
+                result = "".join(lines).encode()
+                break
+        if not result:
+            lines.insert(settings_end, f"gtk-theme-name={THEME_NAME}\n")
+            result = "".join(lines).encode()
+    if len(result) > MAX_BYTES:
+        raise ChromeError("updated GTK settings exceed the byte ceiling")
+    return result
 
 
 def settings_theme_name(payload: bytes) -> str | None:
@@ -130,79 +378,115 @@ def settings_theme_name(payload: bytes) -> str | None:
     return None
 
 
-def paths(plugin_dir: Path) -> dict[str, Path]:
-    home = Path(os.environ["HOME"])
-    config_home = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
-    data_home = Path(os.environ.get("XDG_DATA_HOME", home / ".local/share"))
-    # This must match setup/uninstall exactly. XDG_STATE_HOME is intentionally
-    # not honored here because Omarchy's plugin ownership records have one
-    # stable, user-scoped location under HOME.
-    state_dir = home / ".local/state/omarchy/plugins" / PLUGIN_ID
-    return {
-        "settings": config_home / "gtk-3.0/settings.ini",
-        "theme": data_home / "themes" / THEME_NAME,
-        "state": state_dir / "app-chrome-state.json",
-        "backup": state_dir / "backups/app-chrome-settings.ini",
-        "index_template": plugin_dir / "app-chrome/index.theme",
-        "template": plugin_dir / "app-chrome/gtk-3.0/gtk.css",
-    }
-
-
-def load_state(state_path: Path) -> dict | None:
-    if not state_path.exists() and not state_path.is_symlink():
-        return None
-    regular_file(state_path)
+def ensure_theme(plugin_dir: Path) -> str:
+    index, css = _read_plugin_templates(plugin_dir)
+    themes_fd = _themes_directory(create=True)
+    theme_fd = -1
+    identity: tuple[int, int] | None = None
     try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as error:
-        raise ChromeError(f"corrupt app-chrome ownership record: {error}") from error
-    required = {
-        "schemaVersion": 1,
-        "mechanism": "gtk3-user-theme",
-        "themeName": THEME_NAME,
-    }
-    if not isinstance(state, dict) or any(state.get(key) != value for key, value in required.items()):
-        raise ChromeError("invalid app-chrome ownership record")
-    for key in ("settingsPath", "themePath", "settingsInstalledHash", "themeInstalledHash"):
-        if not isinstance(state.get(key), str) or not state[key]:
-            raise ChromeError("invalid app-chrome ownership record")
-    if not isinstance(state.get("previousSettingsHash"), str):
-        raise ChromeError("invalid app-chrome ownership record")
-    if not isinstance(state.get("previousSettingsPresent"), bool):
-        raise ChromeError("invalid app-chrome ownership record")
-    return state
-
-
-def write_state(state_path: Path, state: dict) -> None:
-    atomic_write(state_path, (json.dumps(state, indent=2, sort_keys=True) + "\n").encode())
-
-
-def ensure_theme(index_template: Path, template: Path, destination: Path) -> str:
-    regular_file(index_template)
-    regular_file(template)
-    if destination.exists() or destination.is_symlink():
-        raise ChromeError(f"refusing to replace existing GTK theme directory: {destination}")
-    created = False
-    try:
-        destination.mkdir(parents=True, mode=0o700)
-        created = True
-        atomic_write(destination / "index.theme", index_template.read_bytes(), 0o600)
-        target = destination / "gtk-3.0/gtk.css"
-        target.parent.mkdir(mode=0o700)
-        atomic_write(target, template.read_bytes(), 0o600)
-        return tree_hash(destination)
+        theme_fd = secure.create_directory_at(themes_fd, THEME_NAME)
+        metadata = os.fstat(theme_fd)
+        identity = (metadata.st_dev, metadata.st_ino)
+        secure.atomic_write_at(
+            theme_fd,
+            "index.theme",
+            index,
+            mode=0o600,
+            byte_limit=MAX_BYTES,
+            require_absent=True,
+            label="GTK theme metadata",
+        )
+        gtk_fd = secure.create_directory_at(theme_fd, "gtk-3.0")
+        try:
+            secure.atomic_write_at(
+                gtk_fd,
+                "gtk.css",
+                css,
+                mode=0o600,
+                byte_limit=MAX_BYTES,
+                require_absent=True,
+                label="GTK theme CSS",
+            )
+        finally:
+            os.close(gtk_fd)
+        os.fsync(theme_fd)
+        return secure.tree_hash_fd(theme_fd)
     except BaseException:
-        if created and destination.exists() and not destination.is_symlink():
-            safe_remove_tree(destination)
+        if theme_fd >= 0:
+            os.close(theme_fd)
+            theme_fd = -1
+        if identity is not None:
+            secure.remove_tree_at(themes_fd, THEME_NAME, expected_identity=identity)
         raise
+    finally:
+        if theme_fd >= 0:
+            os.close(theme_fd)
+        os.close(themes_fd)
+
+
+def _theme_hash(*, missing_ok: bool) -> str | None:
+    try:
+        themes_fd = _themes_directory(create=False)
+    except FileNotFoundError:
+        if missing_ok:
+            return None
+        raise ChromeError("GTK themes directory is missing") from None
+    try:
+        try:
+            return secure.tree_hash_at(themes_fd, THEME_NAME)
+        except FileNotFoundError:
+            if missing_ok:
+                return None
+            raise ChromeError("GTK preview theme is missing") from None
+    finally:
+        os.close(themes_fd)
+
+
+def _remove_theme(expected_hash: str) -> bool:
+    try:
+        themes_fd = _themes_directory(create=False)
+    except FileNotFoundError:
+        return False
+    try:
+        return secure.remove_tree_at(
+            themes_fd,
+            THEME_NAME,
+            expected_hash=expected_hash,
+        )
+    finally:
+        os.close(themes_fd)
+
+
+def validate_state_for_off(
+    location: dict[str, Path],
+    state: dict[str, object],
+) -> None:
+    if Path(str(state["settingsPath"])) != location["settings"] or Path(
+        str(state["themePath"])
+    ) != location["theme"]:
+        raise ChromeError("app-chrome ownership paths do not match this user profile")
+    for key in ("settingsInstalledHash", "themeInstalledHash"):
+        if not SHA256.fullmatch(str(state[key])):
+            raise ChromeError("app-chrome ownership record has an invalid installed hash")
+    backup = _read_backup(missing_ok=True)
+    if state["previousSettingsPresent"]:
+        previous_hash = str(state["previousSettingsHash"])
+        if not SHA256.fullmatch(previous_hash):
+            raise ChromeError("app-chrome ownership record has an invalid previous-settings hash")
+        if backup is None:
+            raise ChromeError("app-chrome settings backup is missing")
+        if secure.hash_bytes(backup) != previous_hash:
+            raise ChromeError("app-chrome settings backup no longer matches its ownership record")
+    elif state["previousSettingsHash"] != "":
+        raise ChromeError("app-chrome ownership record has an unexpected previous-settings hash")
+    elif backup is not None:
+        raise ChromeError("app-chrome ownership record has an unexpected settings backup")
 
 
 def preview(plugin_dir: Path) -> int:
-    location = paths(plugin_dir)
     try:
-        regular_file(location["index_template"])
-        regular_file(location["template"])
-    except ChromeError as error:
+        _read_plugin_templates(plugin_dir)
+    except (ChromeError, secure.SecureIOError, FileNotFoundError) as error:
         print(f"One-Bit Bureau GTK app-chrome preview is unavailable: {error}")
         return 1
     print("GTK3 app-chrome preview: available (opt-in; no changes made).")
@@ -212,17 +496,21 @@ def preview(plugin_dir: Path) -> int:
 
 
 def status(plugin_dir: Path) -> int:
-    location = paths(plugin_dir)
-    state = load_state(location["state"])
-    if state is None:
+    loaded = load_state()
+    if loaded is None:
         print("GTK3 app-chrome preview: off")
         print("GTK4/libadwaita: unsupported and unchanged")
         return 0
+    location = paths(plugin_dir)
+    state = loaded.value
     validate_state_for_off(location, state)
-    settings = Path(state["settingsPath"])
-    theme = Path(state["themePath"])
-    settings_matches = settings.exists() and not settings.is_symlink() and sha256_file(settings) == state["settingsInstalledHash"]
-    theme_matches = theme.exists() and not theme.is_symlink() and tree_hash(theme) == state["themeInstalledHash"]
+    settings = _read_settings(missing_ok=True)
+    settings_matches = settings is not None and secure.hash_bytes(settings) == state["settingsInstalledHash"]
+    try:
+        current_theme_hash = _theme_hash(missing_ok=True)
+    except secure.SecureIOError:
+        current_theme_hash = None
+    theme_matches = current_theme_hash == state["themeInstalledHash"]
     print("GTK3 app-chrome preview: on")
     print(f"settings: {'owned' if settings_matches else 'modified or missing'}")
     print(f"theme: {'owned' if theme_matches else 'modified or missing'}")
@@ -230,115 +518,99 @@ def status(plugin_dir: Path) -> int:
     return 0
 
 
-def validate_state_for_off(location: dict[str, Path], state: dict) -> None:
-    if Path(state["settingsPath"]) != location["settings"] or Path(state["themePath"]) != location["theme"]:
-        raise ChromeError("app-chrome ownership paths do not match this user profile")
-    for key in ("settingsInstalledHash", "themeInstalledHash"):
-        if not SHA256.fullmatch(state[key]):
-            raise ChromeError("app-chrome ownership record has an invalid installed hash")
-    backup = location["backup"]
-    if state["previousSettingsPresent"]:
-        if not SHA256.fullmatch(state["previousSettingsHash"]):
-            raise ChromeError("app-chrome ownership record has an invalid previous-settings hash")
-        regular_file(backup)
-        if sha256_file(backup) != state["previousSettingsHash"]:
-            raise ChromeError("app-chrome settings backup no longer matches its ownership record")
-    elif state["previousSettingsHash"] != "":
-        raise ChromeError("app-chrome ownership record has an unexpected previous-settings hash")
-    elif backup.exists() or backup.is_symlink():
-        raise ChromeError("app-chrome ownership record has an unexpected settings backup")
-
-
 def turn_on(plugin_dir: Path) -> int:
     location = paths(plugin_dir)
-    if load_state(location["state"]) is not None:
+    if load_state() is not None:
         raise ChromeError("GTK3 app-chrome preview is already on; run `one-bit-bureau app-chrome off` first")
-    if location["backup"].exists() or location["backup"].is_symlink():
+    if _read_backup(missing_ok=True) is not None:
         raise ChromeError("refusing to replace an unclaimed app-chrome settings backup")
-    settings = location["settings"]
-    backup_created = False
-    if settings.exists() or settings.is_symlink():
-        regular_file(settings)
-        previous = settings.read_bytes()
-        previous_present = True
-    else:
-        previous = b""
-        previous_present = False
+    previous = _read_settings(missing_ok=True)
+    previous_present = previous is not None
+    previous = previous or b""
     installed = settings_with_theme(previous)
+    previous_hash = secure.hash_bytes(previous) if previous_present else ""
+    installed_hash = secure.hash_bytes(installed)
+    backup_created = False
     settings_written = False
     theme_hash = ""
-    installed_hash = hashlib.sha256(installed).hexdigest()
     try:
         if previous_present:
-            atomic_write(location["backup"], previous)
+            _write_backup(previous)
             backup_created = True
-        theme_hash = ensure_theme(location["index_template"], location["template"], location["theme"])
-        atomic_write(settings, installed)
+        theme_hash = ensure_theme(plugin_dir)
+        _write_settings(
+            installed,
+            expected_hash=previous_hash if previous_present else None,
+            require_absent=not previous_present,
+        )
         settings_written = True
-        state = {
-            "schemaVersion": 1,
-            "mechanism": "gtk3-user-theme",
-            "themeName": THEME_NAME,
-            "settingsPath": str(settings),
-            "themePath": str(location["theme"]),
-            "previousSettingsPresent": previous_present,
-            "previousSettingsHash": hashlib.sha256(previous).hexdigest() if previous_present else "",
-            "settingsInstalledHash": installed_hash,
-            "themeInstalledHash": theme_hash,
-        }
-        write_state(location["state"], state)
+        write_state(
+            None,
+            {
+                "schemaVersion": 1,
+                "mechanism": "gtk3-user-theme",
+                "themeName": THEME_NAME,
+                "settingsPath": str(location["settings"]),
+                "themePath": str(location["theme"]),
+                "previousSettingsPresent": previous_present,
+                "previousSettingsHash": previous_hash,
+                "settingsInstalledHash": installed_hash,
+                "themeInstalledHash": theme_hash,
+            },
+        )
     except BaseException:
-        if location["theme"].exists() and not location["theme"].is_symlink() and theme_hash and tree_hash(location["theme"]) == theme_hash:
-            safe_remove_tree(location["theme"])
-        if settings_written and settings.exists() and not settings.is_symlink() and sha256_file(settings) == installed_hash and previous_present:
-            atomic_write(settings, previous)
-        elif settings_written and settings.exists() and not settings.is_symlink() and sha256_file(settings) == installed_hash:
-            settings.unlink()
-        if backup_created and location["backup"].exists() and not location["backup"].is_symlink():
-            location["backup"].unlink()
+        if theme_hash:
+            _remove_theme(theme_hash)
+        if settings_written:
+            if previous_present:
+                _write_settings(previous, expected_hash=installed_hash)
+            else:
+                _remove_settings(installed_hash)
+        if backup_created:
+            _remove_backup(previous_hash)
         raise
     print("GTK3 app-chrome preview enabled. Reopen GTK3 applications to see it; GTK4/libadwaita is unchanged.")
     return 0
 
 
 def turn_off(plugin_dir: Path) -> int:
-    location = paths(plugin_dir)
-    state = load_state(location["state"])
-    if state is None:
+    loaded = load_state()
+    if loaded is None:
         print("GTK3 app-chrome preview is already off.")
         return 0
+    location = paths(plugin_dir)
+    state = loaded.value
     validate_state_for_off(location, state)
-    expected_settings = location["settings"]
-    expected_theme = location["theme"]
+    settings = _read_settings(missing_ok=True)
+    installed_settings_hash = str(state["settingsInstalledHash"])
+    settings_matches = settings is not None and secure.hash_bytes(settings) == installed_settings_hash
+    if settings is not None and not settings_matches and settings_theme_name(settings) == THEME_NAME:
+        raise ChromeError("GTK settings changed while still selecting the One-Bit Bureau theme; ownership was retained and nothing was removed")
+
     settings_restored = False
-    settings = expected_settings
-    settings_matches = settings.exists() and not settings.is_symlink() and sha256_file(settings) == state["settingsInstalledHash"]
-    if settings.exists() and not settings.is_symlink() and not settings_matches:
-        if settings_theme_name(settings.read_bytes()) == THEME_NAME:
-            raise ChromeError("GTK settings changed while still selecting the One-Bit Bureau theme; ownership was retained and nothing was removed")
-    elif settings.is_symlink():
-        raise ChromeError("GTK settings became a symlink; ownership was retained and nothing was removed")
     if settings_matches:
         if state["previousSettingsPresent"]:
-            backup = location["backup"]
-            atomic_write(settings, backup.read_bytes())
+            backup = _read_backup(missing_ok=False)
+            assert backup is not None
+            _write_settings(backup, expected_hash=installed_settings_hash)
         else:
-            settings.unlink()
+            _remove_settings(installed_settings_hash)
         settings_restored = True
-    theme_removed = False
-    theme = expected_theme
-    if theme.exists() and not theme.is_symlink() and tree_hash(theme) == state["themeInstalledHash"]:
-        safe_remove_tree(theme)
-        theme_removed = True
-    elif theme.is_symlink():
-        print(f"preserved modified GTK theme at {theme}", file=sys.stderr)
+
+    try:
+        theme_removed = _remove_theme(str(state["themeInstalledHash"]))
+    except secure.SecureIOError:
+        theme_removed = False
     if not settings_restored:
-        print(f"preserved modified GTK settings at {settings}", file=sys.stderr)
-    if not theme_removed and theme.exists():
-        print(f"preserved modified GTK theme at {theme}", file=sys.stderr)
-    for candidate in (location["state"], location["backup"]):
-        if candidate.exists() and not candidate.is_symlink():
-            candidate.unlink()
+        print(f"preserved modified GTK settings at {location['settings']}", file=sys.stderr)
+    if not theme_removed:
+        print(f"preserved modified GTK theme at {location['theme']}", file=sys.stderr)
+
+    if state["previousSettingsPresent"]:
+        if not _remove_backup(str(state["previousSettingsHash"])):
+            raise ChromeError("could not safely remove the owned GTK settings backup")
+    if not _remove_state(loaded.record_hash):
+        raise ChromeError("could not safely remove the app-chrome ownership record")
     print("GTK3 app-chrome preview disabled; owned settings were restored immediately where unchanged.")
     return 0
 
@@ -348,10 +620,9 @@ def main() -> int:
     parser.add_argument("command", choices=("preview", "on", "off", "status"))
     parser.add_argument("--plugin-dir", required=True)
     arguments = parser.parse_args()
-    candidate = Path(arguments.plugin_dir)
-    if candidate.is_symlink() or not candidate.is_dir():
-        raise ChromeError(f"unsafe plugin directory: {candidate}")
-    plugin_dir = candidate.resolve()
+    plugin_dir = Path(os.path.normpath(arguments.plugin_dir))
+    if not plugin_dir.is_absolute():
+        raise ChromeError("plugin directory must be absolute")
     if arguments.command == "preview":
         return preview(plugin_dir)
     if arguments.command == "status":
@@ -364,6 +635,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except ChromeError as error:
+    except (ChromeError, secure.SecureIOError, FileNotFoundError) as error:
         print(f"one-bit-bureau app-chrome: {error}", file=sys.stderr)
         raise SystemExit(1)

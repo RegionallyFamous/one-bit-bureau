@@ -69,6 +69,13 @@ test("foreign-toplevel changes refresh Hyprland class metadata before aggregatio
   )
 })
 
+test("coalesced compositor events converge through bounded reconciliation", () => {
+  assert.match(
+    panelBase,
+    /id: compositorReconcileTimer[\s\S]*?interval: 2000[\s\S]*?running: root\.enabled && root\.dockReady[\s\S]*?Hyprland\.refreshToplevels\(\)[\s\S]*?root\.refreshItems\(\)/
+  )
+})
+
 test("unmapped compositor remnants cannot survive as ghost dock applications", () => {
   assert.match(panelBase, /function foreignToplevelValues\(\)/)
   assert.match(panelBase, /function liveHyprlandWindows\(\)/)

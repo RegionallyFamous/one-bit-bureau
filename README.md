@@ -15,7 +15,7 @@ One-Bit Bureau is built for a current Omarchy Quattro installation. Its release 
 ```bash
 bash <<'ONE_BIT_BUREAU_INSTALL'
 set -Eeuo pipefail
-release_tag="v1.2.2"
+release_tag="v1.2.3"
 release_asset="one-bit-bureau-${release_tag}.tar.gz"
 release_dir=$(mktemp -d)
 trap 'rm -rf -- "$release_dir"' EXIT

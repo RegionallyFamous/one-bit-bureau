@@ -6,11 +6,15 @@ readonly PRODUCT_NAME="One-Bit Bureau"
 readonly PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
 readonly REPOSITORY="RegionallyFamous/one-bit-bureau"
 readonly REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
-readonly RELEASE_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+RELEASE_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+readonly RELEASE_DIR
+SECURE_IO="$RELEASE_DIR/one_bit_bureau_secure_io.py"
+if [[ ! -f $SECURE_IO || -L $SECURE_IO ]]; then
+  SECURE_IO="$RELEASE_DIR/../scripts/one_bit_bureau_secure_io.py"
+fi
 readonly METADATA_PATH="$RELEASE_DIR/RELEASE.json"
 readonly PLUGINS_DIR="$HOME/.config/omarchy/plugins"
 readonly PLUGIN_TARGET="$PLUGINS_DIR/$PLUGIN_ID"
-readonly STATE_FILE="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
 
 STAGE_DIR=""
 TARGET_CREATED=0
@@ -33,7 +37,7 @@ remove_created_target() {
   [[ -e $PLUGIN_TARGET || -L $PLUGIN_TARGET ]] || return 0
 
   echo "Rollback: removing the verified plugin checkout created by this transaction." >&2
-  if [[ -f $STATE_FILE && ! -L $STATE_FILE && -f $PLUGIN_TARGET/uninstall && ! -L $PLUGIN_TARGET/uninstall ]]; then
+  if python3 "$SECURE_IO" install-state exists >/dev/null 2>&1 && [[ -f $PLUGIN_TARGET/uninstall && ! -L $PLUGIN_TARGET/uninstall ]]; then
     bash "$PLUGIN_TARGET/uninstall" >/dev/null 2>&1 || true
   fi
   if [[ -e $PLUGIN_TARGET || -L $PLUGIN_TARGET ]]; then
@@ -68,6 +72,8 @@ command -v omarchy >/dev/null || fail "Omarchy is required"
 command -v omarchy-shell >/dev/null || fail "omarchy-shell is required"
 command -v git >/dev/null || fail "Git is required"
 command -v jq >/dev/null || fail "jq is required"
+command -v python3 >/dev/null || fail "Python 3 is required"
+[[ -f $SECURE_IO && ! -L $SECURE_IO ]] || fail "secure transaction helper is missing or unsafe"
 [[ -f $METADATA_PATH && ! -L $METADATA_PATH ]] || fail "verified release metadata is missing or unsafe"
 
 metadata=$(jq -ce --arg product "$PRODUCT_NAME" --arg repo "$REPOSITORY" '
@@ -97,7 +103,7 @@ actual_bundle_sha256=$(hash_file "$bundle_path")
 [[ $actual_bundle_sha256 == "$bundle_sha256" ]] || fail "Git bundle SHA-256 does not match RELEASE.json"
 echo "Verified $PRODUCT_NAME $release_tag bundle: sha256:$actual_bundle_sha256"
 
-if [[ -f $STATE_FILE && ! -L $STATE_FILE ]]; then
+if python3 "$SECURE_IO" install-state exists >/dev/null 2>&1; then
   echo "$PRODUCT_NAME is already installed. Run: one-bit-bureau update"
   exit 0
 fi

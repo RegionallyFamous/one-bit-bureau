@@ -18,10 +18,20 @@ BRANDING_TARGET="$HOME/.config/omarchy/branding"
 BRANDING_BACKUP_DIR="$STATE_DIR/backups/branding"
 COMMAND_TARGET="$HOME/.local/bin/one-bit-bureau"
 BRANDING_MAX_BYTES=$((1024 * 1024))
-
-if [[ -n ${ONE_BIT_BUREAU_UNINSTALL_TEMP:-} && $ONE_BIT_BUREAU_UNINSTALL_TEMP == "${BASH_SOURCE[0]}" ]]; then
-  trap 'rm -f -- "$ONE_BIT_BUREAU_UNINSTALL_TEMP"' EXIT
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+SECURE_IO_SOURCE="$SCRIPT_DIR/scripts/one_bit_bureau_secure_io.py"
+if [[ ! -f $SECURE_IO_SOURCE || -L $SECURE_IO_SOURCE ]]; then
+  SECURE_IO_SOURCE="$PLUGIN_TARGET/scripts/one_bit_bureau_secure_io.py"
 fi
+SECURE_IO_TEMP_DIR=""
+
+cleanup_uninstall_files() {
+  [[ -z $SECURE_IO_TEMP_DIR || ! -e $SECURE_IO_TEMP_DIR ]] || rm -rf -- "$SECURE_IO_TEMP_DIR"
+  if [[ -n ${ONE_BIT_BUREAU_UNINSTALL_TEMP:-} && $ONE_BIT_BUREAU_UNINSTALL_TEMP == "${BASH_SOURCE[0]}" ]]; then
+    rm -f -- "$ONE_BIT_BUREAU_UNINSTALL_TEMP"
+  fi
+}
+trap cleanup_uninstall_files EXIT
 
 command -v omarchy >/dev/null || {
   echo "Omarchy is unavailable; no changes were made." >&2
@@ -39,8 +49,24 @@ command -v python3 >/dev/null || {
   echo "Python 3 is unavailable; no changes were made." >&2
   exit 1
 }
-[[ -f $STATE_FILE && ! -L $STATE_FILE ]] || {
+[[ -f $SECURE_IO_SOURCE && ! -L $SECURE_IO_SOURCE ]] || {
+  echo "$PRODUCT_NAME secure transaction helper is missing or unsafe; no changes were made." >&2
+  exit 1
+}
+SECURE_IO_TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/one-bit-bureau-secure-io.XXXXXX")
+cp -- "$SECURE_IO_SOURCE" "$SECURE_IO_TEMP_DIR/one_bit_bureau_secure_io.py"
+chmod 600 "$SECURE_IO_TEMP_DIR/one_bit_bureau_secure_io.py"
+SECURE_IO="$SECURE_IO_TEMP_DIR/one_bit_bureau_secure_io.py"
+state_snapshot=$(python3 "$SECURE_IO" install-state snapshot) || {
   echo "$PRODUCT_NAME has no ownership record at $STATE_FILE; refusing to remove unowned files." >&2
+  exit 1
+}
+state_json=$(jq -ce '.record' <<<"$state_snapshot") || {
+  echo "$PRODUCT_NAME ownership snapshot is invalid; no changes were made." >&2
+  exit 1
+}
+state_record_hash=$(jq -er '.recordHash | select(test("^[a-f0-9]{64}$"))' <<<"$state_snapshot") || {
+  echo "$PRODUCT_NAME ownership snapshot hash is invalid; no changes were made." >&2
   exit 1
 }
 
@@ -92,31 +118,31 @@ jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NA
   (.previous.barTransparent | type == "boolean") and
   (.previous.aboutPresent | type == "boolean") and
   (.previous.screensaverPresent | type == "boolean")
-' "$STATE_FILE" >/dev/null || {
+' <<<"$state_json" >/dev/null || {
   echo "$PRODUCT_NAME install-state record is invalid; refusing to remove anything." >&2
   exit 1
 }
 
-PLUGIN_OWNED=$(jq -r '.pluginOwned' "$STATE_FILE")
-THEME_OWNED=$(jq -r '.themeOwned' "$STATE_FILE")
-FONT_OWNED=$(jq -r '.fontOwned' "$STATE_FILE")
-BRANDING_OWNED=$(jq -r '.brandingOwned' "$STATE_FILE")
-COMMAND_OWNED=$(jq -r '.commandOwned' "$STATE_FILE")
-FONT_TREE_HASH=$(jq -r '.installed.fontTreeHash' "$STATE_FILE")
-THEME_SOURCE_ID=$(jq -r '.installed.themeSourceId' "$STATE_FILE")
-THEME_SOURCE_URL=$(jq -r '.installed.themeSourceUrl' "$STATE_FILE")
-PLUGIN_ORIGIN=$(jq -r '.installed.pluginOrigin' "$STATE_FILE")
-PLUGIN_COMMIT=$(jq -r '.installed.pluginCommit' "$STATE_FILE")
-THEME_SOURCE_COMMIT=$(jq -r '.installed.themeSourceCommit' "$STATE_FILE")
-THEME_INSTALL_MODE=$(jq -r '.installed.themeInstallMode' "$STATE_FILE")
-ABOUT_HASH=$(jq -r '.installed.aboutHash' "$STATE_FILE")
-SCREENSAVER_HASH=$(jq -r '.installed.screensaverHash' "$STATE_FILE")
-COMMAND_HASH=$(jq -r '.installed.commandHash' "$STATE_FILE")
-PREVIOUS_THEME=$(jq -r '.previous.theme // ""' "$STATE_FILE")
-PREVIOUS_BAR_POSITION=$(jq -r '.previous.barPosition // "top"' "$STATE_FILE")
-PREVIOUS_BAR_TRANSPARENT=$(jq -r '.previous.barTransparent // false' "$STATE_FILE")
-PREVIOUS_ABOUT_PRESENT=$(jq -r '.previous.aboutPresent' "$STATE_FILE")
-PREVIOUS_SCREENSAVER_PRESENT=$(jq -r '.previous.screensaverPresent' "$STATE_FILE")
+PLUGIN_OWNED=$(jq -r '.pluginOwned' <<<"$state_json")
+THEME_OWNED=$(jq -r '.themeOwned' <<<"$state_json")
+FONT_OWNED=$(jq -r '.fontOwned' <<<"$state_json")
+BRANDING_OWNED=$(jq -r '.brandingOwned' <<<"$state_json")
+COMMAND_OWNED=$(jq -r '.commandOwned' <<<"$state_json")
+FONT_TREE_HASH=$(jq -r '.installed.fontTreeHash' <<<"$state_json")
+THEME_SOURCE_ID=$(jq -r '.installed.themeSourceId' <<<"$state_json")
+THEME_SOURCE_URL=$(jq -r '.installed.themeSourceUrl' <<<"$state_json")
+PLUGIN_ORIGIN=$(jq -r '.installed.pluginOrigin' <<<"$state_json")
+PLUGIN_COMMIT=$(jq -r '.installed.pluginCommit' <<<"$state_json")
+THEME_SOURCE_COMMIT=$(jq -r '.installed.themeSourceCommit' <<<"$state_json")
+THEME_INSTALL_MODE=$(jq -r '.installed.themeInstallMode' <<<"$state_json")
+ABOUT_HASH=$(jq -r '.installed.aboutHash' <<<"$state_json")
+SCREENSAVER_HASH=$(jq -r '.installed.screensaverHash' <<<"$state_json")
+COMMAND_HASH=$(jq -r '.installed.commandHash' <<<"$state_json")
+PREVIOUS_THEME=$(jq -r '.previous.theme // ""' <<<"$state_json")
+PREVIOUS_BAR_POSITION=$(jq -r '.previous.barPosition // "top"' <<<"$state_json")
+PREVIOUS_BAR_TRANSPARENT=$(jq -r '.previous.barTransparent // false' <<<"$state_json")
+PREVIOUS_ABOUT_PRESENT=$(jq -r '.previous.aboutPresent' <<<"$state_json")
+PREVIOUS_SCREENSAVER_PRESENT=$(jq -r '.previous.screensaverPresent' <<<"$state_json")
 
 hash_file() {
   if command -v sha256sum >/dev/null; then
@@ -479,16 +505,24 @@ if [[ $PLUGIN_OWNED == "true" ]]; then
   }
 fi
 
-if [[ $COMMAND_OWNED == "true" && -f $COMMAND_TARGET ]]; then
-  current_command_hash=$(hash_file "$COMMAND_TARGET")
-  if [[ $current_command_hash == "$COMMAND_HASH" ]]; then
-    rm -f -- "$COMMAND_TARGET"
-  else
+if [[ $COMMAND_OWNED == "true" && -n $COMMAND_HASH ]]; then
+  command_result=$(python3 "$SECURE_IO" command remove-if-owned --expected-hash "$COMMAND_HASH") || {
+    echo "$PRODUCT_NAME could not safely inspect its installed command; the ownership record was retained." >&2
+    exit 1
+  }
+  if [[ $command_result == "preserved" ]]; then
     echo "$PRODUCT_NAME preserved modified command at $COMMAND_TARGET" >&2
   fi
 fi
 
-rm -f "$STATE_FILE"
+state_delete_result=$(python3 "$SECURE_IO" install-state delete --expected-hash "$state_record_hash") || {
+  echo "$PRODUCT_NAME could not safely remove its ownership record." >&2
+  exit 1
+}
+[[ $state_delete_result == "removed" ]] || {
+  echo "$PRODUCT_NAME ownership record changed during removal and was preserved." >&2
+  exit 1
+}
 rmdir "$BRANDING_BACKUP_DIR" 2>/dev/null || true
 rmdir "$STATE_DIR/backups" 2>/dev/null || true
 rmdir "$STATE_DIR" 2>/dev/null || true

@@ -173,7 +173,7 @@ PanelWindow {
     root.busy = true
     root.statusText = "Applying"
     applyProcess.pendingSuccess = successMessage
-    applyProcess.command = ["python3", root.runHelperPath, "2200", "250", "0", "4096", "--"].concat(command)
+    applyProcess.command = ["python3", root.runHelperPath, "12000", "250", "0", "4096", "--"].concat(command)
     applyProcess.running = true
     applyDeadline.restart()
   }
@@ -317,7 +317,7 @@ PanelWindow {
 
   Timer {
     id: applyDeadline
-    interval: 2500
+    interval: 12500
     onTriggered: {
       if (applyProcess.running) {
         root.statusText = "Stopping timed-out icon update"

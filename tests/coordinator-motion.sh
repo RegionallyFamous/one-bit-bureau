@@ -13,7 +13,8 @@ PLUGIN_DIR="$TEST_HOME/.config/omarchy/plugins/$PLUGIN_ID"
 STATE_DIR="$TEST_HOME/.local/state/omarchy/plugins/$PLUGIN_ID"
 LOG="$WORK/commands.log"
 
-mkdir -p "$BIN" "$PLUGIN_DIR" "$STATE_DIR"
+mkdir -p "$BIN" "$PLUGIN_DIR/scripts" "$STATE_DIR"
+cp "$ROOT/scripts/one_bit_bureau_secure_io.py" "$PLUGIN_DIR/scripts/one_bit_bureau_secure_io.py"
 printf '{}\n' >"$PLUGIN_DIR/manifest.json"
 printf '{}\n' >"$STATE_DIR/install-state.json"
 

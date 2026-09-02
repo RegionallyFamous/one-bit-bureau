@@ -1931,7 +1931,7 @@ Item {
       return
     var content = root.pendingPositionsContent
     root.pendingPositionsContent = ""
-    positionsWriterProcess.command = root.boundedCommand(2200, 0, 4096,
+    positionsWriterProcess.command = root.boundedCommand(12000, 0, 4096,
       ["python3", root.stateHelperPath, "write", "positions", content])
     positionsWriterProcess.running = true
   }
@@ -1940,7 +1940,7 @@ Item {
     if (positionsReaderProcess.running || root.positionsWritePending)
       return
     root.positionsReaderRevision = root.positionsMutationRevision
-    positionsReaderProcess.command = root.boundedCommand(2200, root.maxPositionsChars, 4096,
+    positionsReaderProcess.command = root.boundedCommand(12000, root.maxPositionsChars, 4096,
       ["python3", root.stateHelperPath, "read", "positions"])
     positionsReaderProcess.running = true
   }

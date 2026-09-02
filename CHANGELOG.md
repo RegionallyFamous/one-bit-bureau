@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.3 — 2026-09-02
+
+### Descriptor-bound lifecycle transactions
+
+- Moved install ownership records, command installation and replacement, diagnostics, removal, and the optional GTK3 preview onto one shared descriptor-relative transaction layer.
+- Added held no-follow parent descriptors, opened-file owner/type/mode/link validation, randomized exclusive temporary files, object-identity and hash binding, atomic replacement, file `fsync`, and directory `fsync`.
+- Bounded ownership JSON before and after parsing by raw bytes, lexical depth, parsed depth, node count, key count, and UTF-8 string bytes. Update now reads one hash-bound snapshot instead of reopening the ownership record repeatedly.
+- Bounded GTK settings and templates plus recursive theme inspection by total bytes, file count, directory count, and depth. GTK enable, status, rollback, and removal no longer make check-then-reopen decisions through `Path` objects.
+- Preserved rollback and user edits while rejecting symlinked, non-regular, multiply linked, oversized, malformed, or concurrently replaced ownership objects.
+- Aligned shell-state callers with a bounded 10-second durable-write window so file and directory `fsync` complete on slower real disks without being cancelled by the UI first.
+
+### Release verification
+
+- Added exact-boundary, one-unit-over, multibyte overflow, malformed JSON, deep JSON, symlink, hardlink, FIFO, predictable-temporary-path, command-hash, GTK tree-budget, and interruption rollback regressions.
+
 ## 1.2.2 — 2026-09-01
 
 ### Runtime containment and state safety

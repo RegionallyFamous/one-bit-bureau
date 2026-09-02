@@ -33,7 +33,9 @@ mkdir -p "$package_dir" "$OUTPUT_DIR"
 git -C "$ROOT" bundle create "$package_dir/$bundle_name" "refs/tags/$TAG"
 bundle_sha256=$(sha256sum "$package_dir/$bundle_name" | awk '{print $1}')
 cp "$ROOT/release/install" "$package_dir/install"
+cp "$ROOT/scripts/one_bit_bureau_secure_io.py" "$package_dir/one_bit_bureau_secure_io.py"
 chmod 755 "$package_dir/install"
+chmod 600 "$package_dir/one_bit_bureau_secure_io.py"
 jq -n \
   --arg product "One-Bit Bureau" \
   --arg repository "RegionallyFamous/one-bit-bureau" \

@@ -33,7 +33,9 @@ done
 for helper in "$ROOT/components/desktop/bin/common.py" "$ROOT/components/desktop/bin/desktop_policy.py" "$ROOT/components/desktop/bin/desktop-index" "$ROOT/components/desktop/bin/add-to-desktop" "$ROOT/components/desktop/bin/desktop-operation" "$ROOT/components/desktop/bin/desktop-quick-look"; do
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$helper"
 done
-python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$ROOT/scripts/one-bit-bureau-app-chrome.py"
+for helper in "$ROOT/scripts/one-bit-bureau-app-chrome.py" "$ROOT/scripts/one_bit_bureau_secure_io.py"; do
+  python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' "$helper"
+done
 python3 -m unittest discover -s "$ROOT/components/desktop/tests" -p 'test_*.py'
 python3 -m unittest discover -s "$ROOT/tests" -p 'test_*.py'
 jq -e '

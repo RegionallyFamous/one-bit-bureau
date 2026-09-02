@@ -11,8 +11,8 @@ ADOPT_PLUGIN=0
 ASSUME_YES=0
 VERIFIED_RELEASE_COMMIT=""
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+SECURE_IO="$SCRIPT_DIR/scripts/one_bit_bureau_secure_io.py"
 STATE_DIR="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID"
-STATE_FILE="$STATE_DIR/install-state.json"
 SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
 THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
 PLUGIN_TARGET="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
@@ -35,6 +35,7 @@ FONT_TREE_HASH=""
 ABOUT_HASH=""
 SCREENSAVER_HASH=""
 COMMAND_HASH=""
+STATE_RECORD_HASH=""
 PREVIOUS_ABOUT_PRESENT=false
 PREVIOUS_SCREENSAVER_PRESENT=false
 PLUGIN_STAGE=""
@@ -93,6 +94,7 @@ command -v omarchy >/dev/null || fail "Omarchy is required"
 command -v jq >/dev/null || fail "jq is required"
 command -v fc-cache >/dev/null || fail "fontconfig is required"
 command -v python3 >/dev/null || fail "Python 3 is required"
+[[ -f $SECURE_IO && ! -L $SECURE_IO ]] || fail "secure transaction helper is missing or unsafe"
 [[ -f $SCRIPT_DIR/manifest.json ]] || fail "manifest.json is missing"
 [[ -d $SCRIPT_DIR/themes/$THEME_NAME ]] || fail "theme $THEME_NAME is missing"
 [[ -f $SCRIPT_DIR/fonts/DepartureMono-1.500.otf ]] || fail "Departure Mono is missing"
@@ -112,7 +114,9 @@ if (( ! LOCAL_INSTALL && ! ADOPT_PLUGIN )); then
   [[ $REMOTE_REPO_URL == "$EXPECTED_REPO_URL" ]] || fail "remote setup requires the canonical origin $EXPECTED_REPO_URL; use --local for a fork or development checkout"
 fi
 
-[[ ! -e $STATE_FILE && ! -L $STATE_FILE ]] || fail "an install-state record already exists; run bash uninstall before reinstalling"
+if python3 "$SECURE_IO" install-state exists >/dev/null 2>&1; then
+  fail "an install-state record already exists; run bash uninstall before reinstalling"
+fi
 if (( ADOPT_PLUGIN )); then
   [[ -d $PLUGIN_TARGET/.git ]] || fail "--adopt-plugin requires a Git-managed plugin at $PLUGIN_TARGET"
   [[ $(cd -- "$SCRIPT_DIR" && pwd -P) == "$(cd -- "$PLUGIN_TARGET" && pwd -P)" ]] || fail "run the setup script from the installed One-Bit Bureau plugin"
@@ -348,9 +352,13 @@ font_tree_hash() {
 }
 
 write_state() {
-  local temporary="$STATE_FILE.tmp"
-  mkdir -p "$STATE_DIR"
-  jq -n \
+  local arguments=(install-state write)
+  if [[ -n $STATE_RECORD_HASH ]]; then
+    arguments+=(--expected-hash "$STATE_RECORD_HASH")
+  else
+    arguments+=(--require-absent)
+  fi
+  STATE_RECORD_HASH=$(jq -n \
     --arg product "$PRODUCT_NAME" \
     --arg pluginId "$PLUGIN_ID" \
     --arg theme "$THEME_NAME" \
@@ -403,8 +411,8 @@ write_state() {
         aboutPresent: $previousAboutPresent,
         screensaverPresent: $previousScreensaverPresent
       }
-    }' >"$temporary"
-  mv "$temporary" "$STATE_FILE"
+    }' | python3 "$SECURE_IO" "${arguments[@]}") || fail "could not durably update the install ownership record"
+  [[ $STATE_RECORD_HASH =~ ^[a-f0-9]{64}$ ]] || fail "secure transaction helper returned an invalid ownership hash"
 }
 
 restore_branding_file() {
@@ -458,8 +466,8 @@ rollback() {
     restore_previous_settings
   fi
   restore_owned_branding
-  if (( COMMAND_OWNED )) && [[ -f $COMMAND_TARGET ]] && [[ $(hash_file "$COMMAND_TARGET") == "$COMMAND_HASH" ]]; then
-    rm -f -- "$COMMAND_TARGET"
+  if (( COMMAND_OWNED )) && [[ -n $COMMAND_HASH ]]; then
+    python3 "$SECURE_IO" command remove-if-owned --expected-hash "$COMMAND_HASH" >/dev/null 2>&1 || true
   fi
   if (( FONT_OWNED )) && [[ -d $FONT_TARGET ]]; then
     rm -rf -- "$FONT_TARGET"
@@ -475,6 +483,10 @@ rollback() {
     fi
     [[ ! -e $THEME_TARGET && ! -L $THEME_TARGET ]] || rm -rf -- "$THEME_TARGET"
   fi
+  if [[ -n $STATE_RECORD_HASH ]]; then
+    python3 "$SECURE_IO" install-state delete --expected-hash "$STATE_RECORD_HASH" >/dev/null 2>&1 || true
+  fi
+  rmdir "$STATE_DIR" 2>/dev/null || true
   if (( PLUGIN_OWNED )); then
     omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
     omarchy plugin remove "$PLUGIN_ID" --yes >/dev/null 2>&1 || true
@@ -483,8 +495,6 @@ rollback() {
   [[ -z $PLUGIN_STAGE || ! -e $PLUGIN_STAGE ]] || rm -rf "$PLUGIN_STAGE"
   [[ -z $THEME_STAGE || ! -e $THEME_STAGE ]] || rm -rf "$THEME_STAGE"
   [[ -z $FONT_STAGE || ! -e $FONT_STAGE ]] || rm -rf "$FONT_STAGE"
-  rm -f "$STATE_FILE" "$STATE_FILE.tmp"
-  rmdir "$STATE_DIR" 2>/dev/null || true
   echo "one-bit-bureau setup rolled back after an error" >&2
   exit "$status"
 }
@@ -650,13 +660,12 @@ install_branding() {
 }
 
 install_command() {
-  local command_dir="$HOME/.local/bin"
-  mkdir -p "$command_dir"
-  COMMAND_HASH=$(hash_file "$PLUGIN_TARGET/one-bit-bureau")
+  local installed_hash
+  COMMAND_HASH=$(python3 "$SECURE_IO" command source-hash --plugin-dir "$PLUGIN_TARGET") || fail "could not verify the command source"
   COMMAND_OWNED=1
   write_state
-  cp -- "$PLUGIN_TARGET/one-bit-bureau" "$COMMAND_TARGET"
-  chmod 755 "$COMMAND_TARGET"
+  installed_hash=$(python3 "$SECURE_IO" command install --plugin-dir "$PLUGIN_TARGET" --expected-hash "$COMMAND_HASH") || fail "could not install the command safely"
+  [[ $installed_hash == "$COMMAND_HASH" ]] || fail "installed command hash changed during setup"
 }
 
 write_state

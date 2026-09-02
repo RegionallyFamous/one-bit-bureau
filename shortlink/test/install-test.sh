@@ -7,8 +7,8 @@ WORK=$(mktemp -d)
 trap 'rm -rf -- "$WORK"' EXIT
 
 PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
-TAG="v1.2.2"
-VERSION="1.2.2"
+TAG="v1.2.3"
+VERSION="1.2.3"
 MOCK_BIN="$WORK/bin"
 MOCK_LOG="$WORK/calls.log"
 mkdir -p "$MOCK_BIN"
@@ -58,6 +58,7 @@ SETUP
   git -C "$source_repo" bundle create "$package_dir/payload/$bundle_name" "refs/tags/$TAG"
   bundle_sha=$(sha256sum "$package_dir/payload/$bundle_name" | awk '{print $1}')
   cp "$ROOT/release/install" "$package_dir/payload/install"
+  cp "$ROOT/scripts/one_bit_bureau_secure_io.py" "$package_dir/payload/one_bit_bureau_secure_io.py"
   jq -n \
     --arg tag "$TAG" \
     --arg version "$VERSION" \

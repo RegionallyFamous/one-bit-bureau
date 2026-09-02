@@ -1,7 +1,7 @@
 const ORIGIN = "https://bureau.regionallyfamous.com";
 const SOURCE_URL = "https://github.com/RegionallyFamous/one-bit-bureau";
 const RELEASE_URL = `${SOURCE_URL}/releases/latest`;
-const RELEASE_TAG = "v1.2.2";
+const RELEASE_TAG = "v1.2.3";
 const VERIFIED_INSTALL = `bash <<'ONE_BIT_BUREAU_INSTALL'
 set -Eeuo pipefail
 release_tag="${RELEASE_TAG}"

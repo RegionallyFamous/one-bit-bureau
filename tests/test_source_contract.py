@@ -27,10 +27,10 @@ class PluginSourceContractTest(unittest.TestCase):
                 '"python3", root.runHelperPath, "1800", "200", "65536", "8192", "--"',
             ),
             "components/dock/IconPickerPanel.qml": (
-                '"python3", root.runHelperPath, "2200", "250", "0", "4096", "--"',
+                '"python3", root.runHelperPath, "12000", "250", "0", "4096", "--"',
             ),
             "components/dock/DockPanelBase.qml": (
-                '"python3", root.runHelperPath, "2200", "250", "262144", "4096", "--"',
+                '"python3", root.runHelperPath, "12000", "250", "262144", "4096", "--"',
                 '"python3", root.runHelperPath, "3000", "250", "0", "8192", "--"',
             ),
             "components/overview/Overview.qml": (
@@ -94,6 +94,10 @@ class PluginSourceContractTest(unittest.TestCase):
         helper = (
             ROOT / "components/dock/scripts/one-bit-bureau-state"
         ).read_text(encoding="utf-8")
+        secure_io = (
+            ROOT / "scripts/one_bit_bureau_secure_io.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("from one_bit_bureau_secure_io import", helper)
         for contract in (
             '"positions": ("desktop-icon-positions.json", 64 * 1024)',
             "MAX_STATE_OUTPUT = 256 * 1024",
@@ -101,6 +105,9 @@ class PluginSourceContractTest(unittest.TestCase):
             "MAX_POSITIONS_PER_SCREEN = 256",
             "set(raw_position) != {\"x\", \"y\"}",
             "math.isfinite(x)",
+        ):
+            self.assertIn(contract, helper)
+        for contract in (
             "os.O_EXCL",
             "O_NOFOLLOW",
             "dir_fd=directory_fd",
@@ -110,7 +117,7 @@ class PluginSourceContractTest(unittest.TestCase):
             "os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)",
             "os.fsync(directory_fd)",
         ):
-            self.assertIn(contract, helper)
+            self.assertIn(contract, secure_io)
 
         desktop = (ROOT / "components/desktop/Service.qml").read_text(encoding="utf-8")
         dock = (ROOT / "components/dock/DockPanelBase.qml").read_text(encoding="utf-8")
@@ -123,6 +130,54 @@ class PluginSourceContractTest(unittest.TestCase):
         self.assertIn('"python3", root.stateHelperPath, "write", "settings", content', dock)
         self.assertNotIn('"mv"', dock)
         self.assertNotIn("pendingPath", dock)
+
+    def test_install_update_command_and_gtk_mutations_share_secure_io(self) -> None:
+        secure_io = (
+            ROOT / "scripts/one_bit_bureau_secure_io.py"
+        ).read_text(encoding="utf-8")
+        setup = (ROOT / "setup").read_text(encoding="utf-8")
+        update = (ROOT / "update").read_text(encoding="utf-8")
+        uninstall = (ROOT / "uninstall").read_text(encoding="utf-8")
+        command = (ROOT / "one-bit-bureau").read_text(encoding="utf-8")
+        doctor = (ROOT / "scripts/one-bit-bureau-doctor").read_text(encoding="utf-8")
+        app_chrome = (
+            ROOT / "scripts/one-bit-bureau-app-chrome.py"
+        ).read_text(encoding="utf-8")
+
+        for contract in (
+            "INSTALL_STATE_LIMIT = 64 * 1024",
+            "MAX_JSON_DEPTH = 6",
+            "MAX_JSON_KEYS = 64",
+            "TREE_MAX_BYTES = 1024 * 1024",
+            "TREE_MAX_FILES = 32",
+            "TREE_MAX_DIRECTORIES = 8",
+            "TREE_MAX_DEPTH = 3",
+            "os.O_EXCL",
+            "nofollow_flag()",
+            "metadata.st_uid != os.getuid()",
+            "metadata.st_nlink != 1",
+            "current_identity != prior_identity",
+            "os.fsync(descriptor)",
+            "os.fsync(directory_fd)",
+        ):
+            self.assertIn(contract, secure_io)
+
+        self.assertIn('install-state write', setup)
+        self.assertIn('command install --plugin-dir', setup)
+        self.assertNotIn('STATE_FILE.tmp', setup)
+        self.assertIn('state_snapshot=$(python3 "$SECURE_IO" install-state snapshot)', update)
+        self.assertIn('command replace-if-owned', update)
+        self.assertNotIn('COMMAND_TARGET.tmp', update)
+        self.assertNotIn('STATE_FILE.tmp', update)
+        self.assertIn('state_snapshot=$(python3 "$SECURE_IO" install-state snapshot)', uninstall)
+        self.assertIn('command remove-if-owned', uninstall)
+        self.assertIn('install-state delete', uninstall)
+        self.assertIn('install-state read | jq', command)
+        self.assertIn('install-state read', doctor)
+        self.assertIn('import one_bit_bureau_secure_io as secure', app_chrome)
+        self.assertNotIn('.rglob(', app_chrome)
+        self.assertNotIn('.read_bytes(', app_chrome)
+        self.assertNotIn('shutil.rmtree', app_chrome)
 
     def test_security_sensitive_desktop_actions_are_tracked_to_completion(self) -> None:
         desktop = (ROOT / "components/desktop/Service.qml").read_text(encoding="utf-8")
@@ -194,7 +249,7 @@ class PluginSourceContractTest(unittest.TestCase):
         )
         self.assertIn("/.config/omarchy/one-bit-bureau/", dock)
         self.assertNotIn("/.config/omarchy/one-bit-bureau/", desktop)
-        self.assertIn('"one-bit-bureau"', state)
+        self.assertIn('".config/omarchy/one-bit-bureau"', state)
         self.assertIn("open_state_directory", state)
         self.assertIn("regionallyfamous.one-bit-bureau.dock", command)
         self.assertIn("regionallyfamous.one-bit-bureau.overview", command)

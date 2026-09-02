@@ -289,7 +289,7 @@ Item {
     var content = root.pendingSettingsContent
     root.pendingSettingsContent = ""
     settingsWriterProcess.command = [
-      "python3", root.runHelperPath, "2200", "250", "0", "4096", "--",
+      "python3", root.runHelperPath, "12000", "250", "0", "4096", "--",
       "python3", root.stateHelperPath, "write", "settings", content
     ]
     settingsWriterProcess.running = true
@@ -1206,7 +1206,7 @@ Item {
     var content = root.pendingPinsContent
     root.pendingPinsContent = ""
     pinsWriterProcess.command = [
-      "python3", root.runHelperPath, "2200", "250", "0", "4096", "--",
+      "python3", root.runHelperPath, "12000", "250", "0", "4096", "--",
       "python3", root.stateHelperPath, "write", "pins", content
     ]
     pinsWriterProcess.running = true
@@ -1841,7 +1841,7 @@ Item {
     if (stateReaderProcess.running || root.settingsWritePending || !root.stateHelperPath || !root.runHelperPath) return
     root.stateReaderSettingsRevision = root.settingsMutationRevision
     stateReaderProcess.command = [
-      "python3", root.runHelperPath, "2200", "250", "262144", "4096", "--",
+      "python3", root.runHelperPath, "12000", "250", "262144", "4096", "--",
       "python3", root.stateHelperPath, "read", "dock"
     ]
     stateReaderProcess.running = true
@@ -1859,7 +1859,7 @@ Item {
 
   Timer {
     id: stateReaderDeadline
-    interval: 2500
+    interval: 12500
     onTriggered: {
       if (stateReaderProcess.running) stateReaderProcess.running = false
     }
@@ -1901,6 +1901,22 @@ Item {
     target: root.shell ? root.shell.appLibrary : null
     function onAppsChanged() { root.refreshApps() }
   }
+
+  // Compositor and foreign-toplevel membership notifications can be
+  // coalesced when several windows map in the same frame. Periodically
+  // reconcile both bounded models so a missed edge converges without a shell
+  // restart; normal event-driven updates remain immediate.
+  Timer {
+    id: compositorReconcileTimer
+    interval: 2000
+    running: root.enabled && root.dockReady
+    repeat: true
+    onTriggered: {
+      Hyprland.refreshToplevels()
+      root.refreshItems()
+    }
+  }
+
   Connections {
     target: Hyprland
     function onActiveToplevelChanged() {

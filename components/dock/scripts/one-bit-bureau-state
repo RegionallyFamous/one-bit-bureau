@@ -7,11 +7,19 @@ import json
 import math
 import os
 import re
-import secrets
 import signal
-import stat
 import sys
 from pathlib import Path
+
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PLUGIN_ROOT / "scripts"))
+from one_bit_bureau_secure_io import (  # noqa: E402
+    SecureIOError,
+    atomic_write_at,
+    open_user_directory,
+    read_bytes_at,
+)
 
 
 PACK_ROLES = {
@@ -34,6 +42,7 @@ MAX_SCREENS = 16
 MAX_POSITIONS_PER_SCREEN = 256
 MAX_STATE_OUTPUT = 256 * 1024
 MAX_COORDINATE = 1_000_000
+STATE_DEADLINE_SECONDS = 10
 
 
 def deadline(_signum: int, _frame: object) -> None:
@@ -44,97 +53,31 @@ def bounded_text(value: object, byte_limit: int) -> str:
     return str(value or "").encode("utf-8")[:byte_limit].decode("utf-8", "ignore")
 
 
-def nofollow_flag() -> int:
-    return getattr(os, "O_NOFOLLOW", 0)
-
-
-def validate_directory(descriptor: int, *, private: bool) -> None:
-    metadata = os.fstat(descriptor)
-    if not stat.S_ISDIR(metadata.st_mode):
-        raise SystemExit("state parent must be a directory")
-    if metadata.st_uid != os.getuid():
-        raise SystemExit("state parent must be owned by the current user")
-    if metadata.st_mode & 0o022:
-        raise SystemExit("state parent may not be group or world writable")
-    if private and metadata.st_mode & 0o077:
-        os.fchmod(descriptor, 0o700)
-
-
-def open_child_directory(parent_fd: int, name: str, *, create: bool, private: bool) -> int:
-    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | nofollow_flag()
-    try:
-        descriptor = os.open(name, flags, dir_fd=parent_fd)
-    except FileNotFoundError:
-        if not create:
-            raise
-        os.mkdir(name, 0o700 if private else 0o755, dir_fd=parent_fd)
-        os.fsync(parent_fd)
-        descriptor = os.open(name, flags, dir_fd=parent_fd)
-    validate_directory(descriptor, private=private)
-    return descriptor
-
-
 def open_state_directory(*, create: bool) -> int:
     raw_home = os.environ.get("HOME", "")
     if not raw_home or not os.path.isabs(raw_home) or "\x00" in raw_home:
         raise SystemExit("HOME must name an absolute directory")
-    home_fd = os.open(
-        raw_home,
-        os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | nofollow_flag(),
-    )
     try:
-        validate_directory(home_fd, private=False)
-        config_fd = open_child_directory(
-            home_fd, ".config", create=create, private=False
+        return open_user_directory(
+            Path(raw_home) / ".config/omarchy/one-bit-bureau",
+            create=create,
+            private=True,
         )
-    finally:
-        os.close(home_fd)
-    try:
-        omarchy_fd = open_child_directory(
-            config_fd, "omarchy", create=create, private=False
-        )
-    finally:
-        os.close(config_fd)
-    try:
-        state_fd = open_child_directory(
-            omarchy_fd, "one-bit-bureau", create=create, private=True
-        )
-    finally:
-        os.close(omarchy_fd)
-    return state_fd
+    except SecureIOError as error:
+        raise SystemExit(str(error)) from error
 
 
 def read_bytes(directory_fd: int, name: str, byte_limit: int) -> bytes | None:
-    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | nofollow_flag()
     try:
-        descriptor = os.open(name, flags, dir_fd=directory_fd)
-    except FileNotFoundError:
+        return read_bytes_at(
+            directory_fd,
+            name,
+            byte_limit,
+            missing_ok=True,
+            label="shell state",
+        )
+    except SecureIOError:
         return None
-    except OSError:
-        return None
-    try:
-        metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_uid != os.getuid()
-            or metadata.st_nlink != 1
-            or metadata.st_size > byte_limit
-        ):
-            return None
-        chunks: list[bytes] = []
-        total = 0
-        while True:
-            chunk = os.read(descriptor, min(65_536, byte_limit + 1 - total))
-            if not chunk:
-                return b"".join(chunks)
-            total += len(chunk)
-            if total > byte_limit:
-                return None
-            chunks.append(chunk)
-    except (BlockingIOError, OSError):
-        return None
-    finally:
-        os.close(descriptor)
 
 
 def read_json(directory_fd: int, kind: str, fallback: object) -> object:
@@ -291,47 +234,19 @@ def parse_argument_json(raw: str, byte_limit: int) -> object:
         raise SystemExit("state input is not valid JSON") from error
 
 
-def validate_existing_target(directory_fd: int, name: str) -> None:
-    try:
-        metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-    except FileNotFoundError:
-        return
-    if (
-        not stat.S_ISREG(metadata.st_mode)
-        or metadata.st_uid != os.getuid()
-        or metadata.st_nlink != 1
-    ):
-        raise SystemExit("state target must be a private regular file")
-
-
 def atomic_write(directory_fd: int, kind: str, encoded: bytes) -> None:
     name, byte_limit = FILES[kind]
-    if len(encoded) > byte_limit:
-        raise SystemExit("state exceeds its byte budget")
-    validate_existing_target(directory_fd, name)
-    temporary = f".{name}.tmp-{os.getpid()}-{secrets.token_hex(8)}"
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | nofollow_flag()
-    descriptor = os.open(temporary, flags, 0o600, dir_fd=directory_fd)
     try:
-        view = memoryview(encoded)
-        while view:
-            written = os.write(descriptor, view)
-            view = view[written:]
-        os.fsync(descriptor)
-        metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
-            raise SystemExit("temporary state file failed validation")
-    finally:
-        os.close(descriptor)
-    try:
-        validate_existing_target(directory_fd, name)
-        os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
-        os.fsync(directory_fd)
-    finally:
-        try:
-            os.unlink(temporary, dir_fd=directory_fd)
-        except FileNotFoundError:
-            pass
+        atomic_write_at(
+            directory_fd,
+            name,
+            encoded,
+            mode=0o600,
+            byte_limit=byte_limit,
+            label="shell state",
+        )
+    except SecureIOError as error:
+        raise SystemExit(str(error)) from error
 
 
 def update_icon_mapping(
@@ -381,7 +296,7 @@ def list_icons(directory_fd: int) -> None:
 
 def main() -> None:
     signal.signal(signal.SIGALRM, deadline)
-    signal.alarm(3)
+    signal.alarm(STATE_DEADLINE_SECONDS)
     command = sys.argv[1] if len(sys.argv) > 1 else ""
     directory_fd = open_state_directory(create=True)
     try:

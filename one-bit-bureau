@@ -4,7 +4,7 @@ set -euo pipefail
 
 PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
-STATE_FILE="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
+SECURE_IO="$PLUGIN_DIR/scripts/one_bit_bureau_secure_io.py"
 
 usage() {
   cat <<'EOF'
@@ -28,10 +28,13 @@ EOF
 }
 
 require_install() {
-  [[ -f $PLUGIN_DIR/manifest.json && -f $STATE_FILE ]] || {
+  if [[ -f $PLUGIN_DIR/manifest.json && ! -L $PLUGIN_DIR/manifest.json && -f $SECURE_IO && ! -L $SECURE_IO ]] &&
+    python3 "$SECURE_IO" install-state exists >/dev/null 2>&1; then
+    return 0
+  else
     echo "one-bit-bureau: One-Bit Bureau is not fully installed" >&2
     exit 1
-  }
+  fi
 }
 
 command_name="${1:-}"
@@ -41,7 +44,7 @@ case "$command_name" in
     ;;
   status)
     require_install
-    jq '{product, pluginId, theme, installed, previous}' "$STATE_FILE"
+    python3 "$SECURE_IO" install-state read | jq '{product, pluginId, theme, installed, previous}'
     ;;
   doctor)
     shift

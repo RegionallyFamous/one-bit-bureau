@@ -6,25 +6,17 @@ PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
 PRODUCT_NAME="One-Bit Bureau"
 THEME_NAME="one-bit-bureau"
 EXPECTED_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+SECURE_IO="$SCRIPT_DIR/scripts/one_bit_bureau_secure_io.py"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
-STATE_FILE="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
 THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
 THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
 ASSUME_YES=0
 RECONCILE=0
-COMMAND_TARGET="$HOME/.local/bin/one-bit-bureau"
 
 fail() {
   echo "one-bit-bureau update: $*" >&2
   exit 1
-}
-
-hash_file() {
-  if command -v sha256sum >/dev/null; then
-    sha256sum "$1" | awk '{print $1}'
-  else
-    shasum -a 256 "$1" | awk '{print $1}'
-  fi
 }
 
 theme_source_commands_available() {
@@ -50,8 +42,12 @@ done
 
 command -v omarchy >/dev/null || fail "Omarchy is required"
 command -v jq >/dev/null || fail "jq is required"
+command -v python3 >/dev/null || fail "Python 3 is required"
+[[ -f $SECURE_IO && ! -L $SECURE_IO ]] || fail "secure transaction helper is missing or unsafe"
 [[ -d $PLUGIN_DIR/.git ]] || fail "this installation is not Git-managed; reinstall from the public repository"
-[[ -f $STATE_FILE && ! -L $STATE_FILE ]] || fail "ownership record is missing or unsafe"
+state_snapshot=$(python3 "$SECURE_IO" install-state snapshot) || fail "ownership record is missing, unsafe, or over budget"
+state_json=$(jq -ce '.record' <<<"$state_snapshot") || fail "ownership snapshot is invalid"
+state_record_hash=$(jq -er '.recordHash | select(test("^[a-f0-9]{64}$"))' <<<"$state_snapshot") || fail "ownership snapshot hash is invalid"
 jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NAME" --arg repo "$EXPECTED_REPO_URL" '
   .schemaVersion == 3 and
   .pluginId == $id and
@@ -73,14 +69,14 @@ jq -e --arg id "$PLUGIN_ID" --arg product "$PRODUCT_NAME" --arg theme "$THEME_NA
       .installed.themeSourceId == ""
     end
   ) and
-  (.installed.commandHash | type == "string" and length > 0)
-' "$STATE_FILE" >/dev/null || fail "ownership record is invalid or is not an owned public installation"
+  (.installed.commandHash | type == "string" and test("^[a-f0-9]{64}$"))
+' <<<"$state_json" >/dev/null || fail "ownership record is invalid or is not an owned public installation"
 
-theme_install_mode=$(jq -er '.installed.themeInstallMode' "$STATE_FILE")
-source_id=$(jq -er '.installed.themeSourceId' "$STATE_FILE")
-source_url=$(jq -er '.installed.themeSourceUrl' "$STATE_FILE")
-recorded_plugin_commit=$(jq -er '.installed.pluginCommit' "$STATE_FILE")
-recorded_theme_commit=$(jq -er '.installed.themeSourceCommit' "$STATE_FILE")
+theme_install_mode=$(jq -er '.installed.themeInstallMode' <<<"$state_json")
+source_id=$(jq -er '.installed.themeSourceId' <<<"$state_json")
+source_url=$(jq -er '.installed.themeSourceUrl' <<<"$state_json")
+recorded_plugin_commit=$(jq -er '.installed.pluginCommit' <<<"$state_json")
+recorded_theme_commit=$(jq -er '.installed.themeSourceCommit' <<<"$state_json")
 actual_plugin_url=$(git -C "$PLUGIN_DIR" config --get remote.origin.url 2>/dev/null || true)
 [[ $actual_plugin_url == "$EXPECTED_REPO_URL" ]] || fail "plugin checkout origin is not the canonical One-Bit Bureau repository"
 [[ -z $(git -C "$PLUGIN_DIR" status --porcelain) ]] || fail "plugin checkout has local changes; commit or remove them before updating"
@@ -131,22 +127,14 @@ if [[ $active_theme == "$THEME_NAME" ]]; then
   omarchy theme set "$THEME_NAME"
 fi
 
-old_command_hash=$(jq -r '.installed.commandHash' "$STATE_FILE")
-new_command_hash="$old_command_hash"
-if [[ -f $COMMAND_TARGET && $(hash_file "$COMMAND_TARGET") == "$old_command_hash" ]]; then
-  command_temporary="$COMMAND_TARGET.tmp"
-  cp -- "$PLUGIN_DIR/one-bit-bureau" "$command_temporary"
-  chmod 755 "$command_temporary"
-  mv "$command_temporary" "$COMMAND_TARGET"
-  new_command_hash=$(hash_file "$COMMAND_TARGET")
-fi
+old_command_hash=$(jq -er '.installed.commandHash' <<<"$state_json")
+new_command_hash=$(python3 "$SECURE_IO" command replace-if-owned --plugin-dir "$PLUGIN_DIR" --expected-hash "$old_command_hash") ||
+  fail "could not safely reconcile the installed command"
 
-temporary="$STATE_FILE.tmp"
 jq --arg pluginCommit "$plugin_commit" --arg themeCommit "$theme_commit" --arg commandHash "$new_command_hash" '
   .installed.pluginCommit = $pluginCommit |
   .installed.themeSourceCommit = $themeCommit |
   .installed.commandHash = $commandHash
-' "$STATE_FILE" >"$temporary"
-mv "$temporary" "$STATE_FILE"
+' <<<"$state_json" | python3 "$SECURE_IO" install-state write --expected-hash "$state_record_hash" >/dev/null
 
 echo "One-Bit Bureau is up to date at $plugin_commit."

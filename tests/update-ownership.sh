@@ -17,7 +17,8 @@ THEME="$TEST_HOME/.config/omarchy/themes/one-bit-bureau"
 LOG="$WORK/omarchy.log"
 SOURCE_API="$WORK/source-api"
 
-mkdir -p "$BIN" "$SOURCE_API/bin" "$PLUGIN/.git" "$(dirname "$STATE")" "$SOURCE/.git" "$SOURCE/themes/one-bit-bureau" "$(dirname "$THEME")"
+mkdir -p "$BIN" "$SOURCE_API/bin" "$PLUGIN/.git" "$PLUGIN/scripts" "$(dirname "$STATE")" "$SOURCE/.git" "$SOURCE/themes/one-bit-bureau" "$(dirname "$THEME")"
+cp "$ROOT/scripts/one_bit_bureau_secure_io.py" "$PLUGIN/scripts/one_bit_bureau_secure_io.py"
 ln -s "$SOURCE/themes/one-bit-bureau" "$THEME"
 for source_command in inspect install update detach; do
   printf '%s\n' '#!/bin/bash' 'exit 0' >"$SOURCE_API/bin/omarchy-theme-source-$source_command"
@@ -51,7 +52,7 @@ write_good_state() {
       themeSourceUrl: $repo,
       themeSourceCommit: "0000000000000000000000000000000000000001",
       themeInstallMode: "source",
-      commandHash: "abc"
+      commandHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   }' >"$STATE"
 }
@@ -71,7 +72,7 @@ write_good_plugin_link_state() {
       themeSourceUrl: $repo,
       themeSourceCommit: "0000000000000000000000000000000000000001",
       themeInstallMode: "plugin-link",
-      commandHash: "abc"
+      commandHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   }' >"$STATE"
 }
@@ -102,6 +103,36 @@ assert_rejected_without_mutation "a mismatched source URL"
 write_good_state
 jq '.themeOwned = false' "$STATE" >"$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 assert_rejected_without_mutation "themeOwned=false"
+
+echo "== update rejects unsafe and over-budget ownership records before mutation"
+rm -f "$STATE"
+printf '%s\n' 'keep' >"$WORK/state-victim"
+ln -s "$WORK/state-victim" "$STATE"
+assert_rejected_without_mutation "a symlinked ownership record"
+[[ $(<"$WORK/state-victim") == "keep" ]]
+
+rm -f "$STATE"
+mkfifo "$STATE"
+assert_rejected_without_mutation "a FIFO ownership record"
+
+rm -f "$STATE"
+python3 - "$STATE" <<'PY'
+import pathlib
+import sys
+pathlib.Path(sys.argv[1]).write_bytes(b"x" * (64 * 1024 + 1))
+PY
+assert_rejected_without_mutation "an oversized ownership record"
+
+python3 - "$STATE" <<'PY'
+import json
+import pathlib
+import sys
+value = "end"
+for _ in range(8):
+    value = {"next": value}
+pathlib.Path(sys.argv[1]).write_text(json.dumps(value), encoding="utf-8")
+PY
+assert_rejected_without_mutation "an over-depth ownership record"
 
 echo "== update verifies the installed theme link belongs to the source"
 write_good_state
@@ -143,6 +174,16 @@ write_good_plugin_link_state
 HOME="$TEST_HOME" TEST_LOG="$LOG" PATH="$BIN:$PATH" bash "$ROOT/update" --reconcile >"$WORK/plugin-link-update.log"
 [[ ! -s $LOG ]]
 jq -e '.installed.themeInstallMode == "plugin-link" and .installed.pluginCommit == .installed.themeSourceCommit' "$STATE" >/dev/null
+
+echo "== update preserves an unsafe command target without following it"
+mkdir -p "$TEST_HOME/.local/bin"
+printf '%s\n' 'keep command victim' >"$WORK/command-victim"
+ln -s "$WORK/command-victim" "$TEST_HOME/.local/bin/one-bit-bureau"
+write_good_plugin_link_state
+HOME="$TEST_HOME" TEST_LOG="$LOG" PATH="$BIN:$PATH" bash "$ROOT/update" --reconcile >"$WORK/plugin-link-command-symlink.log"
+[[ $(<"$WORK/command-victim") == "keep command victim" ]]
+[[ -L $TEST_HOME/.local/bin/one-bit-bureau ]]
+rm "$TEST_HOME/.local/bin/one-bit-bureau"
 
 echo "== plugin-linked update delegates once and never invokes a theme updater"
 cp "$ROOT/update" "$PLUGIN/update"

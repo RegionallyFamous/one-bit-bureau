@@ -19,6 +19,7 @@ mkdir -p "$BIN" "$PLUGIN/scripts" "$PLUGIN/app-chrome/gtk-3.0" "$PLUGIN/componen
 cp "$ROOT/one-bit-bureau" "$PLUGIN/one-bit-bureau"
 cp "$ROOT/scripts/one-bit-bureau-doctor" "$PLUGIN/scripts/one-bit-bureau-doctor"
 cp "$ROOT/scripts/one-bit-bureau-app-chrome.py" "$PLUGIN/scripts/one-bit-bureau-app-chrome.py"
+cp "$ROOT/scripts/one_bit_bureau_secure_io.py" "$PLUGIN/scripts/one_bit_bureau_secure_io.py"
 cp "$ROOT/app-chrome/index.theme" "$PLUGIN/app-chrome/index.theme"
 cp "$ROOT/app-chrome/gtk-3.0/gtk.css" "$PLUGIN/app-chrome/gtk-3.0/gtk.css"
 cp "$ROOT/manifest.json" "$PLUGIN/manifest.json"
@@ -145,30 +146,25 @@ fi
 printf '%s\n' '[Settings]' 'gtk-theme-name=Adwaita' >"$GTK_SETTINGS"
 
 echo "== partial theme creation is self-cleaning"
-PYTHONDONTWRITEBYTECODE=1 python3 - "$PLUGIN/scripts/one-bit-bureau-app-chrome.py" "$WORK/partial-theme" <<'PY'
+PYTHONDONTWRITEBYTECODE=1 HOME="$HOME_DIR" python3 - "$PLUGIN/scripts/one-bit-bureau-app-chrome.py" "$PLUGIN" <<'PY'
 import importlib.util
 import sys
 from pathlib import Path
 
-source, root = map(Path, sys.argv[1:])
+source, plugin = map(Path, sys.argv[1:])
 spec = importlib.util.spec_from_file_location("app_chrome", source)
 module = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(module)
-index = root / "index.theme"
-css = root / "gtk.css"
-index.parent.mkdir(parents=True)
-index.write_text("[Desktop Entry]\n", encoding="utf-8")
-css.write_text("* {}\n", encoding="utf-8")
-original = module.atomic_write
-def fail_css(path, payload, mode=0o600):
-    if path.name == "gtk.css":
+original = module.secure.atomic_write_at
+def fail_css(directory_fd, name, payload, **kwargs):
+    if name == "gtk.css":
         raise module.ChromeError("simulated CSS write failure")
-    return original(path, payload, mode)
-module.atomic_write = fail_css
-destination = root / "One-Bit-Bureau-GTK3"
+    return original(directory_fd, name, payload, **kwargs)
+module.secure.atomic_write_at = fail_css
+destination = module.paths(plugin)["theme"]
 try:
-    module.ensure_theme(index, css, destination)
+    module.ensure_theme(plugin)
 except module.ChromeError:
     pass
 else:
@@ -208,6 +204,40 @@ assert not location["state"].exists()
 assert not location["backup"].exists()
 assert not location["theme"].exists()
 PY
+
+echo "== app-chrome rejects symlinked ownership and settings paths"
+printf '%s\n' 'state victim' >"$WORK/app-state-victim"
+ln -s "$WORK/app-state-victim" "$APP_STATE"
+if run app-chrome on >/dev/null 2>&1; then
+  echo "app-chrome accepted a symlinked ownership record" >&2
+  exit 1
+fi
+[[ $(<"$WORK/app-state-victim") == "state victim" ]]
+rm "$APP_STATE"
+
+printf '%s\n' 'settings victim' >"$WORK/settings-victim"
+rm "$GTK_SETTINGS"
+ln -s "$WORK/settings-victim" "$GTK_SETTINGS"
+if run app-chrome on >/dev/null 2>&1; then
+  echo "app-chrome accepted symlinked GTK settings" >&2
+  exit 1
+fi
+[[ $(<"$WORK/settings-victim") == "settings victim" ]]
+[[ ! -e $APP_STATE && ! -e $GTK_THEME ]]
+rm "$GTK_SETTINGS"
+printf '%s\n' '[Settings]' 'gtk-theme-name=Adwaita' >"$GTK_SETTINGS"
+
+echo "== app-chrome bounds a modified GTK theme tree"
+run app-chrome on >/dev/null
+for index in $(seq 1 31); do
+  : >"$GTK_THEME/extra-$index"
+done
+run app-chrome status >"$WORK/status-over-budget-theme.log"
+grep -Fq 'theme: modified or missing' "$WORK/status-over-budget-theme.log"
+run app-chrome off >"$WORK/off-over-budget-theme.log" 2>"$WORK/off-over-budget-theme.err"
+[[ -d $GTK_THEME && ! -e $APP_STATE ]]
+grep -Fq 'preserved modified GTK theme' "$WORK/off-over-budget-theme.err"
+rm -rf "$GTK_THEME"
 
 echo "== status rejects invalid backup invariants"
 run app-chrome on

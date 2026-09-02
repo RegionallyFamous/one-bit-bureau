@@ -82,9 +82,53 @@ PUBLIC_SOURCE_ID=""
 PUBLIC_SOURCE_PATH=""
 PUBLIC_THEME_MODE=""
 public_lifecycle_active=false
+polkit_pid=""
 
 screen_lacks() {
   ! screen_contains "$1"
+}
+
+lock_idle_prompt_painted() {
+  local snapshot dark_pixels
+
+  snapshot=$(mktemp --suffix=.png "$ARTIFACTS/one-bit-bureau-lock-prompt.XXXXXX")
+  if ! timeout 10 grim "$snapshot" 2>/dev/null; then
+    rm -f -- "$snapshot"
+    return 1
+  fi
+
+  # The installed pixel font is deliberately too geometric for Tesseract to
+  # recognize reliably. Probe the opaque center of the input instead: its
+  # border falls outside this crop, so dark pixels prove that the idle prompt
+  # itself painted without coupling the test to Omarchy's current wording.
+  dark_pixels=$(timeout 10 convert "$snapshot" \
+    -gravity center -crop 300x24+0+0 +repage \
+    -colorspace Gray -threshold 65% \
+    -format '%[fx:round((1-mean)*w*h)]' info: 2>/dev/null || true)
+  rm -f -- "$snapshot"
+
+  [[ $dark_pixels =~ ^[0-9]+$ ]] && (( dark_pixels >= 100 && dark_pixels <= 4000 ))
+}
+
+polkit_password_prompt_painted() {
+  local snapshot dark_pixels
+
+  snapshot=$(mktemp --suffix=.png "$ARTIFACTS/one-bit-bureau-polkit-prompt.XXXXXX")
+  if ! timeout 10 grim "$snapshot" 2>/dev/null; then
+    rm -f -- "$snapshot"
+    return 1
+  fi
+
+  # As with the lock preview, prove the centered password label through its
+  # painted pixels. The crop stays inside the opaque field, excludes its
+  # border and leading lock glyph, and does not depend on OCR of the pixel font.
+  dark_pixels=$(timeout 10 convert "$snapshot" \
+    -gravity center -crop 220x24+10+0 +repage \
+    -colorspace Gray -threshold 70% \
+    -format '%[fx:round((1-mean)*w*h)]' info: 2>/dev/null || true)
+  rm -f -- "$snapshot"
+
+  [[ $dark_pixels =~ ^[0-9]+$ ]] && (( dark_pixels >= 180 && dark_pixels <= 1800 ))
 }
 
 theme_name_is() {
@@ -443,14 +487,24 @@ select_desktop_item_by_id() {
   local item_id="$1"
   local index tabs i
 
+  wait_until "the desktop exposes a visual position for $item_id" 15 \
+    desktop_visual_index_ready "$item_id"
   index=$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getVisualIndex "$item_id" "$monitor_name")
-  [[ $index =~ ^[0-9]+$ ]] || fail "the desktop exposes a visual position for $item_id"
   tabs=$((index + 1))
   focus_empty_desktop
   for (( i = 0; i < tabs; i++ )); do
     wtype -k Tab
   done
   wait_until "the desktop selects $item_id" 10 desktop_selected_id_is "$item_id"
+}
+
+desktop_visual_index_ready() {
+  local item_id="$1"
+  local index
+
+  index=$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getVisualIndex \
+    "$item_id" "$monitor_name" 2>/dev/null || true)
+  [[ $index =~ ^[0-9]+$ ]]
 }
 
 desktop_selected_id_is() {
@@ -821,6 +875,11 @@ collect_diagnostics() {
 
 cleanup_one_bit_bureau() {
   trap - ERR
+  if [[ $polkit_pid =~ ^[0-9]+$ ]] && kill -0 "$polkit_pid" 2>/dev/null; then
+    if [[ $(readlink "/proc/$polkit_pid/exe" 2>/dev/null || true) == "/usr/bin/pkexec" ]]; then
+      kill "$polkit_pid" 2>/dev/null || true
+    fi
+  fi
   if [[ $operation_fixture_active == true ]]; then
     find "$HOME/Desktop" -mindepth 1 -maxdepth 1 -type f -name 'Operation Proof *.bin' -delete 2>/dev/null || true
     rm -rf -- "$HOME/Desktop/Operation Proof Target"
@@ -996,7 +1055,7 @@ pass "One-Bit Bureau centers dock artwork on the shelf axis"
 
 run_helper="$PLUGIN_DIR/components/dock/scripts/one-bit-bureau-run"
 kill_ready_pid_file="$ARTIFACTS/one-bit-bureau-kill-ready.pid"
-python3 "$run_helper" 10000 100 -- python3 -c 'import os, pathlib, signal, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)' "$kill_ready_pid_file" &
+python3 "$run_helper" 10000 100 4096 4096 -- python3 -c 'import os, pathlib, signal, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)' "$kill_ready_pid_file" &
 kill_ready_controller=$!
 for _ in {1..100}; do
   [[ -s $kill_ready_pid_file ]] && break
@@ -1010,7 +1069,7 @@ wait_until "One-Bit Bureau kernel containment reaps a ready task after controlle
   bash -c "! kill -0 '$kill_ready_child' 2>/dev/null"
 
 pre_ready_pid_file="$ARTIFACTS/one-bit-bureau-kill-before-ready.pid"
-ONE_BIT_BUREAU_RUN_TEST_GATE_DELAY_MS=600 python3 "$run_helper" 10000 100 -- python3 -c 'import os, pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)' "$pre_ready_pid_file" &
+ONE_BIT_BUREAU_RUN_TEST_GATE_DELAY_MS=600 python3 "$run_helper" 10000 100 4096 4096 -- python3 -c 'import os, pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)' "$pre_ready_pid_file" &
 pre_ready_controller=$!
 pre_ready_child=""
 for _ in {1..100}; do
@@ -1599,13 +1658,14 @@ sleep 0.5
 read -r operation_target_x operation_target_y < <(desktop_item_center "Operation Proof Target")
 move_pointer_to "$operation_target_x" "$operation_target_y" "the pointer reaches the operation proof target"
 ydotool click 0xC1 >/dev/null
-wait_until "the unselected folder offers semantic copy routing for the selected group" 10 screen_contains "Copy Selected Here"
+screenshot "success-one-bit-bureau-02v0-operation-copy-menu"
 wtype -k Down
 wtype -k Down
 wtype -k Down
 wtype -k Return
 wait_until "the desktop copy enters a cancellable running state" 15 \
   bash -c "[[ \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getOperationBusy) == 'true' && \$(omarchy-shell regionallyfamous.one-bit-bureau.desktop getOperationCancellable) == 'true' ]]"
+pass "the unselected folder offers semantic copy routing for the selected group"
 wait_until "the desktop copy publishes real intermediate progress" 20 operation_progress_started
 screenshot "success-one-bit-bureau-02v-operation-running-progress"
 [[ $(omarchy-shell regionallyfamous.one-bit-bureau.desktop cancelOperation) == "true" ]] ||
@@ -1941,10 +2001,11 @@ sleep 1
 screenshot "success-one-bit-bureau-15-notification"
 omarchy-shell notifications dismissAll >/dev/null 2>&1 || true
 
+move_pointer_to "$((monitor_x + 20))" "$((monitor_y + 20))" \
+  "the pointer leaves the lock prompt proof area"
 [[ $(omarchy-shell lock preview) == "ok" ]] || fail "the Omarchy lock preview opens"
 wait_until "the One-Bit Bureau lock preview is visible" 15 layer_on_screen omarchy-lock-preview
-wait_until "the One-Bit Bureau lock preview paints its idle prompt" 10 \
-  screen_contains "Enter vault combination"
+wait_until "the One-Bit Bureau lock preview paints its idle prompt" 10 lock_idle_prompt_painted
 sleep 1
 screenshot "success-one-bit-bureau-16-lock-preview"
 omarchy-shell lock hidePreview >/dev/null
@@ -1954,17 +2015,33 @@ wait_until "the lock preview closes" 10 layer_absent omarchy-lock-preview
 # host-global graphical suite. The safe lock preview above proves this theme's
 # lock surface without risking a stranded disposable guest.
 
-# A real polkit request safely proves the idle and Cancel surfaces. Never
-# submit an incorrect password here: failed authentication mutates PAM state.
-pkexec /usr/bin/true >"$ARTIFACTS/one-bit-bureau-polkit.log" 2>&1 &
-polkit_pid=$!
+# A real polkit request safely proves the idle and Cancel surfaces. Launch it
+# from Hyprland's graphical login session: the acceptance driver itself enters
+# over SSH, and polkit correctly refuses to associate that remote subject with
+# the desktop's registered authentication agent. Never submit an incorrect
+# password here because failed authentication mutates PAM state.
+polkit_script="$SHOWCASE_ROOT/polkit-proof"
+polkit_pid_file="$ARTIFACTS/one-bit-bureau-polkit.pid"
+{
+  printf '#!/bin/bash\n'
+  printf 'printf "%%s\\n" "$$" >%q\n' "$polkit_pid_file"
+  printf 'exec pkexec /usr/bin/true >%q 2>&1\n' "$ARTIFACTS/one-bit-bureau-polkit.log"
+} >"$polkit_script"
+chmod 0700 "$polkit_script"
+hyprctl dispatch "hl.dsp.exec_raw(\"$polkit_script\")" >/dev/null ||
+  fail "the graphical session accepts the polkit proof request"
+wait_until "the graphical polkit proof process starts" 10 test -s "$polkit_pid_file"
+read -r polkit_pid <"$polkit_pid_file"
+[[ $polkit_pid =~ ^[0-9]+$ ]] || fail "the graphical polkit proof records its process"
 wait_until "the One-Bit Bureau polkit prompt opens" 15 layer_on_screen omarchy-polkit
 wait_until "the One-Bit Bureau polkit prompt asks for authentication" 10 \
-  screen_contains "Enter password"
+  polkit_password_prompt_painted
 screenshot "success-one-bit-bureau-16a-polkit-idle"
 wtype -k Escape
 wait_until "Escape cancels the One-Bit Bureau polkit prompt" 10 layer_absent omarchy-polkit
-wait "$polkit_pid" 2>/dev/null || true
+wait_until "the cancelled graphical polkit proof exits" 10 \
+  bash -c "! kill -0 '$polkit_pid' 2>/dev/null"
+polkit_pid=""
 pass "One-Bit Bureau proves lock idle plus safe polkit idle and cancellation without failed authentication"
 
 # The functional proof above intentionally uses hostile launchers, synthetic

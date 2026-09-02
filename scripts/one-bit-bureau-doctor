@@ -6,11 +6,10 @@ PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
 THEME_NAME="one-bit-bureau"
 EXPECTED_REPO_URL="https://github.com/RegionallyFamous/one-bit-bureau.git"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
-STATE_FILE="$HOME/.local/state/omarchy/plugins/$PLUGIN_ID/install-state.json"
+SECURE_IO="$PLUGIN_DIR/scripts/one_bit_bureau_secure_io.py"
 THEME_TARGET="$HOME/.config/omarchy/themes/$THEME_NAME"
 THEME_SOURCES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/theme-sources"
 THEME_STATE="$HOME/.local/state/omarchy/current/theme.name"
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 repair=""
 if (( $# > 0 )); then
@@ -66,7 +65,11 @@ fi
 state_valid=false
 theme_install_mode=""
 theme_source_id=""
-if regular_file "$STATE_FILE" && command -v jq >/dev/null; then
+state_json=""
+if regular_file "$SECURE_IO" && command -v python3 >/dev/null; then
+  state_json=$(python3 "$SECURE_IO" install-state read 2>/dev/null || true)
+fi
+if [[ -n $state_json ]] && command -v jq >/dev/null; then
   if jq -e --arg id "$PLUGIN_ID" --arg product "One-Bit Bureau" --arg theme "$THEME_NAME" --arg repo "$EXPECTED_REPO_URL" '
     .schemaVersion == 3 and
     .pluginId == $id and .product == $product and .theme == $theme and
@@ -97,10 +100,10 @@ if regular_file "$STATE_FILE" && command -v jq >/dev/null; then
         .installed.themeSourceId == "" and .installed.themeSourceUrl == "" and .installed.themeSourceCommit == ""
       end
     )
-  ' "$STATE_FILE" >/dev/null; then
+  ' <<<"$state_json" >/dev/null; then
     state_valid=true
-    theme_install_mode=$(jq -r '.installed.themeInstallMode' "$STATE_FILE")
-    theme_source_id=$(jq -r '.installed.themeSourceId // ""' "$STATE_FILE")
+    theme_install_mode=$(jq -r '.installed.themeInstallMode' <<<"$state_json")
+    theme_source_id=$(jq -r '.installed.themeSourceId // ""' <<<"$state_json")
     pass "setup ownership record is structurally valid"
   else
     warn "setup ownership record is corrupt or does not belong to this plugin; repair: inspect it, then reinstall rather than deleting unowned files"
