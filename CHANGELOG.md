@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.4 — 2026-09-02
+
+### Stable descriptor-relative tree inspection
+
+- Enumerate owned GTK theme trees through a fresh descriptor-relative directory handle on every bounded pass, so platform-specific directory cursor state cannot produce an empty or incomplete ownership hash.
+- Stream directory entries behind a hard entry-count ceiling before sorting, while preserving owner, mode, identity, file-count, directory-count, byte, and depth validation.
+- Added a regression proving that hashing and verified removal remain correct after the caller's directory cursor has been exhausted.
+
+### Release verification
+
+- Reproduced the prior failure in a real x86_64 Omarchy VM, then verified stable recorded, immediate, delayed, and post-status GTK tree hashes plus exact rollback with the corrected primitive.
+
 ## 1.2.3 — 2026-09-02
 
 ### Descriptor-bound lifecycle transactions

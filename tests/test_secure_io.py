@@ -222,6 +222,30 @@ class SecureIOTest(unittest.TestCase):
         finally:
             os.close(parent_fd)
 
+    def test_tree_hash_and_removal_ignore_an_exhausted_caller_cursor(self) -> None:
+        trees = self.home / "trees"
+        trees.mkdir(mode=0o700)
+        owned = trees / "owned"
+        child = owned / "child"
+        child.mkdir(parents=True, mode=0o700)
+        (owned / "root-file").write_bytes(b"root")
+        (child / "nested-file").write_bytes(b"nested")
+
+        parent_fd = secure.open_user_directory(trees, create=False)
+        owned_fd = secure.open_child_directory(parent_fd, "owned", create=False)
+        try:
+            expected = secure.tree_hash_fd(owned_fd)
+            os.listdir(owned_fd)
+            self.assertEqual(secure.tree_hash_fd(owned_fd), expected)
+        finally:
+            os.close(owned_fd)
+
+        try:
+            self.assertTrue(secure.remove_tree_at(parent_fd, "owned", expected_hash=expected))
+            self.assertFalse(owned.exists())
+        finally:
+            os.close(parent_fd)
+
 
 if __name__ == "__main__":
     unittest.main()

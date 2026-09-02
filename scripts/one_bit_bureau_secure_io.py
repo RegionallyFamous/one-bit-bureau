@@ -29,6 +29,7 @@ TREE_MAX_BYTES = 1024 * 1024
 TREE_MAX_FILES = 32
 TREE_MAX_DIRECTORIES = 8
 TREE_MAX_DEPTH = 3
+TREE_MAX_ENTRIES = TREE_MAX_FILES + TREE_MAX_DIRECTORIES
 
 
 class SecureIOError(RuntimeError):
@@ -229,6 +230,33 @@ def _entry_identity(directory_fd: int, name: str) -> tuple[int, int] | None:
     except FileNotFoundError:
         return None
     return metadata.st_dev, metadata.st_ino
+
+
+def _bounded_directory_names(directory_fd: int) -> list[str]:
+    """Enumerate through a fresh descriptor so a caller's directory cursor is irrelevant."""
+    expected = validate_directory(directory_fd)
+    try:
+        listing_fd = os.open(".", _directory_flags(), dir_fd=directory_fd)
+    except OSError as error:
+        raise SecureIOError(f"could not open owned tree for enumeration: {error}") from error
+    try:
+        current = validate_directory(listing_fd)
+        if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
+            raise SecureIOError("owned tree changed before enumeration")
+        names: list[str] = []
+        try:
+            with os.scandir(listing_fd) as entries:
+                for entry in entries:
+                    names.append(entry.name)
+                    if len(names) > TREE_MAX_ENTRIES:
+                        raise SecureIOError("tree exceeds its entry-count ceiling")
+        except SecureIOError:
+            raise
+        except OSError as error:
+            raise SecureIOError(f"could not enumerate owned tree: {error}") from error
+        return sorted(names)
+    finally:
+        os.close(listing_fd)
 
 
 def _open_existing_identity(
@@ -454,11 +482,7 @@ def _tree_hash(
 ) -> None:
     if depth > TREE_MAX_DEPTH:
         raise SecureIOError("tree exceeds its depth ceiling")
-    try:
-        names = sorted(os.listdir(directory_fd))
-    except OSError as error:
-        raise SecureIOError(f"could not enumerate owned tree: {error}") from error
-    for name in names:
+    for name in _bounded_directory_names(directory_fd):
         if not name or name in {".", ".."} or "/" in name or "\x00" in name:
             raise SecureIOError("tree contains an invalid entry name")
         relative = f"{prefix}/{name}" if prefix else name
@@ -540,7 +564,7 @@ def create_directory_at(directory_fd: int, name: str, *, mode: int = 0o700) -> i
 def _remove_tree_contents(directory_fd: int, *, depth: int, budget: dict[str, int]) -> None:
     if depth > TREE_MAX_DEPTH:
         raise SecureIOError("tree exceeds its removal depth ceiling")
-    for name in sorted(os.listdir(directory_fd)):
+    for name in _bounded_directory_names(directory_fd):
         metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
         if stat.S_ISDIR(metadata.st_mode):
             budget["directories"] += 1
