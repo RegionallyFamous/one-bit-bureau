@@ -80,6 +80,16 @@ Item {
   property string renamePendingId: ""
   property string renamePendingName: ""
   property string renamePendingScreen: ""
+  property bool desktopActionBusy: false
+  property var desktopActionQueue: []
+  property var activeDesktopAction: null
+  property string desktopActionOutput: ""
+  property string desktopActionErrorOutput: ""
+  property string pendingPositionsContent: ""
+  property bool positionsWritePending: false
+  property int positionsMutationRevision: 0
+  property int positionsReaderRevision: 0
+  property bool inspectTimedOut: false
   property string pendingSelectionPath: ""
   property var layoutUndoSnapshot: null
   property string layoutUndoScreen: ""
@@ -100,20 +110,24 @@ Item {
   readonly property int maxOperationItems: 64
   readonly property int maxListChars: 262144
   readonly property int maxOperationChars: 131072
+  readonly property int maxPositionsChars: 65536
+  readonly property int maxPositionScreens: 16
   readonly property int maxNameLength: 120
   property var pendingTrust: null
   property string pendingTrustScreen: ""
 
   readonly property string home: Quickshell.env("HOME")
-  readonly property string pluginDir: (manifest && manifest.__sourceDir)
-    ? String(manifest.__sourceDir) + "/components/desktop"
-    : (home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/desktop")
+  readonly property string pluginRoot: (manifest && manifest.__sourceDir)
+    ? String(manifest.__sourceDir)
+    : (home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau")
+  readonly property string pluginDir: pluginRoot + "/components/desktop"
   readonly property string indexScript: pluginDir + "/bin/desktop-index"
   readonly property string addScript: pluginDir + "/bin/add-to-desktop"
   readonly property string operationScript: pluginDir + "/bin/desktop-operation"
   readonly property string quickLookScript: pluginDir + "/bin/desktop-quick-look"
   readonly property string hyperlinkScript: home + "/.local/bin/create-hyperlink"
-  readonly property string positionsPath: home + "/.config/omarchy/one-bit-bureau/desktop-icon-positions.json"
+  readonly property string runHelperPath: pluginRoot + "/components/dock/scripts/one-bit-bureau-run"
+  readonly property string stateHelperPath: pluginRoot + "/components/dock/scripts/one-bit-bureau-state"
   readonly property string pluginId: String((root.manifest && root.manifest.id) || "io.github.regionallyfamous.one-bit-bureau")
   readonly property var pluginEntry: {
     var config = root.shell && root.shell.shellConfig ? root.shell.shellConfig : null
@@ -233,21 +247,22 @@ Item {
     var currentLocal = !!(current && root.isSelected(current)
       && root.localPath(current.path) && !root.isVirtual(current))
     var hasItems = root.items.length > 0
-    var canTrash = root.selectedPaths(null).length > 0 && !root.operationBusy
+    var actionBusy = root.operationBusy || root.desktopActionBusy
+    var canTrash = root.selectedPaths(null).length > 0 && !actionBusy
     return [
-      { action: "folder", label: "New Folder", enabled: root.desktopEnabled && !root.operationBusy,
+      { action: "folder", label: "New Folder", enabled: root.desktopEnabled && !actionBusy,
         reason: !root.desktopEnabled ? "Desktop files are off."
-          : root.operationBusy ? "Another desktop action is in progress." : "" },
+          : actionBusy ? "Another desktop action is in progress." : "" },
       { action: "quick-look", label: "Quick Look",
-        enabled: currentLocal && !root.quickLookBusy && !root.operationBusy,
+        enabled: currentLocal && !root.quickLookBusy && !actionBusy,
         reason: !currentLocal ? "Select a local item."
-          : root.operationBusy ? "Another desktop action is in progress."
+          : actionBusy ? "Another desktop action is in progress."
           : root.quickLookBusy ? "Quick Look is opening." : "" },
       { action: "inspect", label: "Get Info", enabled: singleLocal,
         reason: singleLocal ? "" : "Select exactly one local item." },
-      { action: "rename", label: "Rename", enabled: singleLocal && !root.operationBusy,
+      { action: "rename", label: "Rename", enabled: singleLocal && !actionBusy,
         reason: !singleLocal ? "Select exactly one local item."
-          : root.operationBusy ? "Another desktop action is in progress." : "" },
+          : actionBusy ? "Another desktop action is in progress." : "" },
       { action: "tidy", label: "Tidy Desk", enabled: hasItems,
         reason: hasItems ? "" : "The Desk is empty." },
       { action: "arrange-heading", label: "Arrange By", enabled: false,
@@ -261,7 +276,7 @@ Item {
       { action: "undo-layout", label: "Undo Desk Layout", enabled: root.layoutUndoAvailable,
         reason: root.layoutUndoAvailable ? "" : "No desk layout change to undo." },
       { action: "trash-selected", label: "Move to Trash", enabled: canTrash,
-        reason: canTrash ? "" : root.operationBusy
+        reason: canTrash ? "" : actionBusy
           ? "Another desktop action is in progress." : "Select one or more local items." }
     ]
   }
@@ -351,6 +366,18 @@ Item {
     if (text.length > limit)
       text = text.slice(0, limit)
     return text
+  }
+
+  function boundedCommand(timeoutMs, stdoutBytes, stderrBytes, command) {
+    var args = Array.isArray(command) ? command.slice() : []
+    return [
+      "python3", root.runHelperPath,
+      String(Math.max(50, Math.min(300000, Math.floor(Number(timeoutMs) || 50)))),
+      "250",
+      String(Math.max(0, Math.min(1048576, Math.floor(Number(stdoutBytes) || 0)))),
+      String(Math.max(0, Math.min(1048576, Math.floor(Number(stderrBytes) || 0)))),
+      "--"
+    ].concat(args)
   }
 
   function basename(path) {
@@ -777,14 +804,82 @@ Item {
     }
   }
 
-  function openItem(item) {
+  function queueDesktopAction(kind, command, screenName, successMessage, refreshAfter, timeoutMs, itemId) {
+    if (!Array.isArray(command) || command.length === 0 || root.operationBusy
+        || root.desktopActionBusy || root.activeDesktopAction
+        || root.desktopActionQueue.length > 0) {
+      root.operationMessage = "Another desktop action is still in progress."
+      root.operationIsError = true
+      root.announcement = root.operationMessage
+      return false
+    }
+    var queue = root.desktopActionQueue.slice()
+    if (queue.length >= root.maxOperationItems) {
+      root.setOperationError("Too many desktop actions are already queued.", screenName)
+      return false
+    }
+    queue.push({
+      kind: String(kind || "action"),
+      command: command.slice(),
+      screenName: String(screenName || ""),
+      successMessage: root.plainText(successMessage, 180),
+      refreshAfter: refreshAfter === true,
+      timeoutMs: Math.max(1000, Math.min(300000, Number(timeoutMs) || 15000)),
+      itemId: String(itemId || "")
+    })
+    root.desktopActionQueue = queue
+    root.startNextDesktopAction()
+    return true
+  }
+
+  function startNextDesktopAction() {
+    if (desktopActionProc.running || root.activeDesktopAction || root.desktopActionQueue.length === 0)
+      return
+    var queue = root.desktopActionQueue.slice()
+    var action = queue.shift()
+    root.desktopActionQueue = queue
+    root.activeDesktopAction = action
+    root.desktopActionBusy = true
+    root.desktopActionOutput = ""
+    root.desktopActionErrorOutput = ""
+    desktopActionProc.command = root.boundedCommand(
+      action.timeoutMs, 65536, 8192, action.command)
+    desktopActionProc.running = true
+  }
+
+  function finishDesktopAction(exitCode) {
+    var action = root.activeDesktopAction
+    root.activeDesktopAction = null
+    root.desktopActionBusy = false
+    if (!action) {
+      Qt.callLater(root.startNextDesktopAction)
+      return
+    }
+    if (exitCode === 0) {
+      if ((action.kind === "trust" || action.kind === "trust-open")
+          && root.pendingTrust && String(root.pendingTrust.id || "") === action.itemId)
+        root.clearTrustPrompt()
+      if (action.successMessage)
+        root.announcement = action.successMessage
+      if (action.refreshAfter)
+        Qt.callLater(root.refresh)
+    } else {
+      var reason = root.plainText(root.desktopActionErrorOutput, 240)
+      root.setOperationError(reason || "The desktop action did not complete.", action.screenName)
+    }
+    Qt.callLater(root.startNextDesktopAction)
+  }
+
+  function openItem(item, screenName) {
     if (!item) return
     if (root.isVirtual(item)) {
-      root.performVirtualAction("open", item.id, "")
+      root.performVirtualAction("open", item.id, screenName || "")
       return
     }
     if (!item.path) return
-    Quickshell.execDetached(["/usr/bin/python3", root.indexScript, "--open", item.path])
+    return root.queueDesktopAction("open",
+      ["/usr/bin/python3", root.indexScript, "--open", item.path],
+      screenName, "", false, 15000, item.id)
   }
 
   function openOrConfirm(item, screenName) {
@@ -799,13 +894,13 @@ Item {
       root.pendingTrustScreen = screenName || ""
       return
     }
-    root.openItem(item)
+    root.openItem(item, screenName)
   }
 
   function performVirtualAction(action, itemId, screenName) {
     var verb = String(action || "")
     var item = root.itemById(itemId)
-    if (virtualActionProc.running || root.virtualActionBusy || root.operationBusy) {
+    if (virtualActionProc.running || root.virtualActionBusy || root.operationBusy || root.desktopActionBusy) {
       root.announcement = "Another desktop action is still in progress."
       return false
     }
@@ -826,8 +921,9 @@ Item {
       + (verb === "open" ? "Open" : verb === "unmount" ? "Unmount" : "Eject")
       + " -> " + (root.isTrash(item) ? "Trash" : "Device")
     root.operationIsError = false
-    virtualActionProc.command = ["/usr/bin/python3", root.indexScript,
-      "--virtual-action", verb, "--virtual-id", String(item.virtualId)]
+    virtualActionProc.command = root.boundedCommand(16000, root.maxOperationChars, 8192,
+      ["/usr/bin/python3", root.indexScript,
+       "--virtual-action", verb, "--virtual-id", String(item.virtualId)])
     virtualActionProc.running = true
     virtualActionDeadline.restart()
     return true
@@ -868,16 +964,16 @@ Item {
 
   function allowLaunching(item) {
     if (!item || !item.path) return
-    Quickshell.execDetached(["/usr/bin/python3", root.indexScript, "--trust", item.path])
-    root.clearTrustPrompt()
-    Qt.callLater(root.refresh)
+    return root.queueDesktopAction("trust",
+      ["/usr/bin/python3", root.indexScript, "--trust", item.path],
+      root.pendingTrustScreen, "Launcher trust confirmed", true, 15000, item.id)
   }
 
   function trustAndOpen(item) {
     if (!item || !item.path) return
-    Quickshell.execDetached(["/usr/bin/python3", root.indexScript, "--trust-and-open", item.path])
-    root.clearTrustPrompt()
-    Qt.callLater(root.refresh)
+    return root.queueDesktopAction("trust-open",
+      ["/usr/bin/python3", root.indexScript, "--trust-and-open", item.path],
+      root.pendingTrustScreen, "Launcher trust confirmed and open requested", true, 15000, item.id)
   }
 
   function setOperationError(message, screenName) {
@@ -1005,8 +1101,9 @@ Item {
     root.reserveOutput = ""
     root.reserveErrorOutput = ""
     root.reservationKind = String(kind || "operation")
-    reserveProc.command = ["/usr/bin/python3", root.operationScript,
-      "reserve", command, "--source-count", String(sourceCount)]
+    reserveProc.command = root.boundedCommand(4500, root.maxOperationChars, 8192,
+      ["/usr/bin/python3", root.operationScript,
+       "reserve", command, "--source-count", String(sourceCount)])
     reserveProc.running = true
     reserveDeadline.restart()
   }
@@ -1060,8 +1157,9 @@ Item {
     if (root.reservationKind === "rename") {
       var renameSource = root.operationPendingSources.length > 0
         ? root.operationPendingSources[0] : ""
-      renameProc.command = ["/usr/bin/python3", root.operationScript,
-        "rename", "--operation-id", id, "--name", root.renamePendingName, renameSource]
+      renameProc.command = root.boundedCommand(120000, root.maxOperationChars, 8192,
+        ["/usr/bin/python3", root.operationScript,
+         "rename", "--operation-id", id, "--name", root.renamePendingName, renameSource])
       renameProc.running = true
       renameDeadline.restart()
     } else {
@@ -1073,7 +1171,7 @@ Item {
       }
       for (var i = 0; i < root.operationPendingSources.length; i++)
         cmd.push(root.operationPendingSources[i])
-      operationProc.command = cmd
+      operationProc.command = root.boundedCommand(120000, root.maxOperationChars, 8192, cmd)
       operationProc.running = true
       operationDeadline.restart()
     }
@@ -1122,8 +1220,8 @@ Item {
     root.operationState = "cancelling"
     root.operationMessage = "Cancelling desktop action · "
       + root.operationProcessed + "/" + root.operationTotal
-    cancelProc.command = ["/usr/bin/python3", root.operationScript,
-                          "cancel", root.operationId]
+    cancelProc.command = root.boundedCommand(4500, root.maxOperationChars, 8192,
+      ["/usr/bin/python3", root.operationScript, "cancel", root.operationId])
     cancelProc.running = true
     cancelDeadline.restart()
     return true
@@ -1150,7 +1248,8 @@ Item {
 
   function runOperation(command, sources, destination, screenName) {
     if (reserveProc.running || operationProc.running || renameProc.running
-        || quickLookProc.running || virtualActionProc.running || root.operationBusy) {
+        || quickLookProc.running || virtualActionProc.running || root.operationBusy
+        || root.desktopActionBusy || root.desktopActionQueue.length > 0) {
       root.operationMessage = "Another desktop action is still in progress."
       root.operationIsError = true
       return false
@@ -1216,7 +1315,8 @@ Item {
     root.operationCommand = "undo"
     root.operationBusy = true
     root.operationUndoable = false
-    operationProc.command = ["/usr/bin/python3", root.operationScript, "undo", root.operationId]
+    operationProc.command = root.boundedCommand(120000, root.maxOperationChars, 8192,
+      ["/usr/bin/python3", root.operationScript, "undo", root.operationId])
     operationProc.running = true
     operationDeadline.restart()
   }
@@ -1231,7 +1331,7 @@ Item {
   }
 
   function quickLookSelection(screenName) {
-    if (root.operationBusy || root.virtualActionBusy) {
+    if (root.operationBusy || root.virtualActionBusy || root.desktopActionBusy) {
       root.announcement = "Quick Look is unavailable while a desktop action is in progress."
       return false
     }
@@ -1254,7 +1354,8 @@ Item {
     root.quickLookScreen = String(screenName || "")
     root.quickLookBusy = true
     root.announcement = "Opening Quick Look for " + root.plainText(current.name, 100)
-    quickLookProc.command = ["/usr/bin/python3", root.quickLookScript, path]
+    quickLookProc.command = root.boundedCommand(9000, root.maxOperationChars, 8192,
+      ["/usr/bin/python3", root.quickLookScript, path])
     quickLookProc.running = true
     quickLookDeadline.restart()
     return true
@@ -1271,7 +1372,7 @@ Item {
   }
 
   function requestRename(itemId, newName, screenName) {
-    if (renameProc.running || root.renamePendingId !== "" || root.operationBusy) {
+    if (renameProc.running || root.renamePendingId !== "" || root.operationBusy || root.desktopActionBusy) {
       root.renameFinished(false, "Another desktop action is still in progress.", "", String(screenName || ""))
       return false
     }
@@ -1378,6 +1479,8 @@ Item {
     if (values.length === 0)
       return false
     var next = JSON.parse(JSON.stringify(root.positions || {}))
+    if (!next[screen] && Object.keys(next).length >= root.maxPositionScreens)
+      return false
     var current = next[screen] && typeof next[screen] === "object" ? next[screen] : ({})
     root.layoutUndoSnapshot = JSON.parse(JSON.stringify(current))
     root.layoutUndoScreen = screen
@@ -1444,7 +1547,8 @@ Item {
 
   function revealItem(item) {
     if (item && item.path)
-      Quickshell.execDetached(["nautilus", "--select", item.path])
+      root.queueDesktopAction("reveal", ["nautilus", "--select", item.path],
+        root.inspectorScreen, "Opened Files", false, 15000, item.id)
     else
       root.openDesktopFolder()
   }
@@ -1454,38 +1558,40 @@ Item {
       root.setOperationError("Desktop files are off. Choose a Desktop folder in your XDG user-directory settings.")
       return
     }
-    Quickshell.execDetached([
-      "bash", "-lc",
-      "d=" + Util.shellQuote(root.desktopPath) + "; " +
-      "n='New Folder'; p=\"$d/$n\"; i=2; " +
-      "while [ -e \"$p\" ]; do p=\"$d/$n $i\"; i=$((i+1)); done; " +
-      "mkdir -p \"$p\""
-    ])
-    Qt.callLater(root.refresh)
+    root.queueDesktopAction("new-folder",
+      ["/usr/bin/python3", root.indexScript, "--new-folder"],
+      root.deskMenuScreen, "New Folder created", true, 15000, "")
   }
 
   function newShortcut() {
-    Quickshell.execDetached([root.hyperlinkScript, "--directory", root.desktopPath])
+    root.queueDesktopAction("new-shortcut",
+      [root.hyperlinkScript, "--directory", root.desktopPath],
+      root.deskMenuScreen, "Shortcut created", true, 300000, "")
   }
 
   function pinApp() {
-    Quickshell.execDetached(["/usr/bin/python3", root.addScript, "--pick-app"])
+    root.queueDesktopAction("pick-app",
+      ["/usr/bin/python3", root.addScript, "--pick-app"],
+      root.deskMenuScreen, "Application added to the Desktop", true, 300000, "")
   }
 
   function addFiles() {
-    Quickshell.execDetached(["/usr/bin/python3", root.addScript, "--pick-files"])
+    root.queueDesktopAction("pick-files",
+      ["/usr/bin/python3", root.addScript, "--pick-files"],
+      root.deskMenuScreen, "Files added to the Desktop", true, 300000, "")
   }
 
   function openDesktopFolder() {
     if (root.desktopEnabled && root.localPath(root.desktopPath))
-      Quickshell.execDetached(["xdg-open", root.desktopPath])
+      root.queueDesktopAction("open-folder", ["xdg-open", root.desktopPath],
+        root.deskMenuScreen, "", false, 15000, "")
   }
 
   function switchWallpaper() {
-    Quickshell.execDetached([
-      "bash", "-lc",
-      "background=$(omarchy-theme-bg-switcher); [[ -n $background ]] && omarchy-theme-bg-set \"$background\""
-    ])
+    root.queueDesktopAction("wallpaper", [
+        "bash", "-lc",
+        "background=$(omarchy-theme-bg-switcher); [[ -n $background ]] && omarchy-theme-bg-set \"$background\""
+      ], root.deskMenuScreen, "Wallpaper updated", false, 300000, "")
   }
 
   function placeUrls(urls, mode) {
@@ -1580,15 +1686,16 @@ Item {
       return
     }
     if (inspectProc.running) {
-      root.inspectPendingId = ""
-      root.inspectPendingScreen = ""
-      inspectProc.running = false
+      root.publishInspector(root.inspectorFallback(item, "Another metadata request is still finishing."), screenName)
+      return
     }
     root.inspectPendingId = String(item.id)
     root.inspectPendingScreen = String(screenName || "")
     root.inspectOutput = ""
     root.inspectErrorOutput = ""
-    inspectProc.command = ["/usr/bin/python3", root.operationScript, "inspect", String(item.path || "")]
+    root.inspectTimedOut = false
+    inspectProc.command = root.boundedCommand(2200, root.maxOperationChars, 8192,
+      ["/usr/bin/python3", root.operationScript, "inspect", String(item.path || "")])
     inspectProc.running = true
     inspectDeadline.restart()
   }
@@ -1617,6 +1724,7 @@ Item {
     root.inspectorScreen = ""
     root.inspectPendingId = ""
     root.inspectPendingScreen = ""
+    root.inspectTimedOut = false
     if (inspectProc.running)
       inspectProc.running = false
     root.inspectorCloseRequested()
@@ -1624,26 +1732,36 @@ Item {
 
   function applyInspectResult(raw, exitCode) {
     inspectDeadline.stop()
-    var item = root.itemById(root.inspectPendingId)
+    var pendingId = root.inspectPendingId
+    var pendingScreen = root.inspectPendingScreen
+    var timedOut = root.inspectTimedOut
+    root.inspectPendingId = ""
+    root.inspectPendingScreen = ""
+    root.inspectTimedOut = false
+    var item = root.itemById(pendingId)
     if (!item) {
-      root.publishInspector(root.inspectorFallback(null, "This desktop item is no longer available."), root.inspectPendingScreen)
+      root.publishInspector(root.inspectorFallback(null, "This desktop item is no longer available."), pendingScreen)
+      return
+    }
+    if (timedOut) {
+      root.publishInspector(root.inspectorFallback(item, "Detailed metadata timed out."), pendingScreen)
       return
     }
     var text = String(raw || "").trim()
     if (!text || text.length > root.maxOperationChars) {
-      root.publishInspector(root.inspectorFallback(item, "Detailed metadata is unavailable."), root.inspectPendingScreen)
+      root.publishInspector(root.inspectorFallback(item, "Detailed metadata is unavailable."), pendingScreen)
       return
     }
     try {
       var data = JSON.parse(text)
       if (!data || data.schemaVersion !== 1 || data.command !== "inspect" || data.ok !== true) {
         var reason = data && data.error ? root.plainText(data.error.message, 220) : "Detailed metadata is unavailable."
-        root.publishInspector(root.inspectorFallback(item, reason), root.inspectPendingScreen)
+        root.publishInspector(root.inspectorFallback(item, reason), pendingScreen)
         return
       }
-      root.publishInspector(root.inspectorPayload(item, data.item, ""), root.inspectPendingScreen)
+      root.publishInspector(root.inspectorPayload(item, data.item, ""), pendingScreen)
     } catch (e) {
-      root.publishInspector(root.inspectorFallback(item, "Detailed metadata is unavailable."), root.inspectPendingScreen)
+      root.publishInspector(root.inspectorFallback(item, "Detailed metadata is unavailable."), pendingScreen)
     }
   }
 
@@ -1751,23 +1869,91 @@ Item {
     }
   }
 
-  function applyPositions(raw) {
+  function applyPositions(raw, revision) {
+    if (revision !== undefined && Number(revision) !== root.positionsMutationRevision)
+      return
+    var text = String(raw || "")
+    if (!text || text.length > root.maxPositionsChars)
+      return
     try {
-      var data = JSON.parse(String(raw || "{}"))
-      root.positions = Util.isPlainObject(data) ? data : ({})
+      var data = JSON.parse(text)
+      if (!Util.isPlainObject(data))
+        return
+      var screens = Object.keys(data)
+      if (screens.length > root.maxPositionScreens)
+        return
+      var shaped = ({})
+      for (var screenIndex = 0; screenIndex < screens.length; screenIndex++) {
+        var screen = String(screens[screenIndex] || "")
+        var rawEntries = data[screen]
+        if (!screen || screen.length > 160 || !Util.isPlainObject(rawEntries))
+          return
+        var ids = Object.keys(rawEntries)
+        if (ids.length > root.maxItems)
+          return
+        var entries = ({})
+        for (var itemIndex = 0; itemIndex < ids.length; itemIndex++) {
+          var itemId = String(ids[itemIndex] || "")
+          var point = rawEntries[itemId]
+          if (!itemId || itemId.length > 255 || !Util.isPlainObject(point)
+              || Object.keys(point).length !== 2
+              || point.x === undefined || point.y === undefined)
+            return
+          var x = Number(point.x)
+          var y = Number(point.y)
+          if (!isFinite(x) || !isFinite(y) || Math.abs(x) > 1000000 || Math.abs(y) > 1000000)
+            return
+          entries[itemId] = { x: Math.round(x), y: Math.round(y) }
+        }
+        shaped[screen] = entries
+      }
+      root.positions = shaped
     } catch (e) {
-      root.positions = ({})
+      // Keep the last known-good bounded positions on malformed input.
     }
   }
 
   function savePositions() {
-    posFile.setText(JSON.stringify(root.positions || {}, null, 2) + "\n")
+    var content = JSON.stringify(root.positions || {})
+    if (!content || content.length > root.maxPositionsChars) {
+      root.setOperationError("Desktop positions exceed their storage budget.")
+      return false
+    }
+    root.positionsMutationRevision += 1
+    root.positionsWritePending = true
+    root.pendingPositionsContent = content
+    root.startPositionsWrite()
+    return true
+  }
+
+  function startPositionsWrite() {
+    if (positionsWriterProcess.running || !root.pendingPositionsContent)
+      return
+    var content = root.pendingPositionsContent
+    root.pendingPositionsContent = ""
+    positionsWriterProcess.command = root.boundedCommand(2200, 0, 4096,
+      ["python3", root.stateHelperPath, "write", "positions", content])
+    positionsWriterProcess.running = true
+  }
+
+  function reloadPositions() {
+    if (positionsReaderProcess.running || root.positionsWritePending)
+      return
+    root.positionsReaderRevision = root.positionsMutationRevision
+    positionsReaderProcess.command = root.boundedCommand(2200, root.maxPositionsChars, 4096,
+      ["python3", root.stateHelperPath, "read", "positions"])
+    positionsReaderProcess.running = true
   }
 
   function setItemPos(screenName, itemId, x, y) {
     var next = JSON.parse(JSON.stringify(root.positions || {}))
+    if (!next[screenName] && Object.keys(next).length >= root.maxPositionScreens)
+      return
     if (!next[screenName])
       next[screenName] = ({})
+    if (!next[screenName][itemId]
+        && Object.keys(next[screenName]).length >= root.maxItems)
+      return
     next[screenName][itemId] = { x: Math.round(x), y: Math.round(y) }
     root.positions = next
     root.savePositions()
@@ -1780,6 +1966,8 @@ Item {
 
   function setItemPositions(screenName, updates) {
     var next = JSON.parse(JSON.stringify(root.positions || {}))
+    if (!next[screenName] && Object.keys(next).length >= root.maxPositionScreens)
+      return
     if (!next[screenName])
       next[screenName] = ({})
     var values = Array.isArray(updates) ? updates : []
@@ -1787,6 +1975,9 @@ Item {
       var update = values[i]
       if (!update || !root.itemById(update.id))
         continue
+      if (!next[screenName][String(update.id)]
+          && Object.keys(next[screenName]).length >= root.maxItems)
+        break
       next[screenName][String(update.id)] = {
         x: Math.round(Number(update.x) || 0),
         y: Math.round(Number(update.y) || 0)
@@ -1803,7 +1994,8 @@ Item {
 
   Process {
     id: listProc
-    command: ["/usr/bin/python3", root.indexScript]
+    command: root.boundedCommand(4500, root.maxListChars, 8192,
+      ["/usr/bin/python3", root.indexScript])
     stdout: StdioCollector {
       onStreamFinished: root.applyList(text)
     }
@@ -1848,20 +2040,8 @@ Item {
     onTriggered: {
       if (!reserveProc.running)
         return
-      var kind = root.reservationKind
-      var screenName = root.operationScreen
+      root.operationMessage = "Stopping timed-out desktop reservation…"
       reserveProc.running = false
-      root.reservationKind = ""
-      root.setOperationError("Desktop action reservation timed out.", screenName)
-      if (kind === "rename") {
-        root.renamePendingId = ""
-        root.renamePendingName = ""
-        root.renamePendingScreen = ""
-        root.renameFinished(false, root.operationMessage, "", screenName)
-      }
-      root.operationCommand = ""
-      root.operationPendingSources = []
-      root.operationPendingDestination = ""
     }
   }
 
@@ -1893,8 +2073,8 @@ Item {
         return
       root.statusOutput = ""
       root.statusErrorOutput = ""
-      statusProc.command = ["/usr/bin/python3", root.operationScript,
-                            "status", root.operationId]
+      statusProc.command = root.boundedCommand(1000, root.maxOperationChars, 4096,
+        ["/usr/bin/python3", root.operationScript, "status", root.operationId])
       statusProc.running = true
     }
   }
@@ -1922,10 +2102,8 @@ Item {
     onTriggered: {
       if (!cancelProc.running)
         return
+      root.operationMessage = "Stopping timed-out cancellation helper…"
       cancelProc.running = false
-      root.operationCancellable = false
-      root.operationMessage = "Cancellation did not respond; the desktop action is still running."
-      root.operationIsError = true
     }
   }
 
@@ -1983,12 +2161,8 @@ Item {
     onTriggered: {
       if (!virtualActionProc.running)
         return
-      var screenName = root.virtualActionScreen
-      root.virtualActionName = ""
-      root.virtualActionScreen = ""
-      root.virtualActionBusy = false
+      root.operationMessage = "Stopping timed-out virtual desktop action…"
       virtualActionProc.running = false
-      root.setOperationError("Virtual desktop action timed out.", screenName)
     }
   }
 
@@ -1999,10 +2173,8 @@ Item {
     onTriggered: {
       if (!quickLookProc.running)
         return
+      root.operationMessage = "Stopping timed-out Quick Look request…"
       quickLookProc.running = false
-      root.quickLookBusy = false
-      root.setOperationError("Quick Look did not respond.", root.quickLookScreen)
-      root.quickLookScreen = ""
     }
   }
 
@@ -2079,24 +2251,53 @@ Item {
     onTriggered: {
       if (!inspectProc.running)
         return
-      var item = root.itemById(root.inspectPendingId)
-      var screenName = root.inspectPendingScreen
-      root.inspectPendingId = ""
-      root.inspectPendingScreen = ""
+      root.inspectTimedOut = true
       inspectProc.running = false
-      root.publishInspector(root.inspectorFallback(item, "Detailed metadata timed out."), screenName)
     }
   }
 
-  FileView {
-    id: posFile
-    path: root.positionsPath
-    watchChanges: true
-    atomicWrites: true
-    printErrors: false
-    onLoaded: root.applyPositions(text())
-    onLoadFailed: root.positions = ({})
-    onFileChanged: reload()
+  Process {
+    id: desktopActionProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.desktopActionOutput = text
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.desktopActionErrorOutput = text
+    }
+    onExited: function(exitCode) { root.finishDesktopAction(exitCode) }
+  }
+
+  Process {
+    id: positionsReaderProcess
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyPositions(text, root.positionsReaderRevision)
+    }
+  }
+
+  Process {
+    id: positionsWriterProcess
+    onExited: function(exitCode) {
+      if (exitCode !== 0)
+        root.setOperationError("Desktop positions could not be saved.")
+      if (root.pendingPositionsContent) {
+        Qt.callLater(root.startPositionsWrite)
+      } else {
+        root.positionsWritePending = false
+        Qt.callLater(root.reloadPositions)
+      }
+    }
+  }
+
+  Timer {
+    id: positionsReaderTimer
+    interval: 1000
+    repeat: true
+    running: true
+    triggeredOnStart: true
+    onTriggered: root.reloadPositions()
   }
 
   // Watch the Desktop folder itself so icons appear, move, or get deleted
@@ -2120,7 +2321,35 @@ Item {
     onTriggered: root.refresh()
   }
 
-  Component.onCompleted: root.refresh()
+  Component.onCompleted: {
+    root.refresh()
+    root.reloadPositions()
+  }
+
+  Component.onDestruction: {
+    reserveDeadline.stop()
+    statusPollTimer.stop()
+    cancelDeadline.stop()
+    virtualActionDeadline.stop()
+    quickLookDeadline.stop()
+    renameDeadline.stop()
+    operationDeadline.stop()
+    inspectDeadline.stop()
+    positionsReaderTimer.stop()
+    root.desktopActionQueue = []
+    listProc.running = false
+    operationProc.running = false
+    reserveProc.running = false
+    statusProc.running = false
+    cancelProc.running = false
+    quickLookProc.running = false
+    virtualActionProc.running = false
+    renameProc.running = false
+    inspectProc.running = false
+    desktopActionProc.running = false
+    positionsReaderProcess.running = false
+    positionsWriterProcess.running = false
+  }
 
   Variants {
     id: desktopInstances
@@ -2917,6 +3146,10 @@ Item {
             return
           }
           if (host.pendingTrust) {
+            if (host.desktopActionBusy) {
+              event.accepted = true
+              return
+            }
             if (event.key === Qt.Key_Escape
                 || event.key === Qt.Key_Return
                 || event.key === Qt.Key_Enter) {
@@ -3108,7 +3341,8 @@ Item {
             host.clearSelection()
           emptyMouse.forceActiveFocus()
           if (host.pendingTrust) {
-            host.clearTrustPrompt()
+            if (!host.desktopActionBusy)
+              host.clearTrustPrompt()
             panel.emptyClicks = 0
             if (mouse.button === Qt.RightButton)
               panel.openEmptyMenu(mouse)
@@ -4351,6 +4585,7 @@ Item {
               Accessible.focusable: true
               Accessible.focused: keyboardFocus
               Accessible.defaultButton: true
+              enabled: !host.desktopActionBusy
               Accessible.onPressAction: host.clearTrustPrompt()
 
               Rectangle {
@@ -4376,6 +4611,7 @@ Item {
                 id: cancelMouse
                 anchors.fill: parent
                 hoverEnabled: true
+                enabled: parent.enabled
                 onEntered: panel.trustFocusIndex = 0
                 onClicked: host.clearTrustPrompt()
               }
@@ -4391,12 +4627,14 @@ Item {
               border.width: 2
               border.color: Color.popups.border
               Accessible.role: Accessible.Button
-              Accessible.name: "Trust and Open"
-              Accessible.description: "Mark this launcher as trusted and run it. Space activates this choice when focused."
+              Accessible.name: host.desktopActionBusy ? "Trusting and opening" : "Trust and Open"
+              Accessible.description: host.desktopActionBusy
+                ? "The launcher trust change is being confirmed."
+                : "Mark this launcher as trusted and run it. Space activates this choice when focused."
               Accessible.focusable: true
               Accessible.focused: keyboardFocus
               Accessible.defaultButton: false
-              enabled: !!host.pendingTrust
+              enabled: !!host.pendingTrust && !host.desktopActionBusy
               Accessible.onPressAction: {
                 if (host.pendingTrust)
                   host.trustAndOpen(host.pendingTrust)
@@ -4416,6 +4654,7 @@ Item {
                 id: trustMouse
                 anchors.fill: parent
                 hoverEnabled: true
+                enabled: parent.enabled
                 onEntered: panel.trustFocusIndex = 1
                 onClicked: host.trustAndOpen(host.pendingTrust)
               }

@@ -9,6 +9,143 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PluginSourceContractTest(unittest.TestCase):
+    def test_every_qml_helper_runs_behind_the_bounded_guardian(self) -> None:
+        qml_sources = {
+            path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
+            for path in (ROOT / "components").rglob("*.qml")
+        }
+        runtime = "\n".join(qml_sources.values())
+        self.assertNotIn("Quickshell.execDetached", runtime)
+
+        expected_boundaries = {
+            "components/active-window/BarWidget.qml": (
+                '"python3", root.runHelperPath, "800", "150", "4096", "1024", "--"',
+                '"python3", root.runHelperPath, "2000", "200", "0", "4096", "--"',
+            ),
+            "components/dock/ApplicationIdentityController.qml": (
+                '"python3", root.runHelperPath, "3500", "250", "131072", "8192", "--"',
+                '"python3", root.runHelperPath, "1800", "200", "65536", "8192", "--"',
+            ),
+            "components/dock/IconPickerPanel.qml": (
+                '"python3", root.runHelperPath, "2200", "250", "0", "4096", "--"',
+            ),
+            "components/dock/DockPanelBase.qml": (
+                '"python3", root.runHelperPath, "2200", "250", "262144", "4096", "--"',
+                '"python3", root.runHelperPath, "3000", "250", "0", "8192", "--"',
+            ),
+            "components/overview/Overview.qml": (
+                '"python3", root.runHelperPath, "3500", "250", "0", "8192", "--"',
+                '"python3", root.runHelperPath, "5000", "250", "4096", "8192", "--"',
+            ),
+        }
+        for relative, boundaries in expected_boundaries.items():
+            source = qml_sources[relative]
+            for boundary in boundaries:
+                self.assertIn(boundary, source, f"missing helper boundary: {relative}")
+
+        desktop = qml_sources["components/desktop/Service.qml"]
+        self.assertIn("function boundedCommand(timeoutMs, stdoutBytes, stderrBytes, command)", desktop)
+        self.assertIn('"python3", root.runHelperPath,', desktop)
+        self.assertIn('].concat(args)', desktop)
+        for helper in (
+            "listProc",
+            "operationProc",
+            "reserveProc",
+            "statusProc",
+            "cancelProc",
+            "quickLookProc",
+            "virtualActionProc",
+            "renameProc",
+            "inspectProc",
+            "desktopActionProc",
+            "positionsReaderProcess",
+            "positionsWriterProcess",
+        ):
+            self.assertIn(f"id: {helper}", desktop)
+        self.assertGreaterEqual(desktop.count("root.boundedCommand("), 13)
+
+    def test_bounded_guardian_kills_and_reaps_the_complete_helper_tree(self) -> None:
+        runner = (
+            ROOT / "components/dock/scripts/one-bit-bureau-run"
+        ).read_text(encoding="utf-8")
+        for contract in (
+            "STDOUT_BYTES STDERR_BYTES -- COMMAND",
+            "PR_SET_CHILD_SUBREAPER",
+            "PR_SET_PDEATHSIG",
+            "os.setsid()",
+            'os.write(ready_write, b"R")',
+            'release != b"G"',
+            "def descendants_of(",
+            "def stop_and_reap(",
+            "signal.SIGTERM",
+            "signal.SIGKILL",
+            "os.waitpid(-1, os.WNOHANG)",
+            "helper stdout exceeded its hard cap",
+            "helper stderr exceeded its hard cap",
+            "helper cancelled after descendant cleanup",
+        ):
+            self.assertIn(contract, runner)
+        self.assertLess(
+            runner.index("if len(buffer) + len(chunk) > limit:"),
+            runner.index("buffer.extend(chunk)"),
+        )
+
+    def test_shell_state_is_bounded_descriptor_relative_and_durable(self) -> None:
+        helper = (
+            ROOT / "components/dock/scripts/one-bit-bureau-state"
+        ).read_text(encoding="utf-8")
+        for contract in (
+            '"positions": ("desktop-icon-positions.json", 64 * 1024)',
+            "MAX_STATE_OUTPUT = 256 * 1024",
+            "MAX_SCREENS = 16",
+            "MAX_POSITIONS_PER_SCREEN = 256",
+            "set(raw_position) != {\"x\", \"y\"}",
+            "math.isfinite(x)",
+            "os.O_EXCL",
+            "O_NOFOLLOW",
+            "dir_fd=directory_fd",
+            "follow_symlinks=False",
+            "metadata.st_nlink != 1",
+            "os.fsync(descriptor)",
+            "os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)",
+            "os.fsync(directory_fd)",
+        ):
+            self.assertIn(contract, helper)
+
+        desktop = (ROOT / "components/desktop/Service.qml").read_text(encoding="utf-8")
+        dock = (ROOT / "components/dock/DockPanelBase.qml").read_text(encoding="utf-8")
+        self.assertNotIn("positionsFile", desktop)
+        self.assertNotIn("FileView.setText", desktop)
+        self.assertIn('["python3", root.stateHelperPath, "read", "positions"]', desktop)
+        self.assertIn('["python3", root.stateHelperPath, "write", "positions", content]', desktop)
+        self.assertIn('"python3", root.stateHelperPath, "read", "dock"', dock)
+        self.assertIn('"python3", root.stateHelperPath, "write", "pins", content', dock)
+        self.assertIn('"python3", root.stateHelperPath, "write", "settings", content', dock)
+        self.assertNotIn('"mv"', dock)
+        self.assertNotIn("pendingPath", dock)
+
+    def test_security_sensitive_desktop_actions_are_tracked_to_completion(self) -> None:
+        desktop = (ROOT / "components/desktop/Service.qml").read_text(encoding="utf-8")
+        self.assertIn("function queueDesktopAction(", desktop)
+        self.assertIn("id: desktopActionProc", desktop)
+        self.assertIn("onExited: function(exitCode) { root.finishDesktopAction(exitCode) }", desktop)
+        for action in (
+            'queueDesktopAction("open"',
+            'queueDesktopAction("trust"',
+            'queueDesktopAction("trust-open"',
+            'queueDesktopAction("reveal"',
+            'queueDesktopAction("new-folder"',
+            'queueDesktopAction("new-shortcut"',
+            'queueDesktopAction("pick-app"',
+            'queueDesktopAction("pick-files"',
+            'queueDesktopAction("open-folder"',
+            'queueDesktopAction("wallpaper"',
+        ):
+            self.assertIn(action, desktop)
+        self.assertIn('action.kind === "trust" || action.kind === "trust-open"', desktop)
+        self.assertIn("if (exitCode === 0)", desktop)
+        self.assertNotIn("Quickshell.execDetached", desktop)
+
     def test_experience_hosts_one_shared_inspector_and_routes_each_noun_kind(self) -> None:
         experience = (ROOT / "Experience.qml").read_text(encoding="utf-8")
         dock = (ROOT / "components/dock/DockPanelBase.qml").read_text(
@@ -45,6 +182,9 @@ class PluginSourceContractTest(unittest.TestCase):
         desktop = (ROOT / "components/desktop/Service.qml").read_text(
             encoding="utf-8"
         )
+        state = (
+            ROOT / "components/dock/scripts/one-bit-bureau-state"
+        ).read_text(encoding="utf-8")
         overview = (ROOT / "components/overview/Overview.qml").read_text(
             encoding="utf-8"
         )
@@ -53,7 +193,9 @@ class PluginSourceContractTest(unittest.TestCase):
             'ONE_BIT_BUREAU_CONFIG="$HOME/.config/omarchy/one-bit-bureau"', setup
         )
         self.assertIn("/.config/omarchy/one-bit-bureau/", dock)
-        self.assertIn("/.config/omarchy/one-bit-bureau/", desktop)
+        self.assertNotIn("/.config/omarchy/one-bit-bureau/", desktop)
+        self.assertIn('"one-bit-bureau"', state)
+        self.assertIn("open_state_directory", state)
         self.assertIn("regionallyfamous.one-bit-bureau.dock", command)
         self.assertIn("regionallyfamous.one-bit-bureau.overview", command)
         self.assertIn("regionallyfamous.one-bit-bureau.dock", dock)

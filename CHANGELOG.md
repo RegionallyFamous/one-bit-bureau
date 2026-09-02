@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.2 — 2026-09-01
+
+### Runtime containment and state safety
+
+- Put every desktop, dock, overview, and active-application helper behind producer-side stdout and stderr byte ceilings, total-runtime deadlines, and failure-without-partial-output behavior before data reaches QML collectors.
+- Added an independent Linux subreaper guardian with a fail-closed start gate, verified descendant discovery, bounded `TERM`-then-`KILL` escalation, and complete reaping. Cancellation now waits for cleanup before the tracked process reports completion, including when the QML-owned controller is killed.
+- Replaced desktop-position and dock-state pathname writes with one fixed-scope state helper that validates private directory descriptors, refuses symlinks and non-regular or multiply linked files, enforces byte/key/depth/record/coordinate ceilings, and commits with descriptor-relative atomic replacement plus file and directory `fsync`.
+- Converted desktop open, trust, trust-and-open, reveal, folder creation, picker, file-manager, and wallpaper actions from detached launches into bounded tracked operations. Trust prompts remain until the helper reports a confirmed result and cannot be dismissed while a trust change is in flight.
+
+### Release verification
+
+- Added exact-cap, one-byte-over, UTF-8 overflow, malformed input, symlink, hardlink, FIFO, nested-session, stalled-helper, cancellation, controller-`SIGKILL`, and pre-readiness teardown regressions. The process-tree cases now run on Linux as well as the portable local suite.
+
 ## 1.2.1 — 2026-09-01
 
 ### Security and installation

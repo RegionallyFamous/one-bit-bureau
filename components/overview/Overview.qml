@@ -19,9 +19,11 @@ Item {
     property var manifest: null
     property var service: null
     readonly property string pluginId: String((root.manifest && root.manifest.id) || "io.github.regionallyfamous.one-bit-bureau")
-    readonly property string pluginDir: String((root.manifest && root.manifest.__sourceDir)
-        ? root.manifest.__sourceDir + "/components/overview"
-        : (Quickshell.env("HOME") + "/.config/omarchy/plugins/" + root.pluginId + "/components/overview"))
+    readonly property string pluginRoot: String((root.manifest && root.manifest.__sourceDir)
+        ? root.manifest.__sourceDir
+        : (Quickshell.env("HOME") + "/.config/omarchy/plugins/" + root.pluginId))
+    readonly property string pluginDir: root.pluginRoot + "/components/overview"
+    readonly property string runHelperPath: root.pluginRoot + "/components/dock/scripts/one-bit-bureau-run"
     readonly property var pluginEntry: {
         var config = root.shell && root.shell.shellConfig ? root.shell.shellConfig : null;
         var plugins = config && Array.isArray(config.plugins) ? config.plugins : [];
@@ -145,6 +147,7 @@ Item {
     property int pendingMovePid: 0
     property int pendingMoveWorkspaceId: 0
     property string pendingMoveMonitorName: ""
+    property string pendingActivateTitle: ""
     property int selectedIndex: 0
     property int hoveredIndex: -1
     property int previewIndex: -1
@@ -1030,18 +1033,20 @@ Item {
     }
 
     function activate(top) {
-        if (!top)
+        if (!top || activationProcess.running)
             return;
         var helper = root.pluginDir + "/activate-window";
-        Quickshell.execDetached([
+        root.pendingActivateTitle = String(top.title || WindowModel.appIdFor(top) || "Window");
+        activationProcess.command = [
+            "python3", root.runHelperPath, "3500", "250", "0", "8192", "--",
             "/bin/bash",
             helper,
             WindowModel.addressFor(top),
             WindowModel.appIdFor(top),
             String(top.title || ""),
             root.moveCursorToWindow ? "true" : "false"
-        ]);
-        root.dismiss();
+        ];
+        activationProcess.running = true;
     }
 
     function windowForAddress(address) {
@@ -1213,6 +1218,7 @@ Item {
         root.workspaceMoveState = "requested";
         root.showWorkspaceNotice("Move requested: " + root.pendingMoveTitle + " → Workspace " + request.workspaceId + " on " + request.monitorName);
         workspaceMoveProcess.command = [
+            "python3", root.runHelperPath, "5000", "250", "4096", "8192", "--",
             "/bin/bash",
             root.pluginDir + "/move-window-to-workspace",
             request.address,
@@ -1882,6 +1888,20 @@ Item {
     }
 
     Process {
+        id: activationProcess
+        running: false
+        onExited: function(exitCode) {
+            var title = root.pendingActivateTitle;
+            root.pendingActivateTitle = "";
+            if (exitCode === 0) {
+                root.dismiss();
+            } else {
+                root.showWorkspaceNotice("Open refused: " + (title || "window") + " could not be confirmed");
+            }
+        }
+    }
+
+    Process {
         id: workspaceMoveProcess
         running: false
         stdout: StdioCollector { id: workspaceMoveOutput }
@@ -1916,6 +1936,11 @@ Item {
                 root.showWorkspaceNotice("Move refused: " + (message || "the dispatcher returned an unexpected result"));
             }
         }
+    }
+
+    Component.onDestruction: {
+        activationProcess.running = false;
+        workspaceMoveProcess.running = false;
     }
 
     Timer {

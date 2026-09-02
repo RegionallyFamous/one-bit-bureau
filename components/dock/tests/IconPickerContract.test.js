@@ -49,7 +49,7 @@ test("every action path supports keyboard activation and assistive technology", 
 
 test("escape and bounded helper execution remain part of the panel contract", () => {
   assert.match(source, /Keys\.onEscapePressed: function\(event\) \{ root\.close\(\); event\.accepted = true \}/)
-  assert.match(source, /applyProcess\.command = \["python3", root\.runHelperPath, "2200", "250", "--"\]\.concat\(command\)/)
+  assert.match(source, /applyProcess\.command = \["python3", root\.runHelperPath, "2200", "250", "0", "4096", "--"\]\.concat\(command\)/)
   assert.match(source, /applyDeadline\.restart\(\)/)
   assert.match(source, /interval: 2500/)
   assert.match(source, /Component\.onDestruction:[\s\S]*applyProcess\.running = false/)

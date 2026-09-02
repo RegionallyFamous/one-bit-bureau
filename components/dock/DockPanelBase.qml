@@ -17,14 +17,9 @@ Item {
   property var service: null
   property string home: Quickshell.env("HOME")
   property string iconDir: home + "/.config/omarchy/one-bit-bureau/icons"
-  property string iconMapPath: home + "/.config/omarchy/one-bit-bureau/dock-icons.json"
   property string packDir: manifest && manifest.__sourceDir
     ? String(manifest.__sourceDir) + "/components/dock/assets/app-icons"
     : root.home + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau/components/dock/assets/app-icons"
-  property string pinPath: home + "/.config/omarchy/one-bit-bureau/dock-pinned.json"
-  property string tempPinPath: pinPath + ".tmp"
-  property string settingsPath: home + "/.config/omarchy/one-bit-bureau/dock-settings.json"
-  property string tempSettingsPath: settingsPath + ".tmp"
   property var pinnedIds: []
   property var dockOrder: []
   property bool pinFileLoaded: false
@@ -32,6 +27,8 @@ Item {
   property int settingsMutationRevision: 0
   property int stateReaderSettingsRevision: 0
   property bool settingsWritePending: false
+  property string pendingSettingsContent: ""
+  property string pendingPinsContent: ""
   property var appEntries: []
   property var runningIds: []
   // Most-recently-used app ids, front = most recent. Maintained from focus
@@ -282,9 +279,20 @@ Item {
     root.settingsMutationRevision += 1
     root.settingsWritePending = true
     DockModel.markSettingsWritten(DockModel.serializeSettingsSnapshot(settings))
-    settingsWriter.path = root.tempSettingsPath
-    settingsWriter.setText(content)
-    Qt.callLater(function() { settingsRenameProcess.running = true })
+    root.pendingSettingsContent = content
+    root.startSettingsWrite()
+  }
+
+  function startSettingsWrite() {
+    if (settingsWriterProcess.running || !root.pendingSettingsContent)
+      return
+    var content = root.pendingSettingsContent
+    root.pendingSettingsContent = ""
+    settingsWriterProcess.command = [
+      "python3", root.runHelperPath, "2200", "250", "0", "4096", "--",
+      "python3", root.stateHelperPath, "write", "settings", content
+    ]
+    settingsWriterProcess.running = true
   }
 
   // Central helper: build the state snapshot consumed by the pure helpers.
@@ -753,7 +761,10 @@ Item {
     root.focusAttemptedAddresses = attempted
     root.beginActionObservation(
       "focus", root.focusRequestAppId, normalized, [], "Focus requested.")
-    focusWindowProcess.command = ["bash", root.focusHelperPath, normalized]
+    focusWindowProcess.command = [
+      "python3", root.runHelperPath, "3000", "250", "0", "8192", "--",
+      "bash", root.focusHelperPath, normalized
+    ]
     focusWindowProcess.running = true
     return true
   }
@@ -993,7 +1004,8 @@ Item {
   function notifyConflict() {
     if (conflictNotice.running) return
     conflictNotice.running = true
-    Quickshell.execDetached(["omarchy-shell", "notify", "One-Bit Bureau Dock is disabled because rosakodu.dock is enabled"])
+    if (!conflictNotificationProcess.running)
+      conflictNotificationProcess.running = true
   }
 
   function handleClick(item) {
@@ -1184,9 +1196,20 @@ Item {
   function savePinned() {
     var content = DockModel.serializePinned(root.pinnedIds, root.dockOrder)
     DockModel.markWritten(content)
-    tempWriter.path = root.tempPinPath
-    tempWriter.setText(content)
-    Qt.callLater(function() { renameProcess.running = true })
+    root.pendingPinsContent = content
+    root.startPinsWrite()
+  }
+
+  function startPinsWrite() {
+    if (pinsWriterProcess.running || !root.pendingPinsContent)
+      return
+    var content = root.pendingPinsContent
+    root.pendingPinsContent = ""
+    pinsWriterProcess.command = [
+      "python3", root.runHelperPath, "2200", "250", "0", "4096", "--",
+      "python3", root.stateHelperPath, "write", "pins", content
+    ]
+    pinsWriterProcess.running = true
   }
 
   function openMenu(item, position, returnFocusItem) {
@@ -1818,9 +1841,8 @@ Item {
     if (stateReaderProcess.running || root.settingsWritePending || !root.stateHelperPath || !root.runHelperPath) return
     root.stateReaderSettingsRevision = root.settingsMutationRevision
     stateReaderProcess.command = [
-      "python3", root.runHelperPath, "2200", "250", "--",
-      "python3", root.stateHelperPath, "read",
-      root.iconMapPath, root.pinPath, root.settingsPath
+      "python3", root.runHelperPath, "2200", "250", "262144", "4096", "--",
+      "python3", root.stateHelperPath, "read", "dock"
     ]
     stateReaderProcess.running = true
     stateReaderDeadline.restart()
@@ -1852,30 +1874,26 @@ Item {
     onExited: stateReaderDeadline.stop()
   }
 
-  FileView {
-    id: tempWriter
-    watchChanges: false
-    printErrors: false
-  }
-
-  FileView {
-    id: settingsWriter
-    watchChanges: false
-    printErrors: false
-  }
-
   Process {
-    id: renameProcess
-    command: ["mv", root.tempPinPath, root.pinPath]
-    onExited: root.refreshItems()
-  }
-
-  Process {
-    id: settingsRenameProcess
-    command: ["mv", root.tempSettingsPath, root.settingsPath]
+    id: pinsWriterProcess
     onExited: {
-      root.settingsWritePending = false
-      root.reloadBoundedState()
+      root.refreshItems()
+      if (root.pendingPinsContent)
+        Qt.callLater(root.startPinsWrite)
+      else
+        Qt.callLater(root.reloadBoundedState)
+    }
+  }
+
+  Process {
+    id: settingsWriterProcess
+    onExited: {
+      if (root.pendingSettingsContent) {
+        Qt.callLater(root.startSettingsWrite)
+      } else {
+        root.settingsWritePending = false
+        Qt.callLater(root.reloadBoundedState)
+      }
     }
   }
 
@@ -1949,16 +1967,28 @@ Item {
     stateReaderPoll.stop()
     stateReaderDeadline.stop()
     stateReaderProcess.running = false
-    renameProcess.running = false
-    settingsRenameProcess.running = false
+    pinsWriterProcess.running = false
+    settingsWriterProcess.running = false
     layerRuleProcess.running = false
     focusWindowProcess.running = false
+    conflictNotificationProcess.running = false
     actionObservationTimer.stop()
   }
 
   Process {
     id: layerRuleProcess
-    command: ["hyprctl", "eval", "hl.layer_rule({ match = { namespace = \"one-bit-bureau-dock-alt-tab\" }, no_anim = true, animation = \"none\" })"]
+    command: [
+      "python3", root.runHelperPath, "2000", "200", "0", "4096", "--",
+      "hyprctl", "eval", "hl.layer_rule({ match = { namespace = \"one-bit-bureau-dock-alt-tab\" }, no_anim = true, animation = \"none\" })"
+    ]
+  }
+
+  Process {
+    id: conflictNotificationProcess
+    command: [
+      "python3", root.runHelperPath, "2000", "200", "0", "4096", "--",
+      "omarchy-shell", "notify", "One-Bit Bureau Dock is disabled because rosakodu.dock is enabled"
+    ]
   }
 
   PanelWindow {
@@ -2248,7 +2278,6 @@ Item {
     grayscaleFor: function(id) { return root.iconUsesAutomaticNativeFallback(id) }
     stateHelperPath: root.stateHelperPath
     runHelperPath: root.runHelperPath
-    iconMapPath: root.iconMapPath
     packDir: root.packDir
     onOpenChanged: if (!open) root.pickerOpen = false
   }

@@ -34,7 +34,7 @@ test("the plugin never replaces global Alt+Tab bindings at runtime", () => {
 })
 
 test("window focus delegates temporary cursor state to the trap-safe helper", () => {
-  assert.match(panelBase, /focusWindowProcess\.command = \["bash", root\.focusHelperPath, normalized\]/)
+  assert.match(panelBase, /focusWindowProcess\.command = \[[\s\S]*?"python3", root\.runHelperPath, "3000", "250", "0", "8192", "--",[\s\S]*?"bash", root\.focusHelperPath, normalized[\s\S]*?\]/)
   assert.doesNotMatch(panelBase, /pendingCursorPosition|focusNoWarpProcess|restoreCursorWarps/)
 })
 

@@ -778,6 +778,13 @@ def open_path(path: Path, *, require_trust: bool = True) -> None:
     Gio.AppInfo.launch_default_for_uri(path.resolve().as_uri(), None)
 
 
+def create_new_folder() -> Path:
+    desktop = desktop_dir()
+    destination = unique_dest(desktop, "New Folder")
+    destination.mkdir(mode=0o700)
+    return destination
+
+
 def place_one(source: Path, desktop: Path, mode: str) -> Path:
     source = lexical_path(str(source))
     try:
@@ -894,6 +901,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Act on a deterministic virtual Trash or volume object.",
     )
     parser.add_argument("--virtual-id", help="Virtual object identity from the index.")
+    parser.add_argument(
+        "--new-folder",
+        action="store_true",
+        help="Create one uniquely named folder on the Desktop.",
+    )
     args = parser.parse_args(raw_argv)
 
     if args.virtual_action:
@@ -915,6 +927,11 @@ def main(argv: list[str] | None = None) -> int:
         payload, exit_code = perform_virtual_action(args.virtual_action, args.virtual_id)
         sys.stdout.write(encode_payload(payload) + "\n")
         return exit_code
+
+    if args.new_folder:
+        destination = create_new_folder()
+        sys.stdout.write(str(destination) + "\n")
+        return 0
 
     if args.trust_and_open:
         for raw in _bounded_paths(args.trust_and_open, "--trust-and-open"):
@@ -972,7 +989,10 @@ if __name__ == "__main__":
             raise SystemExit(2)
         mutating = any(
             flag in sys.argv
-            for flag in ("--open", "--place", "--trash", "--trust", "--trust-and-open")
+            for flag in (
+                "--open", "--place", "--trash", "--trust", "--trust-and-open",
+                "--new-folder",
+            )
         )
         if mutating:
             try:

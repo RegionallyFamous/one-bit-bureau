@@ -58,6 +58,12 @@ BarWidget {
   readonly property string omarchyShellCommand: String(
     (root.bar && root.bar.omarchyPath) || Quickshell.env("OMARCHY_PATH") || ""
   ) + "/bin/omarchy-shell"
+  readonly property var widgetMetadata: bar && bar.barWidgetRegistry
+    ? bar.barWidgetRegistry.metadataFor(moduleName) : null
+  readonly property string pluginDir: widgetMetadata && widgetMetadata.sourceDir
+    ? String(widgetMetadata.sourceDir)
+    : Quickshell.env("HOME") + "/.config/omarchy/plugins/io.github.regionallyfamous.one-bit-bureau"
+  readonly property string runHelperPath: pluginDir + "/components/dock/scripts/one-bit-bureau-run"
 
   readonly property bool showTitle: setting("showTitle", true) === true
   readonly property bool reducedMotion: setting("reducedMotion", false) === true
@@ -102,7 +108,10 @@ BarWidget {
     executablePath = ""
     if (activePid <= 0 || executableLookup.running) return
     executableLookupPid = activePid
-    executableLookup.command = ["readlink", "-f", "/proc/" + activePid + "/exe"]
+    executableLookup.command = [
+      "python3", root.runHelperPath, "800", "150", "4096", "1024", "--",
+      "readlink", "-f", "/proc/" + activePid + "/exe"
+    ]
     executableLookup.running = true
   }
 
@@ -111,8 +120,11 @@ BarWidget {
     if (deskMenuProcess.running)
       return
     root.deskMenuError = ""
-    deskMenuProcess.command = [root.omarchyShellCommand,
-      "regionallyfamous.one-bit-bureau.desktop", "toggleDeskMenu", root.widgetScreenName]
+    deskMenuProcess.command = [
+      "python3", root.runHelperPath, "2000", "200", "0", "4096", "--",
+      root.omarchyShellCommand,
+      "regionallyfamous.one-bit-bureau.desktop", "toggleDeskMenu", root.widgetScreenName
+    ]
     deskMenuProcess.running = true
   }
 

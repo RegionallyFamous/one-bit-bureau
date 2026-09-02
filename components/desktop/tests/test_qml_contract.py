@@ -103,13 +103,10 @@ class DesktopQmlContractTest(unittest.TestCase):
         )
 
     def test_trust_dialog_keeps_enter_safe_but_allows_tab_space(self) -> None:
-        trust_keys = re.search(
-            r"if \(host\.pendingTrust\) \{(?P<body>.*?)event\.accepted = true",
-            SERVICE,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(trust_keys)
-        body = trust_keys.group("body")
+        start = SERVICE.index("if (host.pendingTrust) {")
+        end = SERVICE.index("var contextMenuKey =", start)
+        body = SERVICE[start:end]
+        self.assertIn("if (host.desktopActionBusy)", body)
         self.assertIn("Qt.Key_Return", body)
         self.assertIn("host.clearTrustPrompt()", body)
         self.assertIn("Qt.Key_Tab", body)
@@ -185,7 +182,9 @@ class DesktopQmlContractTest(unittest.TestCase):
         self.assertIn('Quickshell.env("OMARCHY_PATH")', BAR_WIDGET)
         self.assertIn(') + "/bin/omarchy-shell"', BAR_WIDGET)
         self.assertIn('"regionallyfamous.one-bit-bureau.desktop", "toggleDeskMenu"', BAR_WIDGET)
-        self.assertIn("deskMenuProcess.command = [root.omarchyShellCommand", BAR_WIDGET)
+        self.assertIn("deskMenuProcess.command = [", BAR_WIDGET)
+        self.assertIn('"python3", root.runHelperPath, "2000", "200", "0", "4096", "--"', BAR_WIDGET)
+        self.assertIn("root.omarchyShellCommand,", BAR_WIDGET)
         self.assertNotIn("bash", re.search(
             r"function requestDeskMenu\(\).*?\n  \}", BAR_WIDGET, re.DOTALL
         ).group(0))
@@ -224,7 +223,7 @@ class DesktopQmlContractTest(unittest.TestCase):
         )
         self.assertIsNotNone(quick_look)
         body = quick_look.group("body")
-        self.assertIn('quickLookProc.command = [', body)
+        self.assertIn('quickLookProc.command = root.boundedCommand(', body)
         self.assertIn('["/usr/bin/python3", root.quickLookScript, path]', body)
         self.assertIn('quickLookScript: pluginDir + "/bin/desktop-quick-look"', SERVICE)
         self.assertIn('data.command !== "quick-look"', SERVICE)

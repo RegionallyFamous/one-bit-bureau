@@ -7,8 +7,8 @@ WORK=$(mktemp -d)
 trap 'rm -rf -- "$WORK"' EXIT
 
 PLUGIN_ID="io.github.regionallyfamous.one-bit-bureau"
-TAG="v1.2.1"
-VERSION="1.2.1"
+TAG="v1.2.2"
+VERSION="1.2.2"
 MOCK_BIN="$WORK/bin"
 MOCK_LOG="$WORK/calls.log"
 mkdir -p "$MOCK_BIN"

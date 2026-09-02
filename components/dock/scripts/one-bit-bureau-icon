@@ -4,8 +4,6 @@ set -euo pipefail
 
 user_home="${HOME:?HOME is not set}"
 config_dir="$user_home/.config/omarchy/one-bit-bureau"
-map_file="$config_dir/dock-icons.json"
-pins_file="$config_dir/dock-pinned.json"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 state_helper="$script_dir/one-bit-bureau-state"
 pack_dir="$script_dir/../assets/app-icons"
@@ -78,9 +76,9 @@ write_mapping() {
   [[ ! -e $config_dir || -d $config_dir ]] || die "One-Bit Bureau config path is not a directory"
   mkdir -p "$config_dir"
   if [[ -n $value ]]; then
-    python3 "$state_helper" write "$map_file" "$app_id" "$operation" "$value"
+    python3 "$state_helper" write icon "$app_id" "$operation" "$value"
   else
-    python3 "$state_helper" write "$map_file" "$app_id" "$operation"
+    python3 "$state_helper" write icon "$app_id" "$operation"
   fi
 }
 
@@ -126,7 +124,7 @@ case "${1:-}" in
   list)
     (( $# == 1 )) || { usage; exit 2; }
     [[ ! -L $config_dir ]] || die "One-Bit Bureau config directory may not be a symlink"
-    python3 "$state_helper" list "$map_file" "$pins_file"
+    python3 "$state_helper" list
     ;;
   folder)
     (( $# == 1 )) || { usage; exit 2; }

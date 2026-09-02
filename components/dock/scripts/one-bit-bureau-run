@@ -1,63 +1,339 @@
 #!/usr/bin/python3
 
-"""Run one trusted helper with a deadline and process-group containment."""
+"""Run one helper behind hard output, lifetime, and descendant boundaries.
+
+The QML-owned controller forks an independent guardian. The guardian owns the
+task session, captures output before it reaches QML, and remains responsible
+for TERM -> KILL -> reap cleanup if the controller is cancelled or killed.
+"""
 
 from __future__ import annotations
 
-import os
 import ctypes
+import errno
+import os
+import resource
+import select
 import signal
-import subprocess
 import sys
 import time
+from dataclasses import dataclass
+
+
+PR_SET_PDEATHSIG = 1
+PR_SET_CHILD_SUBREAPER = 36
+MAX_TIMEOUT_MS = 300_000
+MAX_GRACE_MS = 2_000
+MAX_STREAM_BYTES = 1_048_576
+POLL_SLICE_MS = 25
+FINAL_REAP_SECONDS = 2.0
 
 
 def usage() -> None:
-    raise SystemExit("usage: one-bit-bureau-run TIMEOUT_MS GRACE_MS -- COMMAND [ARG ...]")
+    raise SystemExit(
+        "usage: one-bit-bureau-run TIMEOUT_MS GRACE_MS "
+        "STDOUT_BYTES STDERR_BYTES -- COMMAND [ARG ...]"
+    )
 
 
-def bounded_milliseconds(raw: str, minimum: int, maximum: int, label: str) -> int:
+def bounded_integer(raw: str, minimum: int, maximum: int, label: str) -> int:
     try:
         value = int(raw)
     except ValueError as error:
         raise SystemExit(f"{label} must be an integer") from error
     if not minimum <= value <= maximum:
-        raise SystemExit(f"{label} must be between {minimum} and {maximum} milliseconds")
+        raise SystemExit(f"{label} must be between {minimum} and {maximum}")
     return value
 
 
-def signal_group(process: subprocess.Popen[bytes], signum: int) -> None:
+def exit_code(status: int) -> int:
+    if os.WIFEXITED(status):
+        return os.WEXITSTATUS(status)
+    if os.WIFSIGNALED(status):
+        return 128 + os.WTERMSIG(status)
+    return 125
+
+
+def set_nonblocking(descriptor: int) -> None:
+    os.set_blocking(descriptor, False)
+
+
+def cloexec_pipe() -> tuple[int, int]:
+    if hasattr(os, "pipe2"):
+        return os.pipe2(os.O_CLOEXEC)
+    read_fd, write_fd = os.pipe()
+    os.set_inheritable(read_fd, False)
+    os.set_inheritable(write_fd, False)
+    return read_fd, write_fd
+
+
+def close_from(first: int) -> None:
+    soft_limit, _hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    maximum = 1_048_576 if soft_limit == resource.RLIM_INFINITY else int(soft_limit)
+    os.closerange(first, maximum)
+
+
+def linux_prctl(option: int, value: int) -> bool:
+    if not sys.platform.startswith("linux"):
+        return True
+    libc = ctypes.CDLL(None, use_errno=True)
+    return libc.prctl(option, value, 0, 0, 0) == 0
+
+
+@dataclass(frozen=True)
+class ProcessRecord:
+    pid: int
+    ppid: int
+    process_group: int
+    session: int
+    start_time: int
+
+
+def linux_process_table() -> dict[int, ProcessRecord]:
+    records: dict[int, ProcessRecord] = {}
+    if not sys.platform.startswith("linux"):
+        return records
     try:
-        os.killpg(process.pid, signum)
-    except ProcessLookupError:
+        entries = os.scandir("/proc")
+    except OSError:
+        return records
+    with entries:
+        for entry in entries:
+            if not entry.name.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry.name}/stat", "rb", buffering=0) as handle:
+                    raw = handle.read(4096)
+                right_paren = raw.rfind(b")")
+                fields = raw[right_paren + 2 :].split()
+                # After the parenthesized comm: state, ppid, pgrp, session, ...
+                record = ProcessRecord(
+                    pid=int(entry.name),
+                    ppid=int(fields[1]),
+                    process_group=int(fields[2]),
+                    session=int(fields[3]),
+                    start_time=int(fields[19]),
+                )
+                records[record.pid] = record
+            except (OSError, ValueError, IndexError):
+                continue
+    return records
+
+
+def descendants_of(owner_pid: int) -> dict[int, ProcessRecord]:
+    if not sys.platform.startswith("linux"):
+        return {}
+    table = linux_process_table()
+    descendants: dict[int, ProcessRecord] = {}
+    frontier = {owner_pid}
+    while frontier:
+        parents = frontier
+        frontier = set()
+        for pid, record in table.items():
+            if pid in descendants or pid == owner_pid:
+                continue
+            if record.ppid in parents:
+                descendants[pid] = record
+                frontier.add(pid)
+    return descendants
+
+
+def identity_still_matches(record: ProcessRecord) -> bool:
+    if not sys.platform.startswith("linux"):
+        return True
+    current = linux_process_table().get(record.pid)
+    return current is not None and current.start_time == record.start_time
+
+
+def signal_descendants(owner_pid: int, task_pid: int, signum: int) -> None:
+    if sys.platform.startswith("linux"):
+        records = descendants_of(owner_pid)
+        own_group = os.getpgrp()
+        groups = {
+            record.process_group
+            for record in records.values()
+            if record.process_group > 1 and record.process_group != own_group
+        }
+        for group in groups:
+            try:
+                os.killpg(group, signum)
+            except OSError:
+                pass
+        # A descendant may have left the original session/group. Signal each
+        # identity-checked PID as well, then rescan during the grace period.
+        for record in records.values():
+            if not identity_still_matches(record):
+                continue
+            try:
+                os.kill(record.pid, signum)
+            except OSError:
+                pass
+        return
+    try:
+        os.killpg(task_pid, signum)
+    except OSError:
         pass
 
 
-def stop_and_reap(process: subprocess.Popen[bytes], grace_seconds: float) -> None:
-    signal_group(process, signal.SIGTERM)
+def spawn_task(
+    command: list[str], guardian_pid: int
+) -> tuple[int, int, int, int, int]:
+    stdout_read, stdout_write = cloexec_pipe()
+    stderr_read, stderr_write = cloexec_pipe()
+    ready_read, ready_write = cloexec_pipe()
+    release_read, release_write = cloexec_pipe()
+    task_pid = os.fork()
+    if task_pid == 0:
+        try:
+            os.close(stdout_read)
+            os.close(stderr_read)
+            os.close(ready_read)
+            os.close(release_write)
+            null_fd = os.open(os.devnull, os.O_RDONLY | os.O_CLOEXEC)
+            os.dup2(null_fd, 0)
+            os.dup2(stdout_write, 1)
+            os.dup2(stderr_write, 2)
+            if null_fd > 2:
+                os.close(null_fd)
+            if stdout_write > 2:
+                os.close(stdout_write)
+            if stderr_write > 2:
+                os.close(stderr_write)
+            if not linux_prctl(PR_SET_PDEATHSIG, signal.SIGKILL):
+                os._exit(125)
+            if os.getppid() != guardian_pid:
+                os.kill(os.getpid(), signal.SIGKILL)
+            os.setsid()
+            gate_delay_ms = min(
+                max(int(os.environ.get("ONE_BIT_BUREAU_RUN_TEST_GATE_DELAY_MS", "0")), 0),
+                1000,
+            )
+            if gate_delay_ms:
+                time.sleep(gate_delay_ms / 1000)
+            if os.getppid() != guardian_pid:
+                os.kill(os.getpid(), signal.SIGKILL)
+            os.write(ready_write, b"R")
+            os.close(ready_write)
+            while True:
+                try:
+                    release = os.read(release_read, 1)
+                    break
+                except InterruptedError:
+                    continue
+            os.close(release_read)
+            if release != b"G" or os.getppid() != guardian_pid:
+                os._exit(125)
+            close_from(3)
+            os.execvp(command[0], command)
+        except (OSError, ValueError) as error:
+            message = f"one-bit-bureau-run: could not start helper: {error}\n".encode(
+                "utf-8", "replace"
+            )[:4096]
+            try:
+                os.write(2, message)
+            except OSError:
+                pass
+            os._exit(126)
+    os.close(stdout_write)
+    os.close(stderr_write)
+    os.close(ready_write)
+    os.close(release_read)
+    set_nonblocking(stdout_read)
+    set_nonblocking(stderr_read)
+    set_nonblocking(ready_read)
+    return task_pid, stdout_read, stderr_read, ready_read, release_write
+
+
+def reap_available(task_pid: int, task_status: int | None) -> int | None:
+    while True:
+        try:
+            pid, status = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return task_status
+        if pid == 0:
+            return task_status
+        if pid == task_pid:
+            task_status = status
+
+
+def drain_descriptor(
+    descriptor: int,
+    buffer: bytearray,
+    limit: int,
+) -> tuple[bool, bool]:
+    """Return (open, exceeded)."""
+    while True:
+        try:
+            chunk = os.read(descriptor, 65_536)
+        except BlockingIOError:
+            return True, False
+        except OSError as error:
+            if error.errno == errno.EINTR:
+                continue
+            return False, False
+        if not chunk:
+            return False, False
+        if len(buffer) + len(chunk) > limit:
+            return True, True
+        buffer.extend(chunk)
+
+
+def write_bounded(descriptor: int, data: bytes, limit: int) -> None:
+    view = memoryview(data[:limit])
+    while view:
+        try:
+            written = os.write(descriptor, view)
+        except BrokenPipeError:
+            return
+        view = view[written:]
+
+
+def stop_and_reap(
+    guardian_pid: int,
+    task_pid: int,
+    grace_seconds: float,
+    task_status: int | None,
+) -> int | None:
+    signal_descendants(guardian_pid, task_pid, signal.SIGTERM)
     grace_deadline = time.monotonic() + grace_seconds
-    while process.poll() is None and time.monotonic() < grace_deadline:
+    while time.monotonic() < grace_deadline:
+        task_status = reap_available(task_pid, task_status)
+        if sys.platform.startswith("linux"):
+            if not descendants_of(guardian_pid):
+                break
+        elif task_status is not None:
+            break
         time.sleep(0.01)
 
-    # Kill the process group even if the direct child exited during grace: a
-    # descendant may still be alive in the group. The controller owns only the
-    # fresh session it created, so the target identity cannot be reused here.
-    signal_group(process, signal.SIGKILL)
-    try:
-        process.wait(timeout=1)
-    except subprocess.TimeoutExpired:
-        signal_group(process, signal.SIGKILL)
-        process.wait()
+    # Rescan immediately before KILL so nested process groups and late forks
+    # remain inside the transaction's lifecycle boundary.
+    signal_descendants(guardian_pid, task_pid, signal.SIGKILL)
+    final_deadline = time.monotonic() + FINAL_REAP_SECONDS
+    while time.monotonic() < final_deadline:
+        task_status = reap_available(task_pid, task_status)
+        if sys.platform.startswith("linux"):
+            if not descendants_of(guardian_pid):
+                break
+        elif task_status is not None:
+            break
+        signal_descendants(guardian_pid, task_pid, signal.SIGKILL)
+        time.sleep(0.01)
+    task_status = reap_available(task_pid, task_status)
+    return task_status
 
 
-def main() -> int:
-    if len(sys.argv) < 5 or sys.argv[3] != "--":
-        usage()
-    timeout_seconds = bounded_milliseconds(sys.argv[1], 50, 60000, "timeout") / 1000
-    grace_seconds = bounded_milliseconds(sys.argv[2], 10, 2000, "grace") / 1000
-    command = sys.argv[4:]
-    if not command:
-        usage()
+def guardian_main(
+    control_fd: int,
+    timeout_ms: int,
+    grace_ms: int,
+    stdout_limit: int,
+    stderr_limit: int,
+    command: list[str],
+) -> int:
+    guardian_pid = os.getpid()
+    if not linux_prctl(PR_SET_CHILD_SUBREAPER, 1):
+        write_bounded(2, b"one-bit-bureau-run: could not establish subreaper\n", stderr_limit)
+        return 125
 
     requested_signal = 0
 
@@ -68,51 +344,225 @@ def main() -> int:
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
 
-    child_setup = None
-    start_new_session = True
-    if sys.platform.startswith("linux"):
-        # PR_SET_PDEATHSIG is the independent kernel cleanup owner. The task
-        # cannot exec until this fail-closed gate is installed, and the PPID
-        # check closes the fork-to-prctl race if the controller dies first.
-        owner_pid = os.getpid()
-        libc = ctypes.CDLL(None, use_errno=True)
-        gate_delay = min(max(int(os.environ.get("ONE_BIT_BUREAU_RUN_TEST_GATE_DELAY_MS", "0")), 0), 1000) / 1000
-
-        def prepare_contained_child() -> None:
-            if gate_delay:
-                time.sleep(gate_delay)
-            if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:  # PR_SET_PDEATHSIG
-                os._exit(125)
-            if os.getppid() != owner_pid:
-                os.kill(os.getpid(), signal.SIGKILL)
-            os.setsid()
-
-        child_setup = prepare_contained_child
-        start_new_session = False
-
     try:
-        process = subprocess.Popen(
-            command,
-            preexec_fn=child_setup,
-            start_new_session=start_new_session,
+        task_pid, stdout_fd, stderr_fd, ready_fd, release_fd = spawn_task(
+            command, guardian_pid
         )
     except OSError as error:
-        print(f"one-bit-bureau-run: could not start helper: {error}", file=sys.stderr)
+        write_bounded(
+            2,
+            f"one-bit-bureau-run: could not start helper: {error}\n".encode(),
+            stderr_limit,
+        )
         return 126
 
-    deadline = time.monotonic() + timeout_seconds
+    set_nonblocking(control_fd)
+    stdout_buffer = bytearray()
+    stderr_buffer = bytearray()
+    stdout_open = True
+    stderr_open = True
+    task_status: int | None = None
+    task_released = False
+    deadline = time.monotonic() + timeout_ms / 1000
+    failure = ""
+    cancellation_code = 143
+
+    poller = select.poll()
+    poller.register(control_fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+    poller.register(stdout_fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+    poller.register(stderr_fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+    poller.register(ready_fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+
     while True:
-        return_code = process.poll()
-        if return_code is not None:
-            return return_code if return_code >= 0 else 128 - return_code
+        task_status = reap_available(task_pid, task_status)
         if requested_signal:
-            stop_and_reap(process, grace_seconds)
-            return 128 + requested_signal
+            cancellation_code = 128 + requested_signal
+            failure = "cancelled"
+            break
         if time.monotonic() >= deadline:
-            stop_and_reap(process, grace_seconds)
-            print("one-bit-bureau-run: helper exceeded its deadline", file=sys.stderr)
-            return 124
-        time.sleep(0.02)
+            failure = "deadline"
+            break
+        if task_status is not None and not task_released:
+            failure = "start"
+            break
+        if task_status is not None and not stdout_open and not stderr_open:
+            if not sys.platform.startswith("linux") or not descendants_of(guardian_pid):
+                break
+
+        wait_ms = max(0, min(POLL_SLICE_MS, int((deadline - time.monotonic()) * 1000)))
+        events = poller.poll(wait_ms)
+        for descriptor, _event in events:
+            if descriptor == control_fd:
+                try:
+                    message = os.read(control_fd, 32)
+                except BlockingIOError:
+                    message = b""
+                if message:
+                    cancellation_code = 128 + int(message[0])
+                else:
+                    cancellation_code = 137
+                failure = "cancelled"
+                break
+        if failure:
+            break
+        for descriptor, _event in events:
+            if descriptor == control_fd:
+                continue
+            if descriptor == ready_fd and not task_released:
+                try:
+                    ready = os.read(ready_fd, 1)
+                except BlockingIOError:
+                    continue
+                if ready != b"R":
+                    failure = "start"
+                    break
+                # Recheck the controller pipe immediately before releasing the
+                # task. EOF or a queued signal keeps the gate fail-closed.
+                try:
+                    controller_message = os.read(control_fd, 32)
+                except BlockingIOError:
+                    controller_message = None
+                if controller_message is not None:
+                    if controller_message:
+                        cancellation_code = 128 + int(controller_message[0])
+                    else:
+                        cancellation_code = 137
+                    failure = "cancelled"
+                    break
+                try:
+                    os.write(release_fd, b"G")
+                except OSError:
+                    failure = "start"
+                    break
+                os.close(release_fd)
+                release_fd = -1
+                poller.unregister(ready_fd)
+                os.close(ready_fd)
+                ready_fd = -1
+                task_released = True
+                continue
+            if descriptor == stdout_fd and stdout_open:
+                stdout_open, exceeded = drain_descriptor(
+                    stdout_fd, stdout_buffer, stdout_limit
+                )
+                if exceeded:
+                    failure = "stdout"
+                    break
+                if not stdout_open:
+                    poller.unregister(stdout_fd)
+                    os.close(stdout_fd)
+            if descriptor == stderr_fd and stderr_open:
+                stderr_open, exceeded = drain_descriptor(
+                    stderr_fd, stderr_buffer, stderr_limit
+                )
+                if exceeded:
+                    failure = "stderr"
+                    break
+                if not stderr_open:
+                    poller.unregister(stderr_fd)
+                    os.close(stderr_fd)
+        if failure:
+            break
+
+    if failure:
+        for descriptor in (release_fd, ready_fd):
+            if descriptor < 0:
+                continue
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        release_fd = -1
+        ready_fd = -1
+        task_status = stop_and_reap(
+            guardian_pid, task_pid, grace_ms / 1000, task_status
+        )
+        stdout_buffer.clear()
+        stderr_buffer.clear()
+        if failure == "deadline":
+            message = b"one-bit-bureau-run: helper exceeded its deadline\n"
+            result = 124
+        elif failure == "stdout":
+            message = b"one-bit-bureau-run: helper stdout exceeded its hard cap\n"
+            result = 125
+        elif failure == "stderr":
+            message = b"one-bit-bureau-run: helper stderr exceeded its hard cap\n"
+            result = 125
+        elif failure == "start":
+            message = b"one-bit-bureau-run: helper failed its containment start gate\n"
+            result = 126
+        else:
+            message = b"one-bit-bureau-run: helper cancelled after descendant cleanup\n"
+            result = cancellation_code
+        write_bounded(2, message, stderr_limit)
+    else:
+        result = exit_code(task_status) if task_status is not None else 125
+        write_bounded(1, bytes(stdout_buffer), stdout_limit)
+        write_bounded(2, bytes(stderr_buffer), stderr_limit)
+
+    for descriptor in (control_fd, stdout_fd, stderr_fd, ready_fd, release_fd):
+        if descriptor < 0:
+            continue
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+    return result
+
+
+def main() -> int:
+    if len(sys.argv) < 7 or sys.argv[5] != "--":
+        usage()
+    timeout_ms = bounded_integer(sys.argv[1], 50, MAX_TIMEOUT_MS, "timeout")
+    grace_ms = bounded_integer(sys.argv[2], 10, MAX_GRACE_MS, "grace")
+    stdout_limit = bounded_integer(
+        sys.argv[3], 0, MAX_STREAM_BYTES, "stdout limit"
+    )
+    stderr_limit = bounded_integer(
+        sys.argv[4], 0, MAX_STREAM_BYTES, "stderr limit"
+    )
+    command = sys.argv[6:]
+    if not command:
+        usage()
+
+    control_read, control_write = cloexec_pipe()
+    guardian_pid = os.fork()
+    if guardian_pid == 0:
+        os.close(control_write)
+        result = guardian_main(
+            control_read,
+            timeout_ms,
+            grace_ms,
+            stdout_limit,
+            stderr_limit,
+            command,
+        )
+        os._exit(result)
+
+    os.close(control_read)
+    stop_signal = 0
+
+    def request_guardian_stop(signum: int, _frame: object) -> None:
+        nonlocal stop_signal
+        if stop_signal:
+            return
+        stop_signal = signum
+        try:
+            os.write(control_write, bytes([signum]))
+        except OSError:
+            pass
+
+    signal.signal(signal.SIGTERM, request_guardian_stop)
+    signal.signal(signal.SIGINT, request_guardian_stop)
+
+    while True:
+        try:
+            _pid, status = os.waitpid(guardian_pid, 0)
+            break
+        except InterruptedError:
+            continue
+    os.close(control_write)
+    return exit_code(status)
 
 
 if __name__ == "__main__":

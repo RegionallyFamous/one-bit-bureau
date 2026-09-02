@@ -91,7 +91,7 @@ Item {
   function refreshDesktopIndex() {
     if (!root.metadataHelperPath || !root.runHelperPath || desktopIndexProcess.running) return false
     desktopIndexProcess.command = [
-      "python3", root.runHelperPath, "3500", "250", "--",
+      "python3", root.runHelperPath, "3500", "250", "131072", "8192", "--",
       "python3", root.metadataHelperPath, "desktop-index"
     ]
     desktopIndexProcess.running = true
@@ -135,7 +135,7 @@ Item {
       return false
     }
     processIndexProcess.command = [
-      "python3", root.runHelperPath, "1800", "200", "--",
+      "python3", root.runHelperPath, "1800", "200", "65536", "8192", "--",
       "python3", root.metadataHelperPath, "process"
     ].concat(args)
     processIndexProcess.running = true

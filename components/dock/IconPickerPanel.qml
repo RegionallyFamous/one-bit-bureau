@@ -24,13 +24,13 @@ PanelWindow {
   property var grayscaleFor: function(id) { return false }
   property string stateHelperPath: ""
   property string runHelperPath: ""
-  property string iconMapPath: ""
   property string packDir: ""
   property var shell: null
 
   property var results: []
   property var appRows: []
   property bool busy: false
+  property bool closeAfterCancel: false
   property string statusText: ""
   // Bumped after every successful apply/clear and when the icon mapping is
   // reloaded, forcing preview/row bindings (which cannot track property reads
@@ -121,13 +121,19 @@ PanelWindow {
   }
 
   function close() {
+    if (applyProcess.running) {
+      root.closeAfterCancel = true
+      root.statusText = "Cancelling"
+      applyProcess.running = false
+      return
+    }
     root.open = false
     root.results = []
     root.appRows = []
     root.statusText = ""
     applyDeadline.stop()
-    applyProcess.running = false
     root.busy = false
+    root.closeAfterCancel = false
   }
 
   // The original bundled pack is the complete, offline source of overrides.
@@ -142,32 +148,32 @@ PanelWindow {
 
   function applyResult(item) {
     if (item && item.pack) {
-      root.applyWith(["python3", root.stateHelperPath, "write", root.iconMapPath, root.currentAppId, "pack", item.pack], "One-Bit Bureau icon applied")
+      root.applyWith(["python3", root.stateHelperPath, "write", "icon", root.currentAppId, "pack", item.pack], "One-Bit Bureau icon applied")
       return
     }
   }
 
   function useNativeIcon() {
-    root.applyWith(["python3", root.stateHelperPath, "write", root.iconMapPath, root.currentAppId, "native"], "Using the app's native icon")
+    root.applyWith(["python3", root.stateHelperPath, "write", "icon", root.currentAppId, "native"], "Using the app's native icon")
   }
 
   function useAutomaticIcon() {
-    root.applyWith(["python3", root.stateHelperPath, "write", root.iconMapPath, root.currentAppId, "auto"], "Automatic icon association restored")
+    root.applyWith(["python3", root.stateHelperPath, "write", "icon", root.currentAppId, "auto"], "Automatic icon association restored")
   }
 
   function clearIcon(appId) {
-    root.applyWith(["python3", root.stateHelperPath, "write", root.iconMapPath, appId, "clear"], "Custom icon cleared")
+    root.applyWith(["python3", root.stateHelperPath, "write", "icon", appId, "clear"], "Custom icon cleared")
   }
 
   function applyWith(command, successMessage) {
-    if (root.busy || !root.stateHelperPath || !root.runHelperPath || !root.iconMapPath) {
-      if (!root.stateHelperPath || !root.runHelperPath || !root.iconMapPath) root.statusText = "Icon state helper not found — reinstall the plugin"
+    if (root.busy || !root.stateHelperPath || !root.runHelperPath) {
+      if (!root.stateHelperPath || !root.runHelperPath) root.statusText = "Icon state helper not found — reinstall the plugin"
       return
     }
     root.busy = true
     root.statusText = "Applying"
     applyProcess.pendingSuccess = successMessage
-    applyProcess.command = ["python3", root.runHelperPath, "2200", "250", "--"].concat(command)
+    applyProcess.command = ["python3", root.runHelperPath, "2200", "250", "0", "4096", "--"].concat(command)
     applyProcess.running = true
     applyDeadline.restart()
   }
@@ -290,7 +296,7 @@ PanelWindow {
     stderr: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        if (text.trim()) root.applyError = text.trim()
+        if (text.trim()) root.applyError = text.trim().slice(0, 240)
       }
     }
     onExited: function(exitCode) {
@@ -304,6 +310,8 @@ PanelWindow {
         root.statusText = "Failed — " + (root.applyError || "couldn't complete the change")
       }
       root.applyError = ""
+      if (root.closeAfterCancel)
+        Qt.callLater(root.close)
     }
   }
 
@@ -312,9 +320,8 @@ PanelWindow {
     interval: 2500
     onTriggered: {
       if (applyProcess.running) {
+        root.statusText = "Stopping timed-out icon update"
         applyProcess.running = false
-        root.busy = false
-        root.statusText = "Failed — icon update timed out"
       }
     }
   }
